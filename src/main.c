@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <limine.h>
 
+#include "gdt.h"
+
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
 
@@ -94,6 +96,8 @@ static void hcf(void)
 
 void kmain(void)
 {
+    gdt_init();
+
     if (LIMINE_BASE_REVISION_SUPPORTED == false)
     {
         hcf();
