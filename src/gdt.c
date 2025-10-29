@@ -33,8 +33,8 @@ void gdt_init(void)
     gdt_ptr.base = (uint64_t)&gdt;
 
     gdt_encode_entry(0, 0, 0, 0, 0); // null descriptor
-    gdt_encode_entry(1, 0, 0xFFFFFFFF, 0x9A, 0xAF); // code segment
-    gdt_encode_entry(2, 0, 0xFFFFFFFF, 0x92, 0xCF); // data
+    gdt_encode_entry(1, 0, 0xFFFFFFFF, GDT_ACCESS_KERNEL_CODE, GDT_GRAN_KERNEL_CODE); // code segment
+    gdt_encode_entry(2, 0, 0xFFFFFFFF, GDT_ACCESS_KERNEL_DATA, GDT_GRAN_KERNEL_DATA); // data
 
     gdt_set((uint64_t)&gdt_ptr);
 }

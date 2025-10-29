@@ -1,5 +1,5 @@
 .SUFFIXES:
-override OUTPUT := myos
+override OUTPUT := nyanOS
 
 TOOLCHAIN := 
 TOOLCHAIN_PREFIX := 
@@ -147,7 +147,7 @@ run: image
 .PHONY: debug
 debug: image
 	@echo "Booting $(IMAGE_FILE) with QEMU for GDB debugging..."
-	@echo "Waiting for GDB to connect on port 1234 (run: gdb -ex 'target remote :1234' bin/myos)"
+	@echo "Waiting for GDB to connect on port 1234 (run: gdb -ex 'target remote :1234' bin/nyanOS)"
 	@qemu-system-x86_64 -hda $(IMAGE_FILE) -S -s
 
 
