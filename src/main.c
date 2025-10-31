@@ -4,6 +4,7 @@
 #include <limine.h>
 
 #include "gdt.h"
+#include "idt.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
@@ -97,6 +98,8 @@ static void hcf(void)
 void kmain(void)
 {
     gdt_init();
+    idt_init();
+    __asm__ volatile ("int $0");
 
     if (LIMINE_BASE_REVISION_SUPPORTED == false)
     {
@@ -118,46 +121,3 @@ void kmain(void)
 
     hcf();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -25,7 +25,10 @@
 
 // Granularity flags for 64-bit kernel segments
 #define GDT_GRAN_KERNEL_CODE (SEG_GRAN_G(1) | SEG_GRAN_L(1)) // 4k pages, long mode
-#define GDT_GRAN_KERNEL_DATA (SEG_GRAN_G(1) | SEG_GRAN_DB(1)) // 4k pages, 32-bit default size
+#define GDT_GRAN_KERNEL_DATA (SEG_GRAN_G(1)) // 4k pages
+
+#define GDT_OFFSET_KERNEL_CODE 0x08
+#define GDT_OFFSET_KERNEL_DATA 0x10
 
 struct gdt_entry 
 {
