@@ -5,6 +5,7 @@
 
 #include "gdt.h"
 #include "idt.h"
+#include "pic.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
@@ -99,7 +100,7 @@ void kmain(void)
 {
     gdt_init();
     idt_init();
-    __asm__ volatile ("int $0");
+    pic_init();
 
     if (LIMINE_BASE_REVISION_SUPPORTED == false)
     {
