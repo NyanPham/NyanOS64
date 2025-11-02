@@ -6,6 +6,7 @@
 #include "gdt.h"
 #include "idt.h"
 #include "pic.h"
+#include "keyboard.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
@@ -101,6 +102,7 @@ void kmain(void)
     gdt_init();
     idt_init();
     pic_init();
+    keyboard_init();
 
     if (LIMINE_BASE_REVISION_SUPPORTED == false)
     {

@@ -27,7 +27,7 @@ do_irq:
     push r11
 
     mov rdi, rsp
-    mov rsi, [rsp+80]
+    mov rsi, [rsp+0x58]
     call irq_entry
 
     pop r11
