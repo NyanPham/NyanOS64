@@ -3,19 +3,25 @@ section .text
 
 extern irq_entry
 
+; This macro creates a stub for each IRQ.
+; The stub pushes the IRQ number onto the stack and then calls the common IRQ handler.
 %macro DECLARE_IRQ 1
 global irq%1_stub
 irq%1_stub:
-    push %1
-    push rax
-    mov rax, do_irq
+    push %1     ; Push the IRQ number.
+    push rax    ; Push a dummy value for alignment.
+    mov rax, do_irq     ; Call the common IRQ handler.
     call rax
-    pop rax
-    add rsp, 8
-    iretq
+    pop rax     ; Pop the dummy value.
+    add rsp, 8  ; Pop the IRQ number.
+    
+    iretq       ; Return from the interrupt.
 %endmacro
 
+; This is the common IRQ handler.
+; It saves the registers, calls the C-level IRQ entry function, and then restores the registers.
 do_irq:
+    ; Save all general-purpose registers.
     push rbx
     push rdi
     push rsi
@@ -26,10 +32,17 @@ do_irq:
     push r10
     push r11
 
-    mov rdi, rsp
-    mov rsi, [rsp+0x58]
-    call irq_entry
+    ; The stack pointer is the first argument to irq_entry.
+    ; The IRQ number is the second argument.
+    ; How come we get rsp + 0x58? do_irq pushed 9 regs, 
+    ; and its caller, irq%1_stub has stack layout as ret_addr, dummy value, and IRQ number.
+    ; we want to stop at the IRQ number, so offset = 9 * 8 + 8 + 8 = 0x58.
 
+    mov rdi, rsp    
+    mov rsi, [rsp+0x58] 
+    call irq_entry  ; Call the C-level IRQ entry function.
+
+    ; Restore all general-purpose registers.
     pop r11
     pop r10
     pop r9
@@ -42,6 +55,7 @@ do_irq:
 
     ret
 
+; Declare the IRQ stubs.
 DECLARE_IRQ 0
 DECLARE_IRQ 1
 DECLARE_IRQ 2

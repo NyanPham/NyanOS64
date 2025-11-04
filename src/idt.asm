@@ -1,16 +1,25 @@
+; This file contains the Interrupt Service Routine (ISR) stubs for the first 32 exceptions.
+; These stubs are called by the CPU when an exception occurs.
+; They are responsible for calling the common exception handler.
+
+; A macro for creating an ISR stub for exceptions that push an error code.
 %macro isr_err_stub 1
 isr_stub_%+%1:
     call exception_handler
     iretq
 %endmacro
 
+; A macro for creating an ISR stub for exceptions that do not push an error code.
 %macro isr_no_err_stub 1
 isr_stub_%+%1:
     call exception_handler
     iretq
 %endmacro
 
+; The common exception handler, defined in idt.c.
 extern exception_handler
+
+; Create the ISR stubs for the first 32 exceptions.
 isr_no_err_stub 0
 isr_no_err_stub 1
 isr_no_err_stub 2
@@ -44,6 +53,8 @@ isr_no_err_stub 29
 isr_err_stub    30
 isr_no_err_stub 31
 
+; A table of pointers to the ISR stubs.
+; This is used by idt.c to initialize the IDT.
 global isr_stub_table
 isr_stub_table:
 %assign i 0
