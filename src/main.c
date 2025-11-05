@@ -7,6 +7,7 @@
 #include "idt.h"
 #include "pic.h"
 #include "keyboard.h"
+#include "pit.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
@@ -103,6 +104,7 @@ void kmain(void)
     idt_init();
     pic_init();
     keyboard_init();
+    pit_init(100);
 
     if (LIMINE_BASE_REVISION_SUPPORTED == false)
     {
