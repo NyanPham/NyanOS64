@@ -44,6 +44,7 @@ SECTIONS
     .bss : {
         *(.bss .bss.*)
         *(COMMON)
+        endkernel = .;
     } :data
 
     /DISCARD/ : {

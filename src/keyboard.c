@@ -10,8 +10,6 @@ static void keyboard_handler(void *regs)
     (void)regs;
     scancode = inb(0x60);
     // TODO: add output for testing
-
-    pic_send_eoi(1);
 }
 
 void keyboard_init(void)
