@@ -8,7 +8,7 @@
 #include "pic.h"
 #include "keyboard.h"
 #include "pit.h"
-#include "page_frame_allocator.h"
+#include "mem/pmm.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
@@ -23,6 +23,12 @@ static volatile struct limine_framebuffer_request framebuffer_request =
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_memmap_request memmap_request = {
     .id = LIMINE_MEMMAP_REQUEST,
+    .revision = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST,
     .revision = 0
 };
 
@@ -105,39 +111,6 @@ static void hcf(void)
     }
 }
 
-// Test for the page frame allocator.
-static void test_pfa(void) {
-    // test the cache refill mechanism.
-    const int num_test_frames = 30;
-    pageframe_t allocated_frames[num_test_frames];
-
-    // test allocation
-    for (int i = 0; i < num_test_frames; i++) {
-        allocated_frames[i] = kalloc_frame();
-
-        if (allocated_frames[i] == (PAGE_FRAME_INVALID)) {
-            hcf();
-        }
-
-        for (int j = 0; j < i; j++) {
-            if (allocated_frames[j] == allocated_frames[i]) {
-                hcf();
-            }
-        }
-    }
-
-    // Test Deallocation
-    for (int i = 0; i < num_test_frames; i++) {
-        kfree_frame(allocated_frames[i]);
-    }
-
-    // Test re-allocation
-    pageframe_t re_allocated_frame = kalloc_frame();
-    if (re_allocated_frame != allocated_frames[0]) {
-        hcf();
-    }
-}
-
 void kmain(void)
 {
     gdt_init();
@@ -151,26 +124,13 @@ void kmain(void)
         hcf();
     }
 
-    // check if we have memory map from bootloader
-    if (memmap_request.response == NULL)
+    // check for the memory map response and the HHDM response.
+    if (memmap_request.response == NULL || hhdm_request.response == NULL)
     {
         hcf();
     }
-
-    uint64_t highest_addr = 0;
-    for (uint64_t i = 0; i < memmap_request.response->entry_count; i++)
-    {
-        struct limine_memmap_entry *entry = memmap_request.response->entries[i];
-        if (entry->type == LIMINE_MEMMAP_USABLE)
-        {
-            uint64_t top = entry->base + entry->length;
-            if (top > highest_addr) highest_addr = top;
-        }
-    }
-
-    init_frame_allocator(highest_addr);
-
-    test_pfa();
+   
+    pmm_init(memmap_request.response, hhdm_request.response);
 
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 
