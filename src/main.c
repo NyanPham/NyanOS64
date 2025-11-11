@@ -9,6 +9,7 @@
 #include "keyboard.h"
 #include "pit.h"
 #include "mem/pmm.h"
+#include "mem/vmm.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
@@ -131,7 +132,8 @@ void kmain(void)
     }
    
     pmm_init(memmap_request.response, hhdm_request.response);
-
+    vmm_init();
+    
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 
     {

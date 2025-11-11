@@ -11,6 +11,7 @@ struct limine_hhdm_response;
 #define PAGE_SIZE 4096
 
 void pmm_init(struct limine_memmap_response* memmap_resp, struct limine_hhdm_response* hhdm_resp);
+void* pmm_alloc_frame();
 void pmm_free_frame(void* frame_address);
 
 #endif
