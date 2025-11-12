@@ -158,6 +158,8 @@ void vmm_unmap_page(uint64_t* pml4, uint64_t virt_addr) {
     }
     
     *pte = 0;
+
+    __asm__ volatile ("invlpg (%0)" :: "r"(virt_addr) : "memory");
 }
 
 void vmm_init()
@@ -188,5 +190,8 @@ void vmm_init()
 
         vmm_unmap_page(kernel_pml4, 0xABCD000);
         pmm_free_frame(test_page_virt);
+        
+        // TODO: need to handle the PAGE FAULT
+        // *test_ptr = 0xCAFEBABE; // running this will cause PAGE FAULT
     }
 }
