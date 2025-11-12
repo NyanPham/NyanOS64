@@ -10,6 +10,7 @@
 #include "pit.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
+#include "mem/kmalloc.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
@@ -133,6 +134,33 @@ void kmain(void)
    
     pmm_init(memmap_request.response, hhdm_request.response);
     vmm_init();
+    
+    // test kmalloc
+    {
+        void* test_ptr1 = kmalloc(32);
+        if (test_ptr1 != NULL)
+        {
+            volatile uint32_t* kmalloc_test = (uint32_t*)test_ptr1;
+            *kmalloc_test = 0xCAFEBABE;
+
+            if (*kmalloc_test != 0xCAFEBABE) {
+                hcf();
+            }
+            
+            kfree(test_ptr1);
+            
+            void* test_ptr2 = kmalloc(32);
+            if (test_ptr1 != test_ptr2) {
+                hcf();
+            }
+            
+            kfree(test_ptr2);
+        }
+        else 
+        {
+            hcf();
+        }
+    }
     
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 
