@@ -195,3 +195,34 @@ void vmm_init()
         // *test_ptr = 0xCAFEBABE; // running this will cause PAGE FAULT
     }
 }
+
+/*
+More explanation, for learning notes :))
+A 64-bit virtual address (in practice, only 48 bits are used for addressing) is divided into the following parts
+
+---
+  63                               48 47            39 38            30 29            21 20            12 11            0
++------------------------------------+----------------+----------------+----------------+----------------+----------------+
+|          Sign Extension            |   PML4 Index   |   PDPT Index   |    PD Index    |    PT Index    |  Page Offset   |
++------------------------------------+----------------+----------------+----------------+----------------+----------------+
+^                                    ^                ^                ^                ^                ^
+|                                    |                |                |                |                |
+Bits 48-63 must be a copy of bit 47  |                |                |                |                +-> 12 bits
+(Canonical Address)                  |                |                |                +------------------> 9 bits
+                                     |                |                +------------------------------------> 9 bits
+                                     |                +------------------------------------------------------> 9 bits
+                                     +------------------------------------------------------------------------> 9 bits
+---
+
+Address Translation Process:
+1. The CPU uses bits 47-39 of the virtual address as an index to find a PML4 Entry.
+2. This PML4 Entry contains the physical address of a PDPT.
+3. The CPU then uses the next 9 bits (38-30) as an index to find a PDPT Entry within that table.
+4. This PDPT Entry contains the physical address of a Page Directory (PD).
+5. The CPU continues by using bits 29-21 as an index to find a PD Entry.
+6. This PD Entry contains the physical address of a Page Table (PT).
+7. The CPU uses the final 9 index bits (20-12) to find a Page Table Entry (PTE).
+8. This PTE contains the physical address of the target physical frame.
+9. Finally, the CPU adds the 12-bit Page Offset (bits 11-0) from the virtual address to the physical frame address to get the final physical address.
+
+*/
