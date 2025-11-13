@@ -3,7 +3,8 @@
 
 #include <stdint.h>
 
-#define GDT_ENTRIES 3
+// 0: NULL, 1: Kernel Code, 2: Kernel Data, 3&4: TSS Descriptor
+#define GDT_ENTRIES 5
 
 // Access Byte
 #define SEG_ACCESS_P(x)      ((x) << 7)  // Present
@@ -30,6 +31,8 @@
 #define GDT_OFFSET_KERNEL_CODE 0x08
 #define GDT_OFFSET_KERNEL_DATA 0x10
 
+#define GDT_OFFSET_TSS 0x18
+
 struct gdt_entry 
 {
     uint16_t limit_low;           
@@ -47,5 +50,31 @@ struct gdt_ptr
 } __attribute__((packed));
 
 void gdt_init(void);
+
+/* TSS */
+struct tss_t
+{
+    uint32_t reserved0;
+    uint64_t rsp0;
+    uint64_t rsp1;
+    uint64_t rsp2;
+    uint64_t reserved1;
+    uint64_t ist[7];    // interrupt stack tables
+    uint64_t reserved2;
+    uint64_t reserved3;
+    uint64_t iomap_base;
+} __attribute__((packed));
+
+struct gdt_tss_entry
+{
+    uint16_t limit_low;
+    uint16_t base_low;
+    uint8_t base_middle;
+    uint8_t access;
+    uint8_t granularity;    // with last 4 bits of limits
+    uint8_t base_high;
+    uint32_t base_highest;  // 32 highest bits of the base addr
+    uint32_t reserved;
+} __attribute__((packed));
 
 #endif

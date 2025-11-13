@@ -9,13 +9,13 @@
 // Why? It's simple, and its purpose is mainly
 // to debug other complicated interrupt-driven drivers. 
 
-static bool g_serial_inited = false;
-
 #define COM1_DATA_PORT 0x3F8
 #define COM1_ENBL_INT (COM1_DATA_PORT+1)
 #define COM1_FIFO_CTRL (COM1_DATA_PORT+2)
 #define COM1_LINE_CTRL (COM1_DATA_PORT+3)
 #define COM1_LINE_STAT (COM1_DATA_PORT+5)
+
+static bool g_serial_inited = false;
 
 bool is_transmit_empty()
 {
