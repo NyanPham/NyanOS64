@@ -11,6 +11,7 @@
 #include "mem/pmm.h"
 #include "mem/vmm.h"
 #include "mem/kmalloc.h"
+#include "drivers/serial.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
@@ -134,7 +135,8 @@ void kmain(void)
    
     pmm_init(memmap_request.response, hhdm_request.response);
     vmm_init();
-    
+    serial_init();
+
     // test kmalloc
     {
         void* test_ptr1 = kmalloc(32);
@@ -161,6 +163,9 @@ void kmain(void)
             hcf();
         }
     }
+
+    // test kprint
+    kprint("Hello from the kernel side!\n");
     
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 

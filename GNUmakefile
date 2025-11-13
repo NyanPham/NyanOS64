@@ -142,13 +142,13 @@ image: bin/$(OUTPUT) limine/limine limine.conf
 .PHONY: run
 run: image
 	@echo "Booting $(IMAGE_FILE) with QEMU..."
-	@qemu-system-x86_64 -hda $(IMAGE_FILE)
+	@qemu-system-x86_64 -hda $(IMAGE_FILE) -serial stdio
 
 .PHONY: debug
 debug: image
 	@echo "Booting $(IMAGE_FILE) with QEMU for GDB debugging..."
 	@echo "Waiting for GDB to connect on port 1234 (run: gdb -ex 'target remote :1234' bin/nyanOS)"
-	@qemu-system-x86_64 -hda $(IMAGE_FILE) -S -s
+	@qemu-system-x86_64 -hda $(IMAGE_FILE) -S -s -serial stdio
 
 
 .PHONY: clean
