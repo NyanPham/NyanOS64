@@ -56,7 +56,8 @@ override CFLAGS += \
 	-mno-sse \
 	-mno-sse2 \
 	-mno-red-zone \
-	-mcmodel=kernel 
+	-mcmodel=kernel \
+	-DDEBUG_SERIAL 
 
 
 override CPPFLAGS := \

@@ -3,15 +3,17 @@
 #include <stdbool.h>
 #include <limine.h>
 
-#include "gdt.h"
-#include "idt.h"
-#include "pic.h"
-#include "keyboard.h"
-#include "pit.h"
+#include "arch/gdt.h"
+#include "arch/idt.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
 #include "mem/kmalloc.h"
 #include "drivers/serial.h"
+#include "drivers/apic.h"
+#include "drivers/keyboard.h"
+#include "drivers/timer.h"
+#include "drivers/legacy/pit.h"
+#include "drivers/legacy/pic.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(4);
@@ -118,9 +120,6 @@ void kmain(void)
 {
     gdt_init();
     idt_init();
-    pic_init();
-    keyboard_init();
-    pit_init(100);
 
     if (LIMINE_BASE_REVISION_SUPPORTED == false)
     {
@@ -135,7 +134,11 @@ void kmain(void)
    
     pmm_init(memmap_request.response, hhdm_request.response);
     vmm_init();
+
     serial_init();
+    apic_init();
+    keyboard_init();
+    timer_init();
 
     // test kmalloc
     {
@@ -181,5 +184,6 @@ void kmain(void)
         fb_ptr[i * (framebuffer->pitch  / 4) + i] = 0xffffff;
     }
 
+    asm volatile ("sti");
     hcf();
 }

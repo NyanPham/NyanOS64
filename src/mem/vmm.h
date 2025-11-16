@@ -3,6 +3,17 @@
 
 #include <stdint.h>
 
+#define VMM_FLAG_PRESENT 1
+#define VMM_FLAG_WRITABLE (1 << 1)
+#define VMM_FLAG_USER (1 << 2)
+
+#define ENTRIES_NUM (4096 / sizeof(uint64_t))
+
+#define PML4_INDEX 0x27
+#define PDPT_INDEX 0x1e
+#define PD_INDEX 0x15
+#define PT_INDEX 0xc
+
 /**
  * @brief Set the physical address into the page table entry.
  * It preserves the last 12 bits.

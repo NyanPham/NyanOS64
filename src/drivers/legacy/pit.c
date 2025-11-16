@@ -11,7 +11,7 @@
  */
 
 #include "pit.h"
-#include "irq.h"
+#include "arch/irq.h"
 #include "pic.h"
 #include "io.h"
 

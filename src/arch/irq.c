@@ -1,5 +1,6 @@
 #include "irq.h"
-#include "pic.h"
+#include "drivers/apic.h"
+// #include "pic.h"
 
 // An array of IRQ handlers, one for each of the 16 IRQ lines.
 static irq_handler_t irq_handlers[16];
@@ -29,7 +30,7 @@ void irq_dispatch(int irq, void *regs)
         irq_handlers[irq](regs);
     }
 
-    pic_send_eoi((uint8_t)irq);
+    lapic_send_eoi();
 }
 
 // This is the main entry point for all IRQs.

@@ -94,9 +94,8 @@ void idt_init()
     idt_set_descriptor(46, irq14_stub, 0x8E);
     idt_set_descriptor(47, irq15_stub, 0x8E);
 
-
     // Load the IDT.
     __asm__ volatile ("lidt %0" : : "m"(idtr));
     // Enable interrupts.
-    __asm__ volatile ("sti");
+    // __asm__ volatile ("sti");
 }

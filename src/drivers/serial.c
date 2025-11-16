@@ -29,16 +29,19 @@ void serial_write(char c)
         return;
     }
 
+#ifdef DEBUG_SERIAL
     while (!is_transmit_empty())
     {
         continue;
     }
 
     outb(COM1_DATA_PORT, c);
+#endif
 }
 
 void kprint(const char* str)
 {
+#ifdef DEBUG_SERIAL
     if (!g_serial_inited)
     {
         return;
@@ -49,10 +52,70 @@ void kprint(const char* str)
         serial_write(*str);
         str++;
     }
+#endif
+}
+
+void kprint_hex_64(uint64_t val)
+{
+#ifdef DEBUG_SERIAL
+    if (!g_serial_inited) 
+    {
+        return;
+    }
+    kprint("0x");
+
+    for (uint8_t i = 0; i < 16; i++)
+    {
+        uint64_t tmp = val >> (60 - i * 4);
+        uint64_t nibble_val = (uint8_t)(tmp >> 0x3c);
+        char c;
+
+        if (nibble_val < 10)
+        {
+            c = nibble_val + '0';
+        }
+        else 
+        {
+            c = nibble_val - 10 + 'A';
+        }
+
+        serial_write(c);
+    }
+#endif
+}
+
+void kprint_hex_32(uint32_t val)
+{
+#ifdef DEBUG_SERIAL
+    if (!g_serial_inited) 
+    {
+        return;
+    }
+    kprint("0x");
+    
+    for (int i = 0; i < 8; i++) 
+    {   
+        uint32_t tmp = val >> (28 - i * 4);
+        uint8_t nibble_val = (uint8_t)(tmp & 0x0F);
+        char c;
+
+        if (nibble_val < 10) 
+        {
+            c = nibble_val + '0';
+        } 
+        else 
+        {
+            c = (nibble_val - 10) + 'A';
+        }
+
+        serial_write(c);
+    }
+#endif
 }
 
 void serial_init()
 {
+#ifdef DEBUG_SERIAL
     outb(COM1_ENBL_INT, 0x00); // disable interrupts
 
     // COM1_DATA_PORT turns into Divisor Latch LSB
@@ -75,4 +138,5 @@ void serial_init()
     outb(COM1_FIFO_CTRL, 0xC7);
 
     g_serial_inited = true;
+#endif
 }

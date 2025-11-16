@@ -2,21 +2,10 @@
 #include "vmm.h"
 #include "pmm.h"
 
-#define VMM_FLAG_PRESENT 1
-#define VMM_FLAG_WRITABLE (1 << 1)
-#define VMM_FLAG_USER (1 << 2)
-
-#define ENTRIES_NUM (4096 / sizeof(uint64_t))
-
-#define PML4_INDEX 0x27
-#define PDPT_INDEX 0x1e
-#define PD_INDEX 0x15
-#define PT_INDEX 0xc
-
 extern void* memset(void *s, int c, size_t n);
 extern uint64_t hhdm_offset;
 
-static uint64_t* kernel_pml4 = NULL;
+uint64_t* kernel_pml4 = NULL;
 
 uint64_t pte_set_addr(uint64_t page_tab_entry, uint64_t phys_addr)
 {
