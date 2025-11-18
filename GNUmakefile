@@ -122,7 +122,7 @@ limine/limine:
 	@$(MAKE) -C limine
 
 .PHONY: image
-image: bin/$(OUTPUT) limine/limine limine.conf
+image: bin/$(OUTPUT) limine/limine limine.conf myprog.elf
 	@echo "Creating disk image $(IMAGE_FILE)..."
 	@dd if=/dev/zero bs=1M count=64 of=$(IMAGE_FILE)
 	@PATH=$(PATH):/usr/sbin:/sbin sgdisk $(IMAGE_FILE) -n 1:2048 -t 1:ef00 -m 1
@@ -134,7 +134,9 @@ image: bin/$(OUTPUT) limine/limine limine.conf
 	@mmd -i $(IMAGE_FILE)@@1M ::/boot/limine
 	@echo "Copying files to image..."
 	@mcopy -i $(IMAGE_FILE)@@1M bin/$(OUTPUT) ::/boot
-	@mcopy -i $(IMAGE_FILE)@@1M limine.conf limine/limine-bios.sys ::/boot/limine
+	@mcopy -i $(IMAGE_FILE)@@1M limine.conf ::/boot/limine.conf
+	@mcopy -i $(IMAGE_FILE)@@1M myprog.elf ::/boot/MYPROG.ELF
+	@mcopy -i $(IMAGE_FILE)@@1M limine/limine-bios.sys ::/boot/limine/limine-bios.sys	
 	@mcopy -i $(IMAGE_FILE)@@1M limine/BOOTX64.EFI ::/EFI/BOOT
 	@mcopy -i $(IMAGE_FILE)@@1M limine/BOOTIA32.EFI ::/EFI/BOOT
 	@echo "Image $(IMAGE_FILE) created successfully."

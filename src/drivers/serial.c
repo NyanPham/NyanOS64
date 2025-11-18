@@ -58,27 +58,26 @@ void kprint(const char* str)
 void kprint_hex_64(uint64_t val)
 {
 #ifdef DEBUG_SERIAL
-    if (!g_serial_inited) 
+    if (!g_serial_inited)
     {
         return;
     }
+
     kprint("0x");
 
-    for (uint8_t i = 0; i < 16; i++)
+    for (int i = 15; i >= 0; i--)
     {
-        uint64_t tmp = val >> (60 - i * 4);
-        uint64_t nibble_val = (uint8_t)(tmp >> 0x3c);
-        char c;
+        uint64_t nibble = (val >> (i * 4)) & 0x0F;
 
-        if (nibble_val < 10)
+        char c;
+        if (nibble < 0x0A)
         {
-            c = nibble_val + '0';
+            c = nibble + '0';
         }
         else 
         {
-            c = nibble_val - 10 + 'A';
+            c = nibble - 10 + 'A';
         }
-
         serial_write(c);
     }
 #endif
@@ -93,21 +92,18 @@ void kprint_hex_32(uint32_t val)
     }
     kprint("0x");
     
-    for (int i = 0; i < 8; i++) 
-    {   
-        uint32_t tmp = val >> (28 - i * 4);
-        uint8_t nibble_val = (uint8_t)(tmp & 0x0F);
+    for (int i = 7; i >= 0; i--)
+    {
+        uint32_t nibble = (val >> (i * 4)) & 0xF;
         char c;
-
-        if (nibble_val < 10) 
+        if (nibble < 0xA) 
         {
-            c = nibble_val + '0';
-        } 
+            c = nibble + '0';
+        }
         else 
         {
-            c = (nibble_val - 10) + 'A';
+            c = nibble - 10 + 'A';
         }
-
         serial_write(c);
     }
 #endif

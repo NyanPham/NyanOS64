@@ -16,33 +16,41 @@
 #include "drivers/legacy/pic.h"
 
 __attribute__((used, section(".limine_requests")))
-static volatile LIMINE_BASE_REVISION(4);
+static volatile uint64_t limine_base_revision[3] = LIMINE_BASE_REVISION(4);
 
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_framebuffer_request framebuffer_request = 
 {
-    .id = LIMINE_FRAMEBUFFER_REQUEST,
+    .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
     .revision = 0
 };
 
 __attribute__((used, section(".limine_requests")))
-static volatile struct limine_memmap_request memmap_request = {
-    .id = LIMINE_MEMMAP_REQUEST,
+static volatile struct limine_memmap_request memmap_request = 
+{
+    .id = LIMINE_MEMMAP_REQUEST_ID,
     .revision = 0
 };
 
 __attribute__((used, section(".limine_requests")))
-static volatile struct limine_hhdm_request hhdm_request = {
-    .id = LIMINE_HHDM_REQUEST,
+static volatile struct limine_hhdm_request hhdm_request =
+{
+    .id = LIMINE_HHDM_REQUEST_ID,
+    .revision = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_module_request module_request =
+{
+    .id = LIMINE_MODULE_REQUEST_ID,
     .revision = 0
 };
 
 __attribute__((used, section(".limine_requests_start")))
-static volatile LIMINE_REQUESTS_START_MARKER;
-
+static volatile uint64_t limine_requests_start_marker[4] = LIMINE_REQUESTS_START_MARKER;
 
 __attribute__((used, section(".limine_requests_end")))
-static volatile LIMINE_REQUESTS_END_MARKER;
+static volatile uint64_t limine_requests_end_marker[2] = LIMINE_REQUESTS_END_MARKER;
 
 void *memcpy(void *restrict dest, const void *restrict src, size_t n) 
 {
@@ -118,20 +126,20 @@ static void hcf(void)
 
 void kmain(void)
 {
-    gdt_init();
-    idt_init();
-
-    if (LIMINE_BASE_REVISION_SUPPORTED == false)
+    if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false)
     {
         hcf();
     }
 
-    // check for the memory map response and the HHDM response.
+    gdt_init();
+    idt_init();
+
+    /*=========== Check for memmap response and HHDM response ===========*/
     if (memmap_request.response == NULL || hhdm_request.response == NULL)
     {
         hcf();
     }
-   
+    
     pmm_init(memmap_request.response, hhdm_request.response);
     vmm_init();
 
@@ -140,7 +148,7 @@ void kmain(void)
     keyboard_init();
     timer_init();
 
-    // test kmalloc
+    /*=========== Kmalloc test ===========*/
     {
         void* test_ptr1 = kmalloc(32);
         if (test_ptr1 != NULL)
@@ -167,7 +175,23 @@ void kmain(void)
         }
     }
 
-    // test kprint
+    /*=========== Test the initramfs ===========*/
+    if (module_request.response == NULL || module_request.response->module_count < 1)
+    {
+        kprint("Error: no module found (initramfs)\n");
+        hcf();
+    } 
+
+    struct limine_file* elf_file = module_request.response->modules[0];
+    kprint("ELF file is loaded at virt_addr: ");
+    kprint_hex_64((uint64_t)elf_file->address);
+    kprint("\nFile size: ");
+    kprint_hex_64(elf_file->size);
+    kprint("\n");
+
+    // test kprint  
+    // if we reach here, at least the inits above,
+    // if not working, don't crash our OS :)))
     kprint("Hello from the kernel side!\n");
     
     // check if we have the framebuffer to render on screen
