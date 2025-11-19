@@ -135,7 +135,7 @@ image: bin/$(OUTPUT) limine/limine limine.conf myprog.elf
 	@echo "Copying files to image..."
 	@mcopy -i $(IMAGE_FILE)@@1M bin/$(OUTPUT) ::/boot
 	@mcopy -i $(IMAGE_FILE)@@1M limine.conf ::/boot/limine.conf
-	@mcopy -i $(IMAGE_FILE)@@1M myprog.elf ::/boot/MYPROG.ELF
+	@mcopy -i $(IMAGE_FILE)@@1M test_user.elf ::/boot/MYPROG.ELF
 	@mcopy -i $(IMAGE_FILE)@@1M limine/limine-bios.sys ::/boot/limine/limine-bios.sys	
 	@mcopy -i $(IMAGE_FILE)@@1M limine/BOOTX64.EFI ::/EFI/BOOT
 	@mcopy -i $(IMAGE_FILE)@@1M limine/BOOTIA32.EFI ::/EFI/BOOT

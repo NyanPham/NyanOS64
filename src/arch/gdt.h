@@ -3,8 +3,16 @@
 
 #include <stdint.h>
 
-// 0: NULL, 1: Kernel Code, 2: Kernel Data, 3&4: TSS Descriptor
-#define GDT_ENTRIES 5
+/*
+0: NULL
+1: Kernel Code
+2: Kernel Data
+3&4: TSS Descriptor
+5: User Code Senment (ring 3)
+6: User Data Segment (ring 3)
+*/
+
+#define GDT_ENTRIES 7
 
 // Access Byte
 #define SEG_ACCESS_P(x)      ((x) << 7)  // Present
@@ -32,6 +40,15 @@
 #define GDT_OFFSET_KERNEL_DATA 0x10
 
 #define GDT_OFFSET_TSS 0x18
+
+#define GDT_ACCESS_USER_CODE (SEG_ACCESS_P(1) | SEG_ACCESS_DPL(3) | SEG_ACCESS_S(1) | SEG_TYPE_CODE_EXRD)
+#define GDT_ACCESS_USER_DATA (SEG_ACCESS_P(1) | SEG_ACCESS_DPL(3) | SEG_ACCESS_S(1) | SEG_TYPE_DATA_RDWR)
+
+#define GDT_GRAN_USER_CODE GDT_GRAN_KERNEL_CODE
+#define GDT_GRAN_USER_DATA GDT_GRAN_KERNEL_DATA
+
+#define GDT_OFFSET_USER_CODE 0x28
+#define GDT_OFFSET_USER_DATA 0x30
 
 struct gdt_entry 
 {

@@ -14,6 +14,9 @@
 #include "drivers/timer.h"
 #include "drivers/legacy/pit.h"
 #include "drivers/legacy/pic.h"
+#include "elf.h"
+
+#define USER_STACK_VIRT_ADDR 0x500000
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t limine_base_revision[3] = LIMINE_BASE_REVISION(4);
@@ -124,6 +127,11 @@ static void hcf(void)
     }
 }
 
+extern uint64_t hhdm_offset;
+extern uint64_t* kernel_pml4;
+
+extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
+
 void kmain(void)
 {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false)
@@ -183,17 +191,75 @@ void kmain(void)
     } 
 
     struct limine_file* elf_file = module_request.response->modules[0];
-    kprint("ELF file is loaded at virt_addr: ");
-    kprint_hex_64((uint64_t)elf_file->address);
-    kprint("\nFile size: ");
-    kprint_hex_64(elf_file->size);
-    kprint("\n");
+    Elf64_Ehdr* elf_hdr = (Elf64_Ehdr*)elf_file->address;
+
+    if (elf_hdr->e_ident[0] != ELF_MAGIC0 || 
+        elf_hdr->e_ident[1] != ELF_MAGIC1 ||
+        elf_hdr->e_ident[2] != ELF_MAGIC2 ||
+        elf_hdr->e_ident[3] != ELF_MAGIC3
+    )
+    {
+        kprint("Error: Not a valid ELF file\n");
+        hcf();
+    }
+
+    Elf64_Phdr* phdr = (Elf64_Phdr*)((uint8_t*)elf_file->address + elf_hdr->e_phoff);
+    for (size_t i = 0; i < elf_hdr->e_phnum; i++)
+    {
+        if (phdr[i].p_type == PT_LOAD)
+        {
+            kprint("Found PT_LOAD segment\n");
+            kprint("    Offset in file: "); kprint_hex_64(phdr[i].p_offset); kprint("\n");
+            kprint("    Virt Addr: "); kprint_hex_64(phdr[i].p_vaddr); kprint("\n");
+            kprint("    File size: "); kprint_hex_64(phdr[i].p_filesz); kprint("\n");
+            kprint("    Mem size: "); kprint_hex_64(phdr[i].p_memsz); kprint("\n");
+            
+            uint64_t npages = (phdr[i].p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
+            for (size_t j = 0; j < npages; j++)
+            {
+                void* loc_virt_addr = pmm_alloc_frame();
+                if (loc_virt_addr == NULL)
+                {
+                    kprint("Not enough memory!\n");
+                    hcf();
+                }
+
+                uint64_t phys_addr = (uint64_t)loc_virt_addr - hhdm_offset;
+                uint64_t targt_addr = phdr[i].p_vaddr + (j * PAGE_SIZE);
+
+                vmm_map_page(kernel_pml4, targt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+                uint64_t off = j * PAGE_SIZE;
+                uint64_t bytes = 0;
+
+                if (off < phdr[i].p_filesz)
+                {
+                    uint64_t remaining_bytes = phdr[i].p_filesz - off;
+                    bytes = remaining_bytes > PAGE_SIZE ? PAGE_SIZE : remaining_bytes;
+                }
+
+                if (bytes > 0)
+                {
+                    void* src = (uint8_t*)elf_file->address + phdr[i].p_offset + off;
+                    memcpy(loc_virt_addr, src, bytes);
+                }
+
+                if (bytes < PAGE_SIZE)
+                {
+                    memset((uint8_t*)loc_virt_addr + bytes, 0, PAGE_SIZE - bytes);
+                }
+            }
+            
+            kprint("Loaded segment at ");
+            kprint_hex_64(phdr[i].p_vaddr);
+            kprint("\n");
+        }
+    }
 
     // test kprint  
     // if we reach here, at least the inits above,
     // if not working, don't crash our OS :)))
     kprint("Hello from the kernel side!\n");
-    
+
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 
     {
@@ -207,6 +273,11 @@ void kmain(void)
         volatile uint32_t *fb_ptr = framebuffer->address;
         fb_ptr[i * (framebuffer->pitch  / 4) + i] = 0xffffff;
     }
+
+    kprint("Entering user mode...\n");
+    uint64_t phys_usr_stk = pmm_alloc_frame() - hhdm_offset;
+    vmm_map_page(kernel_pml4, USER_STACK_VIRT_ADDR, phys_usr_stk, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+    enter_user_mode(elf_hdr->e_entry, USER_STACK_VIRT_ADDR + PAGE_SIZE);
 
     asm volatile ("sti");
     hcf();
