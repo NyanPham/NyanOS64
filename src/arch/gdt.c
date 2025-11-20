@@ -10,8 +10,8 @@ union gdt_union
         struct gdt_entry kernel_code;
         struct gdt_entry kernel_data;
         struct gdt_tss_entry tss;
-        struct gdt_entry user_code;
         struct gdt_entry user_data;
+        struct gdt_entry user_code;
     } structured;
 } gdt;
 
@@ -80,8 +80,8 @@ void gdt_init(void)
     gdt_encode_entry(1, 0, 0xFFFFFFFF, GDT_ACCESS_KERNEL_CODE, GDT_GRAN_KERNEL_CODE); // kernel code segment
     gdt_encode_entry(2, 0, 0xFFFFFFFF, GDT_ACCESS_KERNEL_DATA, GDT_GRAN_KERNEL_DATA); // kernel data
     gdt_encode_tss();
-    gdt_encode_entry(5, 0, 0xFFFFFFFF, GDT_ACCESS_USER_CODE, GDT_GRAN_USER_CODE); // user code
-    gdt_encode_entry(6, 0, 0xFFFFFFFF, GDT_ACCESS_USER_DATA, GDT_GRAN_USER_DATA); // user code
+    gdt_encode_entry(5, 0, 0xFFFFFFFF, GDT_ACCESS_USER_DATA, GDT_GRAN_USER_DATA); // user code
+    gdt_encode_entry(6, 0, 0xFFFFFFFF, GDT_ACCESS_USER_CODE, GDT_GRAN_USER_CODE); // user code
 
     gdt_set((uint64_t)&gdt_ptr);
     gdt_load_tss(GDT_OFFSET_TSS);

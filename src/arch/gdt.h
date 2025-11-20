@@ -8,8 +8,8 @@
 1: Kernel Code
 2: Kernel Data
 3&4: TSS Descriptor
-5: User Code Senment (ring 3)
-6: User Data Segment (ring 3)
+5: User Data Senment (ring 3)
+6: User Code Segment (ring 3)
 */
 
 #define GDT_ENTRIES 7
@@ -47,8 +47,8 @@
 #define GDT_GRAN_USER_CODE GDT_GRAN_KERNEL_CODE
 #define GDT_GRAN_USER_DATA GDT_GRAN_KERNEL_DATA
 
-#define GDT_OFFSET_USER_CODE 0x28
-#define GDT_OFFSET_USER_DATA 0x30
+#define GDT_OFFSET_USER_DATA 0x28
+#define GDT_OFFSET_USER_CODE 0x30
 
 struct gdt_entry 
 {

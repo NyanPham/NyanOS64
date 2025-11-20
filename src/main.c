@@ -5,6 +5,7 @@
 
 #include "arch/gdt.h"
 #include "arch/idt.h"
+#include "arch/syscall.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
 #include "mem/kmalloc.h"
@@ -129,7 +130,7 @@ static void hcf(void)
 
 extern uint64_t hhdm_offset;
 extern uint64_t* kernel_pml4;
-
+extern uint64_t kern_stk_ptr;
 extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
 
 void kmain(void)
@@ -155,6 +156,8 @@ void kmain(void)
     apic_init();
     keyboard_init();
     timer_init();
+
+    syscall_init();
 
     /*=========== Kmalloc test ===========*/
     {
@@ -277,6 +280,12 @@ void kmain(void)
     kprint("Entering user mode...\n");
     uint64_t phys_usr_stk = pmm_alloc_frame() - hhdm_offset;
     vmm_map_page(kernel_pml4, USER_STACK_VIRT_ADDR, phys_usr_stk, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+    
+    asm volatile(
+        "mov %%rsp, %0" 
+        : "=m"(kern_stk_ptr)
+    );
+    
     enter_user_mode(elf_hdr->e_entry, USER_STACK_VIRT_ADDR + PAGE_SIZE);
 
     asm volatile ("sti");

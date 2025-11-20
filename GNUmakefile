@@ -122,7 +122,7 @@ limine/limine:
 	@$(MAKE) -C limine
 
 .PHONY: image
-image: bin/$(OUTPUT) limine/limine limine.conf myprog.elf
+image: bin/$(OUTPUT) limine/limine limine.conf test_user.elf
 	@echo "Creating disk image $(IMAGE_FILE)..."
 	@dd if=/dev/zero bs=1M count=64 of=$(IMAGE_FILE)
 	@PATH=$(PATH):/usr/sbin:/sbin sgdisk $(IMAGE_FILE) -n 1:2048 -t 1:ef00 -m 1
@@ -140,7 +140,6 @@ image: bin/$(OUTPUT) limine/limine limine.conf myprog.elf
 	@mcopy -i $(IMAGE_FILE)@@1M limine/BOOTX64.EFI ::/EFI/BOOT
 	@mcopy -i $(IMAGE_FILE)@@1M limine/BOOTIA32.EFI ::/EFI/BOOT
 	@echo "Image $(IMAGE_FILE) created successfully."
-
 
 .PHONY: run
 run: image
@@ -160,3 +159,11 @@ clean:
 	@rm -rf bin obj $(IMAGE_FILE)
 	@echo "Cleaning Limine directory..."
 	@rm -rf limine
+	@echo "Cleaning User-space artifacts..."
+	@rm -f test_user.o test_user.elf
+
+
+test_user.elf: test_user.asm
+	@echo "Building User-space program..."
+	nasm -f elf64 test_user.asm -o test_user.o
+	ld -nostdlib -Ttext=0x400000 test_user.o -o test_user.elf

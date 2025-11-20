@@ -1,0 +1,9 @@
+#ifndef SYSCALL_H
+#define SYSCALL_H
+
+#include <stdint.h>
+
+void syscall_init(void);
+void syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5);
+
+#endif
