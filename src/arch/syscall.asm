@@ -42,7 +42,7 @@ syscall_entry:
     pop rcx
 
     mov rsp, [usr_stk_tmp]
-    sysretq
+    o64 sysret
 
 section .bss
     usr_stk_tmp: resq 1

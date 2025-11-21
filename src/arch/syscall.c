@@ -1,7 +1,9 @@
 #include "syscall.h"
-#include "../cpu.h"
+#include "cpu.h"
 #include "gdt.h"
-#include "../drivers/serial.h" // debugging
+#include "drivers/video.h"
+#include "drivers/keyboard.h"
+#include "drivers/serial.h" // debugging
 
 #define IA32_EFER 0xC0000080
 #define IA32_STAR 0xC0000081
@@ -45,10 +47,35 @@ void syscall_init(void)
     kprint("Syscall MSRs configured.\n");
 }
 
-void syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
+uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
 {
-    if (sys_num == 0)
+    switch (sys_num)
     {
-        kprint("Syscall 0 called! Hello, again, from the kernel side :)\n");
+        case 0:
+            kprint("Kernel: Syscall 0 called (test)\n");
+            return 0;
+        case 1:
+            // Sys_write
+            kprint((const char*)arg1);
+            video_write((const char*)arg1, 0xFFFFFF);
+            return 0;
+        case 2:
+            // Sys_read
+            asm volatile("sti");
+            while (1)
+            {
+                char c = keyboard_get_char();
+                if (c != 0)
+                {
+                    return (uint64_t)c;
+                }
+                asm volatile("hlt"); // wait for the next int to save cycles
+            }
+            break;
+        default:
+            kprint("Kernel: unknown sys_num: ");
+            kprint_hex_64(sys_num);
+            kprint("\n");
+            break;
     }
 }

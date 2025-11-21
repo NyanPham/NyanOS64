@@ -15,6 +15,7 @@
 #include "drivers/timer.h"
 #include "drivers/legacy/pit.h"
 #include "drivers/legacy/pic.h"
+#include "drivers/video.h"
 #include "elf.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
@@ -129,7 +130,7 @@ static void hcf(void)
 }
 
 extern uint64_t hhdm_offset;
-extern uint64_t* kernel_pml4;
+extern uint64_t* kern_pml4;
 extern uint64_t kern_stk_ptr;
 extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
 
@@ -230,7 +231,7 @@ void kmain(void)
                 uint64_t phys_addr = (uint64_t)loc_virt_addr - hhdm_offset;
                 uint64_t targt_addr = phdr[i].p_vaddr + (j * PAGE_SIZE);
 
-                vmm_map_page(kernel_pml4, targt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+                vmm_map_page(kern_pml4, targt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
                 uint64_t off = j * PAGE_SIZE;
                 uint64_t bytes = 0;
 
@@ -269,17 +270,19 @@ void kmain(void)
         hcf();
     }
 
-    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
+    struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
+    video_init(fb);
+    video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
     
-    for (size_t i = 0; i < 100; i++)
-    {
-        volatile uint32_t *fb_ptr = framebuffer->address;
-        fb_ptr[i * (framebuffer->pitch  / 4) + i] = 0xffffff;
-    }
+    // for (size_t i = 0; i < 100; i++)
+    // {
+    //     volatile uint32_t *fb_ptr = fb->address;
+    //     fb_ptr[i * (fb->pitch  / 4) + i] = 0xffffff;
+    // }
 
     kprint("Entering user mode...\n");
     uint64_t phys_usr_stk = pmm_alloc_frame() - hhdm_offset;
-    vmm_map_page(kernel_pml4, USER_STACK_VIRT_ADDR, phys_usr_stk, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+    vmm_map_page(kern_pml4, USER_STACK_VIRT_ADDR, phys_usr_stk, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
     
     asm volatile(
         "mov %%rsp, %0" 

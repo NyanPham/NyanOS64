@@ -22,7 +22,7 @@
 #define DIVIDE_CONFIG_OFFSET 0x3E0
 
 extern uint64_t hhdm_offset;
-extern uint64_t* kernel_pml4;
+extern uint64_t* kern_pml4;
 static volatile uint32_t* g_ioapic_base = NULL;
 static volatile uint32_t* g_lapic_regs = NULL;
 
@@ -79,7 +79,7 @@ void apic_init()
     // get phys_addr and virt_addr of IA32_APIC_BASE_MSR, and do mapping
     uint64_t phys_addr = base & (~(0xFFF));
     uint64_t virt_addr = phys_addr + hhdm_offset;
-    vmm_map_page(kernel_pml4, virt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
+    vmm_map_page(kern_pml4, virt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
 
     g_lapic_regs = (volatile uint32_t*)virt_addr;
 
@@ -94,7 +94,7 @@ void apic_init()
     // get the phys_addr and virt_addr of DEFAULT_IOAPICBASE, and do mapping
     uint64_t ioapic_phys = DEFAULT_IOAPICBASE;
     uint64_t ioapic_virt = ioapic_phys + hhdm_offset;
-    vmm_map_page(kernel_pml4, ioapic_virt, ioapic_phys, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
+    vmm_map_page(kern_pml4, ioapic_virt, ioapic_phys, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
 
     g_ioapic_base = (volatile uint32_t*)ioapic_virt;
 

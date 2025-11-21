@@ -5,7 +5,7 @@
 extern void* memset(void *s, int c, size_t n);
 extern uint64_t hhdm_offset;
 
-uint64_t* kernel_pml4 = NULL;
+uint64_t* kern_pml4 = NULL;
 
 uint64_t pte_set_addr(uint64_t page_tab_entry, uint64_t phys_addr)
 {
@@ -161,14 +161,14 @@ void vmm_init()
         : "memory"
     );
 
-    kernel_pml4 = (uint64_t*)(pml4_phys + hhdm_offset);
+    kern_pml4 = (uint64_t*)(pml4_phys + hhdm_offset);
 
     void* test_page_virt = pmm_alloc_frame(); 
     if (test_page_virt) {
         uint64_t test_page_phys = (uintptr_t)test_page_virt - hhdm_offset;
         uint64_t flags = VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE;
 
-        vmm_map_page(kernel_pml4, 0xABCD000, test_page_phys, flags);
+        vmm_map_page(kern_pml4, 0xABCD000, test_page_phys, flags);
 
         volatile uint64_t* test_ptr = (uint64_t*)0xABCD000;
         *test_ptr = 0xDEADBEEF; 
@@ -177,7 +177,7 @@ void vmm_init()
             for (;;) { asm ("hlt"); }
         }
 
-        vmm_unmap_page(kernel_pml4, 0xABCD000);
+        vmm_unmap_page(kern_pml4, 0xABCD000);
         pmm_free_frame(test_page_virt);
         
         // TODO: need to handle the PAGE FAULT
