@@ -52,14 +52,19 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
     switch (sys_num)
     {
         case 0:
+        {
             kprint("Kernel: Syscall 0 called (test)\n");
             return 0;
+        }
         case 1:
+        {
             // Sys_write
             kprint((const char*)arg1);
             video_write((const char*)arg1, 0xFFFFFF);
             return 0;
+        }
         case 2:
+        {
             // Sys_read
             asm volatile("sti");
             while (1)
@@ -72,6 +77,13 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 asm volatile("hlt"); // wait for the next int to save cycles
             }
             break;
+        }
+        case 3:
+        {
+            // Sys_clear
+            video_clear();
+            break;
+        }
         default:
             kprint("Kernel: unknown sys_num: ");
             kprint_hex_64(sys_num);

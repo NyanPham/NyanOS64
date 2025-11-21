@@ -1,0 +1,134 @@
+[BITS 64]
+
+global _start
+
+section .bss
+    input_buf:   resb 64  
+    buf_idx:     resq 1
+
+section .data
+    prompt: db "NyanOS> ", 0
+    msg_hi: db "Hi! How are you doing?", 0x0A, 0
+    msg_unknown: db "I don't understand that :(", 0x0A, 0
+    newline: db 0x0A, 0
+
+    cmd_hi: db "hi", 0
+    cmd_clear: db "clear", 0
+    bs_char: db 0x08, 0
+
+section .text
+_start:
+    mov rax, 1
+    mov rsi, prompt
+    syscall
+
+    mov qword [buf_idx], 0
+
+read_loop:
+    mov rax, 2
+    syscall
+
+    cmp al, 0x0A
+    je .process_cmd
+
+    cmp al, 0x08
+    je .handle_backspace
+
+    mov rbx, [buf_idx]
+    mov byte [input_buf + rbx], al
+    mov byte [input_buf + rbx + 1], 0
+    inc qword[buf_idx]
+
+    mov rax, 1
+    lea rsi, [input_buf + rbx]
+    syscall
+
+    jmp read_loop
+
+.handle_backspace:
+    mov rbx, [buf_idx]
+    cmp rbx, 0
+    je read_loop
+
+    dec qword [buf_idx]
+    mov rbx, [buf_idx]
+    mov byte [input_buf + rbx], 0
+
+    mov rax, 1
+    mov rsi, bs_char
+    syscall 
+
+    jmp read_loop
+
+.process_cmd:
+    mov rbx, [buf_idx]
+    mov byte [input_buf + rbx], 0
+    
+    mov rax, 1
+    mov rsi, newline
+    syscall
+
+.cmp_cmd_hi:
+    mov rdi, cmd_hi
+    mov rsi, input_buf
+    mov rdx, 2
+    call compare_cmd
+
+    test rax, rax
+    jne .cmp_cmd_clear
+
+    mov rax, 1
+    mov rsi, msg_hi
+    syscall
+    jmp _start
+
+.cmp_cmd_clear:
+    mov rdi, cmd_clear
+    mov rsi, input_buf
+    mov rdx, 5
+    call compare_cmd
+
+    test rax, rax
+    jne .unknown_cmd
+
+    mov rax, 3
+    syscall
+    jmp _start
+
+.unknown_cmd:
+    mov rax, 1 
+    mov rsi, msg_unknown
+    syscall
+    jmp _start
+
+;============================================
+; compare_cmd(cmd, input, len) -> 0 if equal
+;============================================
+compare_cmd:
+    push rbp
+    mov rbp, rsp
+    push rbx
+
+    mov rcx, rdx
+    xor rdx, rdx
+    jecxz .done
+
+.cmp_char:
+    mov al, [rdi]
+    mov bl, [rsi]
+    cmp al, bl
+    jne .diff
+    inc rdi
+    inc rsi
+    loop .cmp_char
+    cmp byte [rsi], 0
+    je  .done
+    
+.diff:
+    inc rdx
+.done:
+    mov rax, rdx
+    pop rbx
+    mov rsp, rbp
+    pop rbp
+    ret

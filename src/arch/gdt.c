@@ -45,8 +45,7 @@ static void gdt_encode_entry(int num, uint32_t base, uint32_t limit, uint8_t acc
 
 static void gdt_encode_tss(void)
 {
-    void* stk = (uint8_t*)pmm_alloc_frame() + PAGE_SIZE;
-    g_tss.rsp0 = (uint64_t)stk;
+    g_tss.rsp0 = 0;
 
     uint64_t tss_base = (uint64_t)&g_tss;
     uint32_t tss_limit = sizeof(struct tss_t) - 1;
@@ -69,6 +68,11 @@ static void gdt_encode_tss(void)
 
     tss_entry->granularity |= 0x00;
     tss_entry->reserved = 0x00;
+}
+
+void tss_set_stack(uint64_t stk_ptr)
+{
+    g_tss.rsp0 = stk_ptr;
 }
 
 void gdt_init(void)

@@ -2,6 +2,8 @@
 #include "font.h"
 #include <stddef.h>
 
+#define BLACK 0x000000
+
 static struct limine_framebuffer* g_fb = NULL;
 static uint64_t g_cursor_x = 0;
 static uint64_t g_cursor_y = 0;
@@ -41,10 +43,12 @@ void video_put_char(char c, uint32_t color)
     {
         for (int x = 0; x < 8; x++) // we check each cell
         {
-            if ((glyph[y] >> x) & 1) // by checking if the pixel is meant to be on?
-            {
-                put_pixel(g_cursor_x + x, g_cursor_y + y, color);
-            }
+            // by checking if the pixel is meant to be on?
+            put_pixel(
+                g_cursor_x + x, 
+                g_cursor_y + y, 
+                (glyph[y] >> x) & 1 ? color : BLACK
+            );
         }
     }
 
@@ -60,6 +64,15 @@ void video_write(const char* str, uint32_t color)
             g_cursor_x = 0;
             g_cursor_y += 8;
         }
+        else if (*str == '\b')
+        {
+            if (g_cursor_x >= 8)
+            {
+                g_cursor_x -= 8;
+                video_put_char(' ', color);
+                g_cursor_x -= 8;
+            }
+        }
         else 
         {
             video_put_char(*str, color);
@@ -73,4 +86,18 @@ void video_write(const char* str, uint32_t color)
         
         str++;
     }
+}
+
+void video_clear()
+{
+    for (uint64_t x = 0; x < g_fb->width; x++)
+    {
+        for (uint64_t y = 0; y < g_fb->height; y++)
+        {
+            put_pixel(x, y, BLACK);
+        }
+    }
+
+    g_cursor_x = 0;
+    g_cursor_y = 0;
 }

@@ -153,6 +153,9 @@ void kmain(void)
     pmm_init(memmap_request.response, hhdm_request.response);
     vmm_init();
 
+    uint64_t tss_kern_stk = (uint64_t)pmm_alloc_frame() + PAGE_SIZE;
+    tss_set_stack(tss_kern_stk);
+
     serial_init();
     apic_init();
     keyboard_init();

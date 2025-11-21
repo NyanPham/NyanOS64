@@ -94,4 +94,6 @@ struct gdt_tss_entry
     uint32_t reserved;
 } __attribute__((packed));
 
+void tss_set_stack(uint64_t stk_ptr);
+
 #endif
