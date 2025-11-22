@@ -10,6 +10,9 @@
 #define BUF_COL 128
 #define MARGIN_BOTTOM 0x8
 
+#define FONT_W 8
+#define FONT_H 8
+
 extern uint64_t hhdm_offset;
 extern uint64_t* kern_pml4;
 extern void* memset(void *s, int c, size_t n);
@@ -19,6 +22,14 @@ static uint64_t g_cursor_x = 0;
 static uint64_t g_cursor_y = 0;
 static uint64_t g_scroll_y = 0;
 
+static uint32_t* g_fb_ptr = 0;
+static void* g_fb_addr = 0;
+static uint64_t g_fb_width = 0;
+static uint64_t g_fb_height = 0;
+static uint64_t g_pitch32 = 0;
+static uint64_t g_rows_on_screen = 0;
+static uint64_t g_visible_rows = 0;
+
 typedef struct
 {
     char glyph;
@@ -27,52 +38,68 @@ typedef struct
 
 static TermCell* buf = (TermCell*)BUF_VIRT_ENTRY;
 
+void video_init_buf()
+{
+    for (size_t i = 0; i < 75; i++)
+    {
+        void* page_virt_hhdm = pmm_alloc_frame();
+        if (page_virt_hhdm == NULL)
+        {
+            return;
+        }
+        memset(page_virt_hhdm, 0, PAGE_SIZE);
+
+        uint64_t phys_addr = (uint64_t)page_virt_hhdm - hhdm_offset;
+        uint64_t buf_virt_addr = (uint64_t)buf + (i * PAGE_SIZE);
+        vmm_map_page(
+            kern_pml4, 
+            buf_virt_addr, 
+            phys_addr, 
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE
+        );
+    }
+}
+
 void video_init(struct limine_framebuffer* fb)
 {
     g_fb = fb;
     g_cursor_x = 0;
     g_cursor_y = 0;
-
-    uint32_t* fb_ptr = (uint32_t*)g_fb->address;
-    for (size_t i = 0; i < g_fb->width * g_fb->height; i++)
-    {
-        fb_ptr[i] = 0x0; // paint black
-    }
+    g_fb_addr = g_fb->address;
+    g_fb_width = g_fb->width;
+    g_fb_height = g_fb->height;
+    g_pitch32 = g_fb->pitch / 4;
+    g_fb_ptr = (uint32_t*)g_fb_addr;
+    g_rows_on_screen = g_fb_height / FONT_H;
+    g_visible_rows = g_rows_on_screen - MARGIN_BOTTOM;
 
     video_init_buf();
+    video_clear();
 }
 
-static void put_pixel(int64_t x, int64_t y, uint32_t color)
+static inline void put_pixel(int64_t x, int64_t y, uint32_t color)
 {
-    if (x < 0 || x >= g_fb->width || y < 0 || y >= g_fb->height)
+    if (x < 0 || x >= g_fb_width || y < 0 || y >= g_fb_height)
     {
         return;
     }
 
-    // to cal the pos in RAM: (y * pitch) + (x * 4) -> (y * pitch / 4) + x;
-    // where pitch the is byte_num of 1 row
-    uint32_t* fb_ptr = (uint32_t*)g_fb->address;
-    size_t index = y * (g_fb->pitch / 4) + x;
-    fb_ptr[index] = color;
+    size_t index = y * g_pitch32 + x;
+    g_fb_ptr[index] = color;
 }
 
 static void draw_char_at(uint64_t x, uint64_t y, char c, uint32_t color)
 {
     uint8_t* glyph = (uint8_t*)font8x8_basic[(int)c];
+    uint32_t* screen_ptr = g_fb_ptr + (y * 8 * g_pitch32) + (x * 8);
 
     for (int gy = 0; gy < 8; gy++)
     {
         for (int gx = 0; gx < 8; gx++)
         {
-            uint64_t draw_x = x + gx;
-            uint64_t draw_y = y + gy;
-
-            put_pixel(
-                draw_x, 
-                draw_y, 
-                (glyph[gy] >> gx) & 1 ? color : BLACK
-            );
+            screen_ptr[gx] = (glyph[gy] >> gx) & 1 ? color : BLACK;
         }
+        screen_ptr += g_pitch32;
     }
 }   
 
@@ -85,9 +112,7 @@ void video_scroll(int delta)
         new_scroll = 0;
    }
 
-   uint64_t rows_on_screen = g_fb->height / 8;
-   uint64_t visible_rows = rows_on_screen - MARGIN_BOTTOM;
-   int64_t max_scroll = (int64_t)g_cursor_y - visible_rows + 1;
+   int64_t max_scroll = (int64_t)g_cursor_y - g_visible_rows + 1;
    if (max_scroll < 0) 
    {
         max_scroll = 0;
@@ -161,12 +186,9 @@ void video_write(const char* str, uint32_t color)
         str++;
     }
 
-    uint64_t rows_on_screen = g_fb->height / 8;
-    uint64_t visible_rows = rows_on_screen - MARGIN_BOTTOM;
-
-    if (g_cursor_y >= visible_rows)
+    if (g_cursor_y >= g_visible_rows)
     {
-        g_scroll_y = g_cursor_y - visible_rows + 1;
+        g_scroll_y = g_cursor_y - g_visible_rows + 1;
     }
     else 
     {
@@ -178,10 +200,7 @@ void video_write(const char* str, uint32_t color)
 
 void video_refresh()
 {
-    uint64_t total_rows = g_fb->height / 8;
-    uint64_t visible_rows = total_rows - MARGIN_BOTTOM;
-
-    for (uint64_t y = 0; y < total_rows; y++)
+    for (uint64_t y = 0; y < g_rows_on_screen; y++)
     {
         for (uint64_t x = 0; x < BUF_COL; x++)
         {
@@ -195,17 +214,16 @@ void video_refresh()
             TermCell cell = buf[idx];
             char c = (cell.glyph == 0) ? ' ' : cell.glyph;
             uint32_t color = (cell.glyph == 0) ? BLACK : cell.color;
-            draw_char_at(x * 8, y * 8, c, color); 
+            draw_char_at(x, y, c, color); 
         }
     }
 }
 
 void video_clear()
 {
-    uint32_t* fb_ptr = (uint32_t*)g_fb->address;
-    for (size_t i = 0; i < g_fb->width * g_fb->height; i++)
+    for (size_t i = 0; i < g_fb_width * g_fb_height; i++)
     { 
-        fb_ptr[i] = BLACK;
+        g_fb_ptr[i] = BLACK;
     }
 
     memset(buf, 0, 75 * PAGE_SIZE);
@@ -213,26 +231,4 @@ void video_clear()
     g_cursor_x = 0;
     g_cursor_y = 0;
     g_scroll_y = 0;
-}
-
-void video_init_buf()
-{
-    for (size_t i = 0; i < 75; i++)
-    {
-        void* page_virt_hhdm = pmm_alloc_frame();
-        if (page_virt_hhdm == NULL)
-        {
-            return;
-        }
-        memset(page_virt_hhdm, 0, PAGE_SIZE);
-
-        uint64_t phys_addr = (uint64_t)page_virt_hhdm - hhdm_offset;
-        uint64_t buf_virt_addr = (uint64_t)buf + (i * PAGE_SIZE);
-        vmm_map_page(
-            kern_pml4, 
-            buf_virt_addr, 
-            phys_addr, 
-            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE
-        );
-    }
 }
