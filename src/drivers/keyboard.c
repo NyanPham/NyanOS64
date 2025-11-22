@@ -7,6 +7,9 @@
 static volatile uint8_t scancode = 0;
 static volatile ring_buf kb_buf;
 
+#define PAGE_UP_CODE 0x49
+#define PAGE_DOWN_CODE 0x51
+
 // Scancode -> ASCII
 char kbd_tbl[128] = {
     0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -29,6 +32,18 @@ static void keyboard_handler(void *regs)
 
     if (scancode < 128)
     {
+        if (scancode == PAGE_UP_CODE)
+        {
+            video_scroll(-1);
+            return;
+        }
+
+        if (scancode == PAGE_DOWN_CODE)
+        {
+            video_scroll(1);
+            return;
+        }
+
         char ascii = kbd_tbl[scancode];
 
         if (ascii != 0)

@@ -4,15 +4,15 @@
 #include "drivers/video.h"
 #include "drivers/keyboard.h"
 #include "drivers/serial.h" // debugging
+#include "../io.h"
 
 #define IA32_EFER 0xC0000080
 #define IA32_STAR 0xC0000081
 #define IA32_LSTAR 0xC0000082
 #define IA32_FMASK 0xC0000084
-
 #define EFER_SCE 1
-
 #define INT_FLAGS 0x200 
+#define REBOOT_PORT 0x64
 
 extern void syscall_entry(void);
 
@@ -58,9 +58,9 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
         case 1:
         {
-            // Sys_write
+            // Sys_write(str, color)
             kprint((const char*)arg1);
-            video_write((const char*)arg1, 0xFFFFFF);
+            video_write((const char*)arg1, (uint32_t)arg2);
             return 0;
         }
         case 2:
@@ -76,18 +76,25 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 }
                 asm volatile("hlt"); // wait for the next int to save cycles
             }
-            break;
+            return 0;
         }
         case 3:
         {
             // Sys_clear
             video_clear();
-            break;
+            return 0;
+        }
+        case 4:
+        {
+            outb(REBOOT_PORT, 0xFE);
+            return 0;
         }
         default:
+        {
             kprint("Kernel: unknown sys_num: ");
             kprint_hex_64(sys_num);
             kprint("\n");
-            break;
+            return 0;
+        }
     }
 }

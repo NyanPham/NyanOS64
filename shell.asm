@@ -14,12 +14,14 @@ section .data
 
     cmd_hi: db "hi", 0
     cmd_clear: db "clear", 0
+    cmd_reboot: db "reboot", 0
     bs_char: db 0x08, 0
 
 section .text
 _start:
     mov rax, 1
     mov rsi, prompt
+    mov rdx, 0x00FF00   ; green
     syscall
 
     mov qword [buf_idx], 0
@@ -41,6 +43,7 @@ read_loop:
 
     mov rax, 1
     lea rsi, [input_buf + rbx]
+    mov rdx, 0xFFFFFF   ; white
     syscall
 
     jmp read_loop
@@ -56,6 +59,7 @@ read_loop:
 
     mov rax, 1
     mov rsi, bs_char
+    mov rdx, 0xFFFFFF
     syscall 
 
     jmp read_loop
@@ -79,6 +83,7 @@ read_loop:
 
     mov rax, 1
     mov rsi, msg_hi
+    mov rdx, 0xFFFF00   ; yellow
     syscall
     jmp _start
 
@@ -89,15 +94,29 @@ read_loop:
     call compare_cmd
 
     test rax, rax
-    jne .unknown_cmd
+    jne .cmp_cmd_reboot
 
     mov rax, 3
+    syscall
+    jmp _start
+
+.cmp_cmd_reboot:
+    mov rdi, cmd_reboot
+    mov rsi, input_buf
+    mov rdx, 6
+    call compare_cmd
+
+    test rax, rax
+    jne .unknown_cmd
+
+    mov rax, 4
     syscall
     jmp _start
 
 .unknown_cmd:
     mov rax, 1 
     mov rsi, msg_unknown
+    mov rdx, 0xFF0000   ; red
     syscall
     jmp _start
 
