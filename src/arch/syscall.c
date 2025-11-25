@@ -53,13 +53,13 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
     {
         case 0:
         {
-            kprint("Kernel: Syscall 0 called (test)\n");
+            // kprint("Kernel: Syscall 0 called (test)\n");
             return 0;
         }
         case 1:
         {
             // Sys_write(str, color)
-            kprint((const char*)arg1);
+            // kprint((const char*)arg1);
             video_write((const char*)arg1, (uint32_t)arg2);
             return 0;
         }

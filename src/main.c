@@ -16,6 +16,7 @@
 #include "drivers/legacy/pit.h"
 #include "drivers/legacy/pic.h"
 #include "drivers/video.h"
+#include "sched/sched.h"
 #include "elf.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
@@ -162,6 +163,7 @@ void kmain(void)
     timer_init();
 
     syscall_init();
+    sched_init();
 
     /*=========== Kmalloc test ===========*/
     {
@@ -276,24 +278,10 @@ void kmain(void)
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     video_init(fb);
     video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
+ 
+    kprint("Creating User Task...\n");
+    sched_create_task(elf_hdr->e_entry);
     
-    // for (size_t i = 0; i < 100; i++)
-    // {
-    //     volatile uint32_t *fb_ptr = fb->address;
-    //     fb_ptr[i * (fb->pitch  / 4) + i] = 0xffffff;
-    // }
-
-    kprint("Entering user mode...\n");
-    uint64_t phys_usr_stk = pmm_alloc_frame() - hhdm_offset;
-    vmm_map_page(kern_pml4, USER_STACK_VIRT_ADDR, phys_usr_stk, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
-    
-    asm volatile(
-        "mov %%rsp, %0" 
-        : "=m"(kern_stk_ptr)
-    );
-    
-    enter_user_mode(elf_hdr->e_entry, USER_STACK_VIRT_ADDR + PAGE_SIZE);
-
     asm volatile ("sti");
     hcf();
 }

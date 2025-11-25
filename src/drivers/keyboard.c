@@ -48,9 +48,9 @@ static void keyboard_handler(void *regs)
 
         if (ascii != 0)
         {
-            kprint("KEY: ");
-            serial_write(ascii);
-            kprint("\n"); 
+            // kprint("KEY: ");
+            // serial_write(ascii);
+            // kprint("\n"); 
 
             kb_buf.buf[kb_buf.head] = ascii;
             kb_buf.head++;

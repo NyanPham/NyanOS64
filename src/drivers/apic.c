@@ -20,6 +20,7 @@
 #define TIMER_OFFSET 0x320
 #define INITIAL_COUNT_OFFSET 0x380
 #define DIVIDE_CONFIG_OFFSET 0x3E0
+#define TPR_OFFSET 0x80
 
 extern uint64_t hhdm_offset;
 extern uint64_t* kern_pml4;
@@ -85,11 +86,12 @@ void apic_init()
 
     // Enable LAPIC in the CPU
     g_lapic_regs[SPURIOUS_INT_REG_OFFSET / sizeof(uint32_t)] |= (IA32_APIC_BASE_BSP | 0xFF);
+    g_lapic_regs[TPR_OFFSET / sizeof(uint32_t)] = 0;
 
     // Timer
-    g_lapic_regs[TIMER_OFFSET / sizeof(uint32_t)] |= (0x20 | (1 << 17)); // Set up the timer, 0x20 is our irq0_stub, bit 17 is the "Periodic" mode
+    g_lapic_regs[TIMER_OFFSET / sizeof(uint32_t)] = (0x20 | (1 << 17)); // Set up the timer, 0x20 is our irq0_stub, bit 17 is the "Periodic" mode
     g_lapic_regs[DIVIDE_CONFIG_OFFSET / sizeof(uint32_t)] |= 0x03;  // divide config to /16
-    g_lapic_regs[INITIAL_COUNT_OFFSET / sizeof(uint32_t)] = 10000000;// initial count
+    g_lapic_regs[INITIAL_COUNT_OFFSET / sizeof(uint32_t)] = 0x10000;// initial count
 
     // get the phys_addr and virt_addr of DEFAULT_IOAPICBASE, and do mapping
     uint64_t ioapic_phys = DEFAULT_IOAPICBASE;

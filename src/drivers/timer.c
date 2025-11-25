@@ -1,5 +1,8 @@
 #include "timer.h"
 #include "arch/irq.h"
+#include "sched/sched.h"
+#include "drivers/serial.h"
+#include "drivers/apic.h"
 
 static volatile uint64_t g_ticks = 0;
 
@@ -7,6 +10,9 @@ static void timer_handler(void* regs)
 {
     (void)regs;
     g_ticks++;
+
+    lapic_send_eoi();
+    schedule();
 }
 
 void timer_init()
