@@ -1,6 +1,5 @@
 # Model Specific Registers
 
-
 ## Definition
 They are the collection of registers that allow configuration of OS-relevant things such as memory type-range, sysenter/sysexit, local APIC, etc.
 

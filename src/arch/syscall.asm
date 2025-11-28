@@ -1,5 +1,9 @@
 [BITS 64]
 
+section .bss
+    usr_stk_tmp: resq 1
+    kern_stk_ptr: resq 1
+
 extern syscall_handler
 global kern_stk_ptr
 global syscall_entry
@@ -43,7 +47,3 @@ syscall_entry:
 
     mov rsp, [usr_stk_tmp]
     o64 sysret
-
-section .bss
-    usr_stk_tmp: resq 1
-    kern_stk_ptr: resq 1

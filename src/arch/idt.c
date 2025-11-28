@@ -30,7 +30,7 @@ extern void irq15_stub(void);
 // The Interrupt Descriptor Table (IDT).
 // This is an array of 256 IDT entries, each corresponding to an interrupt vector.
 __attribute((aligned(0x10)))
-static idt_entry_t idt[256];
+static idt_entry_t idt[IDT_MAX_DESCRIPTORS];
 
 // The IDT Register (IDTR).
 // This structure is loaded into the CPU to tell it where the IDT is.

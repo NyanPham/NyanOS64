@@ -66,7 +66,7 @@ void* kmalloc(size_t size)
 {
     if (size >= (PAGE_SIZE - sizeof(FreeBlock)))
     {
-        return NULL; // We'll handle the edge case of allocating larger size later.
+        return NULL; // TODO: we'll handle the edge case of allocating larger size later.
     }
     
     FreeBlock *blk = find_free_block(size);

@@ -66,14 +66,16 @@ void pic_send_eoi(uint8_t irq);
 
 /**
  * @brief Masks an IRQ line, effectively disabling it.
- * The PIC will ignore any requests from a masked IRQ line.
+ * This sets the corresponding bit in the Interrupt Mask Register (IMR). The PIC
+ * will ignore any requests from a masked IRQ line.
  * @param irq The IRQ line (0-15) to disable.
  */
 void pic_set_mask(uint8_t irq);
 
 /**
  * @brief Clears the mask for an IRQ line, effectively enabling it.
- * This allows the PIC to receive and forward interrupt requests from this line.
+ * This clears the corresponding bit in the Interrupt Mask Register (IMR),
+ * allowing the PIC to receive and forward interrupt requests from this line.
  * @param irq The IRQ line (0-15) to enable.
  */
 void pic_clear_mask(uint8_t irq);
@@ -91,9 +93,10 @@ void pic_disabled(void);
  * internal 8-bit registers on each PIC chip that work together to manage
  * interrupt handling.
  *
- * 1.  **Request Arrives**: A hardware device (e.g., keyboard) triggers its
- *     IRQ line. The PIC sets the corresponding bit in the **IRR**. This means
- *     "an interrupt is waiting".
+ * 1.  **Request Arrives**: A hardware device triggers its IRQ line. If this
+ *     interrupt is not masked in the **IMR** (Interrupt Mask Register), the PIC
+ *     sets the corresponding bit in the **IRR**. This means "an interrupt is
+ *     waiting to be processed".
  *
  * 2.  **PIC Signals CPU**: The PIC signals the CPU that an interrupt is pending.
  *

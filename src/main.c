@@ -217,11 +217,11 @@ void kmain(void)
     {
         if (phdr[i].p_type == PT_LOAD)
         {
-            kprint("Found PT_LOAD segment\n");
-            kprint("    Offset in file: "); kprint_hex_64(phdr[i].p_offset); kprint("\n");
-            kprint("    Virt Addr: "); kprint_hex_64(phdr[i].p_vaddr); kprint("\n");
-            kprint("    File size: "); kprint_hex_64(phdr[i].p_filesz); kprint("\n");
-            kprint("    Mem size: "); kprint_hex_64(phdr[i].p_memsz); kprint("\n");
+            // kprint("Found PT_LOAD segment\n");
+            // kprint("    Offset in file: "); kprint_hex_64(phdr[i].p_offset); kprint("\n");
+            // kprint("    Virt Addr: "); kprint_hex_64(phdr[i].p_vaddr); kprint("\n");
+            // kprint("    File size: "); kprint_hex_64(phdr[i].p_filesz); kprint("\n");
+            // kprint("    Mem size: "); kprint_hex_64(phdr[i].p_memsz); kprint("\n");
             
             uint64_t npages = (phdr[i].p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
             for (size_t j = 0; j < npages; j++)

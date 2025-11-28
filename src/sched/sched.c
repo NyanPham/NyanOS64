@@ -25,9 +25,9 @@ extern void task_start_stub(void);
 
 /*
  * Allocs mem for a Task
- * Assign a part of Kernel Stack to handle when interrupted
+ * Assigns a part of Kernel Stack to handle when interrupted
  * Allocs user stack for the program to run
- * Make fake task scene
+ * Makes fake task scene
  */
 void sched_create_task(uint64_t entry)
 {

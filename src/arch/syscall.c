@@ -6,11 +6,11 @@
 #include "drivers/serial.h" // debugging
 #include "../io.h"
 
-#define IA32_EFER 0xC0000080
-#define IA32_STAR 0xC0000081
-#define IA32_LSTAR 0xC0000082
-#define IA32_FMASK 0xC0000084
-#define EFER_SCE 1
+#define IA32_EFER 0xC0000080    // a register that allows enabling the SYSCALL/SYSRET instruction (Extended Feature Enable Register)
+#define IA32_STAR 0xC0000081    // a register that stores segment selectors for fast system calls, mostly for SYSCALL
+#define IA32_LSTAR 0xC0000082   // a register to hold the 64-bit virt_addr of the syscall handler
+#define IA32_FMASK 0xC0000084   // a register that masks (clears) specific flags in RFLAGS during a syscall
+#define EFER_SCE 1              
 #define INT_FLAGS 0x200 
 #define REBOOT_PORT 0x64
 

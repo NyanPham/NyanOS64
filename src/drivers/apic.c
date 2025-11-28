@@ -21,6 +21,8 @@
 #define INITIAL_COUNT_OFFSET 0x380
 #define DIVIDE_CONFIG_OFFSET 0x3E0
 #define TPR_OFFSET 0x80
+#define IOREGSEL_OFFSET 0x00
+#define IOWIN_OFFSET 0x10
 
 extern uint64_t hhdm_offset;
 extern uint64_t* kern_pml4;
@@ -41,15 +43,15 @@ bool check_apic()
 // Read a 32-bit reg from I/O APIC
 static uint32_t ioapic_read(uint32_t reg)
 {
-    g_ioapic_base[0] = reg & 0xFF;
-    return g_ioapic_base[4];
+    g_ioapic_base[IOREGSEL_OFFSET] = reg & 0xFF;    // select reg port
+    return g_ioapic_base[IOWIN_OFFSET / sizeof(uint32_t)]; // data port
 }
 
 // Write a 32-bit reg to I/O APIC
 static void ioapic_write(uint32_t reg, uint32_t val)
 {
-    g_ioapic_base[0] = reg & 0xFF;
-    g_ioapic_base[4] = val;
+    g_ioapic_base[IOREGSEL_OFFSET] = reg & 0xFF;    // select reg port
+    g_ioapic_base[IOWIN_OFFSET / sizeof(uint32_t)] = val; // data port
 }
 
 void apic_init()
@@ -78,7 +80,7 @@ void apic_init()
     */
 
     // get phys_addr and virt_addr of IA32_APIC_BASE_MSR, and do mapping
-    uint64_t phys_addr = base & (~(0xFFF));
+    uint64_t phys_addr = base & (~(0xFFF));         // We remove the lowest 12 bits as they are for flags
     uint64_t virt_addr = phys_addr + hhdm_offset;
     vmm_map_page(kern_pml4, virt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
 
@@ -105,9 +107,9 @@ void apic_init()
     ioapic_write(0x13, 0x00);
 
     // Test, read the I/O APIC chip's version at the 0x01 reg
-    kprint("Version is: ");
-    kprint_hex_32(ioapic_read(0x01));
-    kprint("\n");
+    // kprint("Version is: ");
+    // kprint_hex_32(ioapic_read(0x01));
+    // kprint("\n");
 }
 
 void lapic_send_eoi(void)
