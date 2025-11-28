@@ -3,14 +3,14 @@
 
 #include <stdint.h>
 
-#define KB_BUF_SIZE 256
+#define kbd_buf_SIZE 0x100 // 256
 
 typedef struct
 {
-    char buf[KB_BUF_SIZE];
+    char buf[kbd_buf_SIZE];
     uint8_t head;
     uint8_t tail;
-} ring_buf;
+} kbd_buf_t;
 
 char keyboard_get_char(void); 
 void keyboard_init(void);

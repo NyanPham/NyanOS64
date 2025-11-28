@@ -2,10 +2,10 @@
 #include "vmm.h"
 #include "pmm.h"
 
-extern void* memset(void *s, int c, size_t n);
-extern uint64_t hhdm_offset;
+extern void* memset(void *s, int c, size_t n);  // from main.c
+extern uint64_t hhdm_offset; // from pmm.c
 
-uint64_t* kern_pml4 = NULL;
+uint64_t* kern_pml4 = NULL; // shared to other components
 
 uint64_t pte_set_addr(uint64_t page_tab_entry, uint64_t phys_addr)
 {
@@ -21,10 +21,10 @@ uint64_t pte_get_addr(uint64_t page_tab_entry)
 
 static uint64_t* vmm_walk_to_pte(uint64_t* pml4_virt, uint64_t virt_addr, bool create_if_missing)
 {
-    size_t pml4_idx = (virt_addr >> PML4_INDEX) & 0x1FF;
-    size_t pdpt_idx = (virt_addr >> PDPT_INDEX) & 0x1FF;
-    size_t pd_idx = (virt_addr >> PD_INDEX) & 0x1FF;
-    size_t pt_idx = (virt_addr >> PT_INDEX) & 0x1FF;
+    size_t pml4_idx = (virt_addr >> PML4_INDEX) & 0x1FF;    // PML4
+    size_t pdpt_idx = (virt_addr >> PDPT_INDEX) & 0x1FF;    // Page Directory Pointer Table
+    size_t pd_idx = (virt_addr >> PD_INDEX) & 0x1FF;        // Page Directory
+    size_t pt_idx = (virt_addr >> PT_INDEX) & 0x1FF;        // Page Table
 
     uint64_t pml4_entry = pml4_virt[pml4_idx];
 
@@ -155,7 +155,7 @@ void vmm_init()
 {
     uint64_t pml4_phys;
     asm volatile(
-        "mov %%cr3, %0"
+        "mov %%cr3, %0"     // system control-register 3 holds the PML4 base
         : "=r"(pml4_phys)
         : 
         : "memory"

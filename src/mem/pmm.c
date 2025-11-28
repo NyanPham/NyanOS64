@@ -17,7 +17,7 @@
 
 // Global variables that manage the state of our physical memory
 
-uint64_t hhdm_offset = 0;    // the begin of the virtual address provided by limine  
+uint64_t hhdm_offset = 0;    // the begin of the virtual address provided by limine, this is a shared by other components as well
 static uint8_t* bitmap = NULL;
 static uint64_t highest_addr = 0;
 static size_t bitmap_size = 0;
