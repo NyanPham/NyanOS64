@@ -18,6 +18,7 @@
 #include "drivers/video.h"
 #include "sched/sched.h"
 #include "elf.h"
+#include "fs/tar.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
 
@@ -199,8 +200,18 @@ void kmain(void)
         hcf();
     } 
 
-    struct limine_file* elf_file = module_request.response->modules[0];
-    Elf64_Ehdr* elf_hdr = (Elf64_Ehdr*)elf_file->address;
+    if (module_request.response->module_count >= 2)
+    {
+        struct limine_file* tar_file = module_request.response->modules[1];
+        tar_init(tar_file->address);
+    }
+    else
+    {
+        kprint("Warning: ROOTFS.TAR not found.\n");
+    }
+
+    struct limine_file* shell_file = module_request.response->modules[0];
+    Elf64_Ehdr* elf_hdr = (Elf64_Ehdr*)shell_file->address;
 
     if (elf_hdr->e_ident[0] != ELF_MAGIC0 || 
         elf_hdr->e_ident[1] != ELF_MAGIC1 ||
@@ -212,7 +223,7 @@ void kmain(void)
         hcf();
     }
 
-    Elf64_Phdr* phdr = (Elf64_Phdr*)((uint8_t*)elf_file->address + elf_hdr->e_phoff);
+    Elf64_Phdr* phdr = (Elf64_Phdr*)((uint8_t*)shell_file->address + elf_hdr->e_phoff);
     for (size_t i = 0; i < elf_hdr->e_phnum; i++)
     {
         if (phdr[i].p_type == PT_LOAD)
@@ -248,7 +259,7 @@ void kmain(void)
 
                 if (bytes > 0)
                 {
-                    void* src = (uint8_t*)elf_file->address + phdr[i].p_offset + off;
+                    void* src = (uint8_t*)shell_file->address + phdr[i].p_offset + off;
                     memcpy(loc_virt_addr, src, bytes);
                 }
 

@@ -122,7 +122,7 @@ limine/limine:
 	@$(MAKE) -C limine
 
 .PHONY: image
-image: bin/$(OUTPUT) limine/limine limine.conf shell.elf
+image: bin/$(OUTPUT) limine/limine limine.conf shell.elf rootfs.tar
 	@echo "Creating disk image $(IMAGE_FILE)..."
 	@dd if=/dev/zero bs=1M count=64 of=$(IMAGE_FILE)
 	@PATH=$(PATH):/usr/sbin:/sbin sgdisk $(IMAGE_FILE) -n 1:2048 -t 1:ef00 -m 1
@@ -136,6 +136,7 @@ image: bin/$(OUTPUT) limine/limine limine.conf shell.elf
 	@mcopy -i $(IMAGE_FILE)@@1M bin/$(OUTPUT) ::/boot
 	@mcopy -i $(IMAGE_FILE)@@1M limine.conf ::/boot/limine.conf
 	@mcopy -i $(IMAGE_FILE)@@1M shell.elf ::/boot/SHELL.ELF
+	@mcopy -i $(IMAGE_FILE)@@1M rootfs.tar ::/boot/ROOTFS.TAR
 	@mcopy -i $(IMAGE_FILE)@@1M limine/limine-bios.sys ::/boot/limine/limine-bios.sys	
 	@mcopy -i $(IMAGE_FILE)@@1M limine/BOOTX64.EFI ::/EFI/BOOT
 	@mcopy -i $(IMAGE_FILE)@@1M limine/BOOTIA32.EFI ::/EFI/BOOT
@@ -161,9 +162,15 @@ clean:
 	@rm -rf limine
 	@echo "Cleaning User-space artifacts..."
 	@rm -f shell.o shell.elf
+	@rm -f rootfs.tar
 
 
 shell.elf: shell.asm
 	@echo "Building User-space program..."
 	nasm -f elf64 shell.asm -o shell.o
 	ld -nostdlib -Ttext=0x400000 shell.o -o shell.elf
+
+rootfs.tar:
+	@echo "Creating rootfs.tar..."
+	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
+
