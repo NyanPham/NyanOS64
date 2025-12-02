@@ -14,5 +14,6 @@ typedef struct Task
 void sched_create_task(uint64_t entry);
 void sched_init(void);
 void schedule(void);
+void sched_exit(void);
 
 #endif

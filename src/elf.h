@@ -53,4 +53,6 @@ typedef struct
     uint64_t p_align; 
 } __attribute((packed)) Elf64_Phdr;
 
+uint64_t elf_load(const char* fname);
+
 #endif

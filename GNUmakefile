@@ -162,6 +162,7 @@ clean:
 	@rm -rf limine
 	@echo "Cleaning User-space artifacts..."
 	@rm -f shell.o shell.elf
+	@rm -f hello.o hello.elf
 	@rm -f rootfs.tar
 
 
@@ -170,7 +171,14 @@ shell.elf: shell.asm
 	nasm -f elf64 shell.asm -o shell.o
 	ld -nostdlib -Ttext=0x400000 shell.o -o shell.elf
 
-rootfs.tar:
+rootfs.tar: shell.elf hello.elf
 	@echo "Creating rootfs.tar..."
+	cp shell.elf rootfs/
+	cp hello.elf rootfs/
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
+
+hello.elf: progs/hello.asm
+	@echo "Building Hello program..."
+	nasm -f elf64 progs/hello.asm -o hello.o
+	ld -nostdlib -Ttext=0x800000 hello.o -o hello.elf
 

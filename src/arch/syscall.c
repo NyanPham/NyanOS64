@@ -7,7 +7,10 @@
 #include "../io.h"
 #include "fs/tar.h"
 #include "../string.h"
+#include "elf.h"
+#include "sched/sched.h"
 #include <stddef.h>
+
 
 #define IA32_EFER 0xC0000080    // a register that allows enabling the SYSCALL/SYSRET instruction (Extended Feature Enable Register)
 #define IA32_STAR 0xC0000081    // a register that stores segment selectors for fast system calls, mostly for SYSCALL
@@ -109,6 +112,24 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             }
             char* dest = (char*)arg2;
             strcpy(dest, content);
+            return 0;
+        }
+        case 7:
+        {
+            // sys_exec
+            uint64_t entry = elf_load((const char*)(arg1));
+            if (entry == NULL)
+            {
+                return -1;
+            }
+
+            sched_create_task(entry);
+            return 0;
+        }
+        case 8:
+        {
+            // sys_exit
+            sched_exit();
             return 0;
         }
         default:

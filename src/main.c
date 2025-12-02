@@ -193,6 +193,17 @@ void kmain(void)
         }
     }
 
+    
+    // check if we have the framebuffer to render on screen
+    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 
+    {
+        hcf();
+    }
+
+    struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
+    video_init(fb);
+    video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
+
     /*=========== Test the initramfs ===========*/
     if (module_request.response == NULL || module_request.response->module_count < 1)
     {
@@ -210,69 +221,19 @@ void kmain(void)
         kprint("Warning: ROOTFS.TAR not found.\n");
     }
 
-    struct limine_file* shell_file = module_request.response->modules[0];
-    Elf64_Ehdr* elf_hdr = (Elf64_Ehdr*)shell_file->address;
+    kprint("Loading Shell...\n");
 
-    if (elf_hdr->e_ident[0] != ELF_MAGIC0 || 
-        elf_hdr->e_ident[1] != ELF_MAGIC1 ||
-        elf_hdr->e_ident[2] != ELF_MAGIC2 ||
-        elf_hdr->e_ident[3] != ELF_MAGIC3
-    )
+    uint64_t shell_entry = elf_load("shell.elf");
+
+    if (shell_entry != 0)
     {
-        kprint("Error: Not a valid ELF file\n");
-        hcf();
+        kprint("Creating User Task...\n");
+        sched_create_task(shell_entry);
     }
-
-    Elf64_Phdr* phdr = (Elf64_Phdr*)((uint8_t*)shell_file->address + elf_hdr->e_phoff);
-    for (size_t i = 0; i < elf_hdr->e_phnum; i++)
+    else 
     {
-        if (phdr[i].p_type == PT_LOAD)
-        {
-            // kprint("Found PT_LOAD segment\n");
-            // kprint("    Offset in file: "); kprint_hex_64(phdr[i].p_offset); kprint("\n");
-            // kprint("    Virt Addr: "); kprint_hex_64(phdr[i].p_vaddr); kprint("\n");
-            // kprint("    File size: "); kprint_hex_64(phdr[i].p_filesz); kprint("\n");
-            // kprint("    Mem size: "); kprint_hex_64(phdr[i].p_memsz); kprint("\n");
-            
-            uint64_t npages = (phdr[i].p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
-            for (size_t j = 0; j < npages; j++)
-            {
-                void* loc_virt_addr = pmm_alloc_frame();
-                if (loc_virt_addr == NULL)
-                {
-                    kprint("Not enough memory!\n");
-                    hcf();
-                }
-
-                uint64_t phys_addr = (uint64_t)loc_virt_addr - hhdm_offset;
-                uint64_t targt_addr = phdr[i].p_vaddr + (j * PAGE_SIZE);
-
-                vmm_map_page(kern_pml4, targt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
-                uint64_t off = j * PAGE_SIZE;
-                uint64_t bytes = 0;
-
-                if (off < phdr[i].p_filesz)
-                {
-                    uint64_t remaining_bytes = phdr[i].p_filesz - off;
-                    bytes = remaining_bytes > PAGE_SIZE ? PAGE_SIZE : remaining_bytes;
-                }
-
-                if (bytes > 0)
-                {
-                    void* src = (uint8_t*)shell_file->address + phdr[i].p_offset + off;
-                    memcpy(loc_virt_addr, src, bytes);
-                }
-
-                if (bytes < PAGE_SIZE)
-                {
-                    memset((uint8_t*)loc_virt_addr + bytes, 0, PAGE_SIZE - bytes);
-                }
-            }
-            
-            kprint("Loaded segment at ");
-            kprint_hex_64(phdr[i].p_vaddr);
-            kprint("\n");
-        }
+        kprint("Failed to load Shell!\n");
+        hcf();
     }
 
     // test kprint  
@@ -280,19 +241,6 @@ void kmain(void)
     // if not working, don't crash our OS :)))
     kprint("Hello from the kernel side!\n");
 
-    // check if we have the framebuffer to render on screen
-    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 
-    {
-        hcf();
-    }
-
-    struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
-    video_init(fb);
-    video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
- 
-    kprint("Creating User Task...\n");
-    sched_create_task(elf_hdr->e_entry);
-    
     asm volatile ("sti");
     hcf();
 }

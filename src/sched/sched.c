@@ -3,6 +3,8 @@
 #include "mem/vmm.h"
 #include "mem/kmalloc.h"
 #include "arch/gdt.h"
+#include "drivers/serial.h"
+
 #include <stddef.h>
 
 #define NEW_TASK_SS (GDT_OFFSET_USER_DATA | 0x3)
@@ -131,4 +133,40 @@ void schedule(void)
     and pass new RSP value from next_task->kern_stk_rsp
     */
     switch_to_task(&prev_task->kern_stk_rsp, next_task->kern_stk_rsp);
+}
+
+void sched_exit(void)
+{
+    if (g_curr_task->pid == 0)
+    {
+        kprint("Kernel cannot exit!\n");
+        return;
+    }
+
+    // find the task's predecessor
+    Task* prev = g_curr_task;
+    while (prev->next != g_curr_task)
+    {
+        prev = prev->next;
+    }
+
+    // unlink it
+    Task* task_to_kill = g_curr_task;
+    Task* next_task = task_to_kill->next;
+    prev->next = next_task;
+    
+    if (g_head_task == task_to_kill)
+    {
+        g_head_task = next_task;
+    }
+
+    g_curr_task = next_task;
+
+    tss_set_stack(next_task->kern_stk_top);
+    kern_stk_ptr = next_task->kern_stk_top;
+
+    kfree(task_to_kill);
+    kprint("Task exited. Switching to next...");
+
+    switch_to_task(NULL, next_task->kern_stk_rsp);
 }

@@ -18,6 +18,7 @@ section .data
     cmd_reboot: db "reboot", 0
     cmd_ls: db "ls", 0
     cmd_cat: db "cat ", 0
+    cmd_exec: db "exec ", 0
     msg_file_not_found: db "Error: file not found!", 0x0A, 0
     bs_char: db 0x08, 0
 
@@ -137,7 +138,7 @@ read_loop:
     call starts_with
 
     test rax, rax
-    jne .unknown_cmd
+    jne .cmp_cmd_exec
 
     lea rsi, [input_buf+4] ; fname
     lea rdx, file_content
@@ -159,6 +160,31 @@ read_loop:
     mov rsi, newline
     syscall
     
+    jmp _start
+
+.cmp_cmd_exec:
+    mov rdi, cmd_exec
+    mov rsi, input_buf
+    mov rdx, 5
+    call starts_with
+
+    test rax, rax
+    jne .unknown_cmd
+
+    lea rsi, [input_buf+5] ; fname
+    mov rax, 7
+    syscall
+
+    test rax, rax
+    jz .exec_succ
+
+    mov rax, 1
+    mov rsi, msg_file_not_found
+    mov rdx, 0xFF0000
+    syscall
+    jmp _start
+
+.exec_succ:
     jmp _start
 
 .unknown_cmd:
