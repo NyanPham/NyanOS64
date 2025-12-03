@@ -5,6 +5,12 @@ global switch_to_task
 ; void switch_to_task(prev_rsp_ptr, next_rsp)
 ;======================================================
 switch_to_task:
+    ; first, we check if the prev_rsp_ptr is null
+    ; if null, means the prev task dies, we don't
+    ; care its stacks
+    test rdi, rdi
+    jz .skip_save
+
     ; first, we push the callee-saved registers
     push R15
     push R14
@@ -15,6 +21,7 @@ switch_to_task:
 
     ; second, we do the stack swap
     mov qword [rdi], rsp    ; save the old rsp into [prev_rsp_ptr]
+.skip_save:
     mov rsp, rsi            ; store new rsp
 
     ; finally, restore the new task and jmp to it

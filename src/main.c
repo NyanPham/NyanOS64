@@ -18,6 +18,7 @@
 #include "drivers/video.h"
 #include "sched/sched.h"
 #include "elf.h"
+#include "fs/tar.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
 
@@ -192,83 +193,7 @@ void kmain(void)
         }
     }
 
-    /*=========== Test the initramfs ===========*/
-    if (module_request.response == NULL || module_request.response->module_count < 1)
-    {
-        kprint("Error: no module found (initramfs)\n");
-        hcf();
-    } 
-
-    struct limine_file* elf_file = module_request.response->modules[0];
-    Elf64_Ehdr* elf_hdr = (Elf64_Ehdr*)elf_file->address;
-
-    if (elf_hdr->e_ident[0] != ELF_MAGIC0 || 
-        elf_hdr->e_ident[1] != ELF_MAGIC1 ||
-        elf_hdr->e_ident[2] != ELF_MAGIC2 ||
-        elf_hdr->e_ident[3] != ELF_MAGIC3
-    )
-    {
-        kprint("Error: Not a valid ELF file\n");
-        hcf();
-    }
-
-    Elf64_Phdr* phdr = (Elf64_Phdr*)((uint8_t*)elf_file->address + elf_hdr->e_phoff);
-    for (size_t i = 0; i < elf_hdr->e_phnum; i++)
-    {
-        if (phdr[i].p_type == PT_LOAD)
-        {
-            // kprint("Found PT_LOAD segment\n");
-            // kprint("    Offset in file: "); kprint_hex_64(phdr[i].p_offset); kprint("\n");
-            // kprint("    Virt Addr: "); kprint_hex_64(phdr[i].p_vaddr); kprint("\n");
-            // kprint("    File size: "); kprint_hex_64(phdr[i].p_filesz); kprint("\n");
-            // kprint("    Mem size: "); kprint_hex_64(phdr[i].p_memsz); kprint("\n");
-            
-            uint64_t npages = (phdr[i].p_memsz + PAGE_SIZE - 1) / PAGE_SIZE;
-            for (size_t j = 0; j < npages; j++)
-            {
-                void* loc_virt_addr = pmm_alloc_frame();
-                if (loc_virt_addr == NULL)
-                {
-                    kprint("Not enough memory!\n");
-                    hcf();
-                }
-
-                uint64_t phys_addr = (uint64_t)loc_virt_addr - hhdm_offset;
-                uint64_t targt_addr = phdr[i].p_vaddr + (j * PAGE_SIZE);
-
-                vmm_map_page(kern_pml4, targt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
-                uint64_t off = j * PAGE_SIZE;
-                uint64_t bytes = 0;
-
-                if (off < phdr[i].p_filesz)
-                {
-                    uint64_t remaining_bytes = phdr[i].p_filesz - off;
-                    bytes = remaining_bytes > PAGE_SIZE ? PAGE_SIZE : remaining_bytes;
-                }
-
-                if (bytes > 0)
-                {
-                    void* src = (uint8_t*)elf_file->address + phdr[i].p_offset + off;
-                    memcpy(loc_virt_addr, src, bytes);
-                }
-
-                if (bytes < PAGE_SIZE)
-                {
-                    memset((uint8_t*)loc_virt_addr + bytes, 0, PAGE_SIZE - bytes);
-                }
-            }
-            
-            kprint("Loaded segment at ");
-            kprint_hex_64(phdr[i].p_vaddr);
-            kprint("\n");
-        }
-    }
-
-    // test kprint  
-    // if we reach here, at least the inits above,
-    // if not working, don't crash our OS :)))
-    kprint("Hello from the kernel side!\n");
-
+    
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 
     {
@@ -278,10 +203,44 @@ void kmain(void)
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     video_init(fb);
     video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
- 
-    kprint("Creating User Task...\n");
-    sched_create_task(elf_hdr->e_entry);
-    
+
+    /*=========== Test the initramfs ===========*/
+    if (module_request.response == NULL || module_request.response->module_count < 1)
+    {
+        kprint("Error: no module found (initramfs)\n");
+        hcf();
+    } 
+
+    if (module_request.response->module_count >= 2)
+    {
+        struct limine_file* tar_file = module_request.response->modules[1];
+        tar_init(tar_file->address);
+    }
+    else
+    {
+        kprint("Warning: ROOTFS.TAR not found.\n");
+    }
+
+    kprint("Loading Shell...\n");
+
+    uint64_t shell_entry = elf_load("shell.elf");
+
+    if (shell_entry != 0)
+    {
+        kprint("Creating User Task...\n");
+        sched_create_task(shell_entry);
+    }
+    else 
+    {
+        kprint("Failed to load Shell!\n");
+        hcf();
+    }
+
+    // test kprint  
+    // if we reach here, at least the inits above,
+    // if not working, don't crash our OS :)))
+    kprint("Hello from the kernel side!\n");
+
     asm volatile ("sti");
     hcf();
 }

@@ -2,6 +2,7 @@
 #include "io.h"
 #include "arch/irq.h"
 #include "serial.h"
+#include "video.h"
 // #include "pic.h"
 
 static volatile uint8_t scancode = 0;

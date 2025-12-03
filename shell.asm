@@ -5,6 +5,7 @@ global _start
 section .bss
     input_buf:   resb 64  
     buf_idx:     resq 1
+    file_content: resb 2048
 
 section .data
     prompt: db "NyanOS> ", 0
@@ -15,6 +16,10 @@ section .data
     cmd_hi: db "hi", 0
     cmd_clear: db "clear", 0
     cmd_reboot: db "reboot", 0
+    cmd_ls: db "ls", 0
+    cmd_cat: db "cat ", 0
+    cmd_exec: db "exec ", 0
+    msg_file_not_found: db "Error: file not found!", 0x0A, 0
     bs_char: db 0x08, 0
 
 section .text
@@ -107,10 +112,79 @@ read_loop:
     call compare_cmd
 
     test rax, rax
-    jne .unknown_cmd
+    jne .cmp_cmd_ls
 
     mov rax, 4
     syscall
+    jmp _start
+
+.cmp_cmd_ls:
+    mov rdi, cmd_ls
+    mov rsi, input_buf
+    mov rdx, 2
+    call compare_cmd
+
+    test rax, rax
+    jne .cmp_cmd_cat
+
+    mov rax, 5
+    syscall
+    jmp _start
+
+.cmp_cmd_cat:
+    mov rdi, cmd_cat
+    mov rsi, input_buf
+    mov rdx, 4
+    call starts_with
+
+    test rax, rax
+    jne .cmp_cmd_exec
+
+    lea rsi, [input_buf+4] ; fname
+    lea rdx, file_content
+
+    mov rax, 6
+    syscall
+
+    lea rdx, file_content
+    mov rcx, 0xFFFFFF   ; red
+
+    test rax, rax
+    jz .file_read_succ
+    lea rdx, msg_file_not_found
+.file_read_succ:
+    mov rax, 1
+    syscall
+
+    mov rax, 1
+    mov rsi, newline
+    syscall
+    
+    jmp _start
+
+.cmp_cmd_exec:
+    mov rdi, cmd_exec
+    mov rsi, input_buf
+    mov rdx, 5
+    call starts_with
+
+    test rax, rax
+    jne .unknown_cmd
+
+    lea rsi, [input_buf+5] ; fname
+    mov rax, 7
+    syscall
+
+    test rax, rax
+    jz .exec_succ
+
+    mov rax, 1
+    mov rsi, msg_file_not_found
+    mov rdx, 0xFF0000
+    syscall
+    jmp _start
+
+.exec_succ:
     jmp _start
 
 .unknown_cmd:
@@ -142,6 +216,37 @@ compare_cmd:
     loop .cmp_char
     cmp byte [rsi], 0
     je  .done
+    
+.diff:
+    inc rdx
+.done:
+    mov rax, rdx
+    pop rbx
+    mov rsp, rbp
+    pop rbp
+    ret
+
+;============================================
+; starts_with(cmd, input, len) -> 0 if equal
+;============================================
+starts_with:
+    push rbp
+    mov rbp, rsp
+    push rbx
+
+    mov rcx, rdx
+    xor rdx, rdx
+    jecxz .done
+
+.cmp_char:
+    mov al, [rdi]
+    mov bl, [rsi]
+    cmp al, bl
+    jne .diff
+    inc rdi
+    inc rsi
+    loop .cmp_char
+    jmp .done
     
 .diff:
     inc rdx
