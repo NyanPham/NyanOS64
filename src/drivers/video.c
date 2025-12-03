@@ -38,6 +38,8 @@ typedef struct
 
 static TermCell* buf = (TermCell*)BUF_VIRT_ENTRY;
 
+void video_refresh(void);
+
 void video_init_buf()
 {
     for (size_t i = 0; i < 75; i++)
@@ -79,7 +81,7 @@ void video_init(struct limine_framebuffer* fb)
 
 static inline void put_pixel(int64_t x, int64_t y, uint32_t color)
 {
-    if (x < 0 || x >= g_fb_width || y < 0 || y >= g_fb_height)
+    if (x < 0 || x >= (int64_t)g_fb_width || y < 0 || y >= (int64_t)g_fb_height)
     {
         return;
     }

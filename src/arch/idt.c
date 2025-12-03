@@ -41,6 +41,7 @@ static idtr_t idtr;
 void exception_handler()
 {
     __asm__ volatile ("cli; hlt");
+    for (;;) {}
 }
 
 // Sets a descriptor in the IDT.

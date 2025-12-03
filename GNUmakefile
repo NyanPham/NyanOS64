@@ -165,9 +165,10 @@ clean:
 	@rm -f hello.o hello.elf
 	@rm -f rootfs.tar
 
+USER_OBJS := obj/src/libc/crt0.o obj/src/libc/libc.c.o
 
 shell.elf: shell.asm
-	@echo "Building User-space program..."
+	@echo "Building Shell..."
 	nasm -f elf64 shell.asm -o shell.o
 	ld -nostdlib -Ttext=0x400000 shell.o -o shell.elf
 
@@ -177,8 +178,18 @@ rootfs.tar: shell.elf hello.elf
 	cp hello.elf rootfs/
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
-hello.elf: progs/hello.asm
-	@echo "Building Hello program..."
-	nasm -f elf64 progs/hello.asm -o hello.o
-	ld -nostdlib -Ttext=0x800000 hello.o -o hello.elf
+obj/src/libc/crt0.o: src/libc/crt0.asm
+	mkdir -p "$(dir $@)"
+	nasm -f elf64 $< -o $@
 
+hello.elf: progs/hello.c $(USER_OBJS)
+	@echo "Building Hello C program..."
+	mkdir -p obj/progs
+	
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c progs/hello.c -o obj/progs/hello.c.o
+
+	$(LD) -nostdlib -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/hello.c.o \
+		obj/src/libc/libc.c.o \
+		-o hello.elf
