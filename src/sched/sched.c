@@ -37,6 +37,7 @@ void sched_create_task(uint64_t entry)
     Task* new_task = (Task*)kmalloc(sizeof(Task));
     new_task->pid = g_next_pid++;
     new_task->next = NULL;
+    new_task->state = TASK_READY;
 
     // alloc a page for within the Kernel Stack
     // Note: kern_stk is virt hhdm addr.
@@ -102,37 +103,97 @@ void sched_init(void)
 
     Task* kern_task = (Task*)kmalloc(sizeof(Task));
     kern_task->pid = 0;
-    kern_task->kern_stk_rsp = 0;
-    kern_task->kern_stk_top = 0;
+    kern_task->state = TASK_READY;
+
+    void* stk_phys = pmm_alloc_frame();
+    kern_task->kern_stk_top = (uint64_t)stk_phys + PAGE_SIZE;
+    
+    uint64_t* sp = (uint64_t*)kern_task->kern_stk_top;
+    *(--sp) = (uint64_t)task_idle;
+    *(--sp) = 0; // RBX
+    *(--sp) = 0; // RBP
+    *(--sp) = 0; // R12
+    *(--sp) = 0; // R13
+    *(--sp) = 0; // R14
+    *(--sp) = 0; // R15
+    kern_task->kern_stk_rsp = (uint64_t)sp;
     kern_task->next = kern_task;
     g_head_task = kern_task;
-    g_curr_task = kern_task; 
+    g_curr_task = NULL; 
+}
+
+void task_idle(void)
+{
+    asm volatile ("sti");
+    for (;;) 
+    { 
+        asm ("hlt"); 
+    }
 }
 
 void schedule(void)
 {
+    Task* next_task;
+
     if (g_curr_task == NULL)
     {
-        return;
+        next_task = g_head_task;
     }
-    
-    Task* next_task = g_curr_task->next;
-    if (next_task == g_curr_task) 
+    else 
     {
-        kprint("Only 1 task, no switch!\n");
-        return;
+        next_task = g_curr_task->next;
+
+        while (next_task->state != TASK_READY)
+        {
+            next_task = next_task->next;
+        }
+
+        if (next_task == g_curr_task) 
+        {
+            // kprint("Only 1 task, no switch!\n");
+            return;
+        }
     }
 
     Task* prev_task = g_curr_task;
     g_curr_task = next_task;
     tss_set_stack(next_task->kern_stk_top);
     kern_stk_ptr = next_task->kern_stk_top;
+
     /*
     Context Switching
     We do save current RSP value into &prev_task->kern_stk_rsp
     and pass new RSP value from next_task->kern_stk_rsp
     */
-    switch_to_task(&prev_task->kern_stk_rsp, next_task->kern_stk_rsp);
+    if (prev_task == NULL)
+    {
+        switch_to_task(NULL, next_task->kern_stk_rsp);
+    }
+    else
+    {
+        switch_to_task(&prev_task->kern_stk_rsp, next_task->kern_stk_rsp);
+    }
+}
+
+void sched_block()
+{
+    g_curr_task->state = TASK_WAITING;
+    schedule();
+}
+
+void sched_wake_pid(int pid)
+{
+    Task* t = g_head_task;
+    do 
+    {
+        if (t->pid == pid)
+        {
+            t->state = TASK_READY;
+            return;
+        }
+        t = t->next;
+    }
+    while (t != g_head_task);
 }
 
 void sched_exit(void)
@@ -165,8 +226,13 @@ void sched_exit(void)
     tss_set_stack(next_task->kern_stk_top);
     kern_stk_ptr = next_task->kern_stk_top;
 
+    uint64_t virt_usr_stk = 0x500000 + (task_to_kill->pid * 0x10000);
+    uint64_t phys_addr = vmm_virt2phys(kern_pml4, virt_usr_stk);
+    vmm_unmap_page(kern_pml4, virt_usr_stk);
+    pmm_free_frame((void*)(phys_addr + hhdm_offset));
+    pmm_free_frame((void*)(task_to_kill->kern_stk_top - PAGE_SIZE));
     kfree(task_to_kill);
-    kprint("Task exited. Switching to next...");
 
+    kprint("Task exited. Switching to next...");
     switch_to_task(NULL, next_task->kern_stk_rsp);
 }

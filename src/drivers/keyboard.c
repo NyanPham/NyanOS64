@@ -58,6 +58,8 @@ static void keyboard_handler(void *regs)
 
             kbd_buf.buf[kbd_buf.head] = ascii_char;
             kbd_buf.head++;
+            
+            sched_wake_pid(1);
         }
     }
 }

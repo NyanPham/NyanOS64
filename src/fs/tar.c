@@ -90,7 +90,7 @@ void tar_list()
         video_write(hdr->name, 0xFFFFFF);
         video_write("\n", 0);
 
-        uint64_t size_aligned = (size = +511) / 512 * 512;
+        uint64_t size_aligned = (size + 511) / 512 * 512;
         uint64_t next_hdr_addr = (uint64_t)hdr + 512 + size_aligned;
         hdr = (tar_header *)next_hdr_addr;
     }

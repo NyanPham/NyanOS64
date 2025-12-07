@@ -127,6 +127,17 @@ static uint64_t* vmm_walk_to_pte(uint64_t* pml4_virt, uint64_t virt_addr, bool c
     return &pt_virt[pt_idx];
 }
 
+uint64_t vmm_virt2phys(uint64_t* pml4, uint64_t virt_addr)
+{
+    uint64_t* pte = vmm_walk_to_pte(pml4, virt_addr, false);
+    if (pte == NULL)
+    {
+        return 0;
+    }
+
+    return pte_get_addr(*pte) + (virt_addr & 0xFFF);
+}
+
 void vmm_map_page(uint64_t* pml4_virt, uint64_t virt_addr, uint64_t phys_addr, uint64_t flags)
 {
     uint64_t* pte = vmm_walk_to_pte(pml4_virt, virt_addr, true);
@@ -137,6 +148,8 @@ void vmm_map_page(uint64_t* pml4_virt, uint64_t virt_addr, uint64_t phys_addr, u
     }
 
     *pte = pte_set_addr(0, phys_addr) | flags;
+
+    __asm__ volatile ("invlpg (%0)" :: "r"(virt_addr) : "memory");
 }
 
 void vmm_unmap_page(uint64_t* pml4, uint64_t virt_addr) {

@@ -27,6 +27,11 @@ uint64_t pte_set_addr(uint64_t page_tab_entry, uint64_t phys_addr);
 uint64_t pte_get_addr(uint64_t page_tab_entry);
 
 /**
+ * @brief Get the physical address from the
+ */
+uint64_t vmm_virt2phys(uint64_t* pml4, uint64_t virt_addr);
+
+/**
  * @brief Maps a physical page to a virtual page.
  * This is a high-level function that uses vmm_walk_to_pte to find the correct entry and sets it.
  */

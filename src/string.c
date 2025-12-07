@@ -17,3 +17,16 @@ char* strcpy(char* dest, const char* src)
     while ((*dest++ = *src++));
     return ret;
 }
+
+size_t strlen(const char* s)
+{
+    size_t size = 0;
+
+    while (*s != '\0')
+    {
+        size++;
+        s++;
+    }
+
+    return size;
+}

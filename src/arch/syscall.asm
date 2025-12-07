@@ -22,6 +22,8 @@ syscall_entry:
     mov [usr_stk_tmp], rsp
     mov rsp, [kern_stk_ptr]
     
+    push qword [usr_stk_tmp]
+
     push rcx
     push r11
 
@@ -45,5 +47,5 @@ syscall_entry:
     pop r11
     pop rcx
 
-    mov rsp, [usr_stk_tmp]
+    pop rsp
     o64 sysret
