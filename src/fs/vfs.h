@@ -1,0 +1,46 @@
+#ifndef VFS_H
+#define VFS_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+#define VFS_FILE 0x01
+#define VFS_DIRECTORY 0x02
+#define VFS_CHAR_DEVICE 0x03
+#define VFS_BLOCK_DEVICE 0x04
+
+struct vfs_node;
+
+typedef struct vfs_fs_ops
+{
+    uint64_t (*read)(struct vfs_node* node, uint64_t offset, uint64_t size, uint8_t* buffer);
+    uint64_t (*write)(struct vfs_node* node, uint64_t offset, uint64_t size, uint8_t* buffer);
+    void (*open)(struct vfs_node* node);
+    void (*close)(struct vfs_node* node);
+    struct vfs_node* (*finddir)(struct vfs_node* node, const char* name);
+} vfs_fs_ops_t;
+
+typedef struct vfs_node
+{
+    char name[128];
+    uint32_t flags;
+    uint64_t length;
+
+    vfs_fs_ops_t* ops;
+    void* device_data;
+} vfs_node_t;
+
+typedef struct file_handle
+{
+    vfs_node_t* node;
+    uint64_t offset;
+    uint32_t mode;
+} file_handle_t;
+
+void vfs_init();
+int vfs_mount(const char* path, vfs_node_t* fs_root);
+file_handle_t* vfs_open(const char* filename, uint32_t mode);
+void vfs_close(file_handle_t* file);
+uint64_t vfs_read(file_handle_t* file, uint64_t size, uint8_t* buffer);
+
+#endif

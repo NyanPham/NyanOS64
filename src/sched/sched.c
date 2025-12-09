@@ -39,6 +39,11 @@ void sched_create_task(uint64_t entry)
     new_task->next = NULL;
     new_task->state = TASK_READY;
 
+    for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        new_task->fd_tbl[i] = NULL;
+    }
+
     // alloc a page for within the Kernel Stack
     // Note: kern_stk is virt hhdm addr.
     void* kern_stk = pmm_alloc_frame();
@@ -104,6 +109,11 @@ void sched_init(void)
     Task* kern_task = (Task*)kmalloc(sizeof(Task));
     kern_task->pid = 0;
     kern_task->state = TASK_READY;
+
+    for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        kern_task->fd_tbl[i] = NULL;
+    }
 
     void* stk_phys = pmm_alloc_frame();
     kern_task->kern_stk_top = (uint64_t)stk_phys + PAGE_SIZE;
@@ -235,4 +245,9 @@ void sched_exit(void)
 
     kprint("Task exited. Switching to next...");
     switch_to_task(NULL, next_task->kern_stk_rsp);
+}
+
+Task* get_curr_task()
+{
+    return g_curr_task;
 }

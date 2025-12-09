@@ -22,6 +22,7 @@
 #define KERN_BASE 0xFFFFFFFF80000000
 
 extern void syscall_entry(void);
+int8_t find_free_fd(Task* task);
 
 static bool verify_usr_access(uint64_t ptr, uint64_t size)
 {
@@ -111,6 +112,11 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
         case 6:
         {
+            /* DEPRECATED */
+            // We have case 12 to read a file with VFS instead, 
+            // this is kept for legacy for now, and reserved
+            // for future use 
+
             // Sys_read_file(fname, buf)
             char* content = tar_read_file((const char*)arg1);
             if (content == NULL)
@@ -147,6 +153,76 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             sched_exit();
             return 0;
         }
+        case 10:
+        {
+            // sys_open
+            char* fname = (char*)arg1;
+            uint32_t mode = (uint32_t)arg2;
+
+            Task* curr_task = get_curr_task();
+
+            int8_t fd = find_free_fd(curr_task);
+            if (fd < 0)
+            {
+                return -1;
+            }
+
+            file_handle_t* f = vfs_open(fname, mode);
+            if (f == NULL)
+            {
+                return -1;
+            }
+
+            curr_task->fd_tbl[fd] = f;
+            return fd;
+        }
+        case 11:
+        {
+            // sys_close
+            int8_t fd = (int8_t)arg1;
+            if (fd < 0 || fd >= MAX_OPEN_FILES)
+            {
+                return -1;
+            }
+
+            Task* curr_task = get_curr_task();
+            if (curr_task->fd_tbl[fd] == NULL)
+            {
+                return -1;
+            }
+
+            vfs_close(curr_task->fd_tbl[fd]);
+            curr_task->fd_tbl[fd] = NULL;
+            return 0;
+        }
+        case 12:
+        {
+            // sys_read_f(fd, buf, count)
+            int8_t fd = (int8_t)arg1;
+            char* buf = (char*)arg2;
+            uint64_t count = arg3;
+
+            if (fd < 0 || fd >= MAX_OPEN_FILES)
+            {
+                return -1;
+            }
+
+            Task* curr_task = get_curr_task();
+            file_handle_t* f = curr_task->fd_tbl[fd];
+
+            if (f == NULL)
+            {
+                return -1;
+            }
+
+            if (!(verify_usr_access((uint64_t)buf, count)))
+            {
+                kprint("Syscall read: Invalid User Buffer\n");
+                return -1;
+            }
+
+            return vfs_read(f, count, (uint8_t*)buf);
+        }
         default:
         {
             kprint("Kernel: unknown sys_num: ");
@@ -155,4 +231,17 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             return 0;
         }
     }
+}
+
+int8_t find_free_fd(Task* task)
+{
+    for (uint8_t i = 3; i < MAX_OPEN_FILES; i++)
+    {
+        if (task->fd_tbl[i] == NULL)
+        {
+            return i;
+        }
+    }
+
+    return -1;
 }

@@ -14,6 +14,9 @@ section .text
 ; syscall_entry:
 ;   in: 
 ;       rax - sys_num
+;       rdi - arg1
+;       rsi - arg2
+;       r14 - arg3
 ;       rcx - ret_addr
 ;       r11 - rflags
 ;===========================
@@ -34,6 +37,10 @@ syscall_entry:
     push r14
     push r15
 
+    ; shuffle the registers from user-space to System V ABI
+    mov rcx, r14
+    mov rdx, rsi
+    mov rsi, rdi
     mov rdi, rax
     call syscall_handler
 

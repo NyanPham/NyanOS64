@@ -25,13 +25,13 @@ section .data
 section .text
 _start:
     mov rax, 1
-    mov rsi, prompt
-    mov rdx, 0x00FF00   ; green
+    mov rdi, prompt
+    mov rsi, 0x00FF00   ; green
     syscall
 
     mov qword [buf_idx], 0
 
-read_loop:
+.read_loop:
     mov rax, 2
     syscall
 
@@ -47,34 +47,34 @@ read_loop:
     inc qword[buf_idx]
 
     mov rax, 1
-    lea rsi, [input_buf + rbx]
-    mov rdx, 0xFFFFFF   ; white
+    lea rdi, [input_buf + rbx]
+    mov rsi, 0xFFFFFF   ; white
     syscall
 
-    jmp read_loop
+    jmp .read_loop
 
 .handle_backspace:
     mov rbx, [buf_idx]
     cmp rbx, 0
-    je read_loop
+    je .read_loop
 
     dec qword [buf_idx]
     mov rbx, [buf_idx]
     mov byte [input_buf + rbx], 0
 
     mov rax, 1
-    mov rsi, bs_char
-    mov rdx, 0xFFFFFF
+    mov rdi, bs_char
+    mov rsi, 0xFFFFFF
     syscall 
 
-    jmp read_loop
+    jmp .read_loop
 
 .process_cmd:
     mov rbx, [buf_idx]
     mov byte [input_buf + rbx], 0
     
     mov rax, 1
-    mov rsi, newline
+    mov rdi, newline
     syscall
 
 .cmp_cmd_hi:
@@ -87,8 +87,8 @@ read_loop:
     jne .cmp_cmd_clear
 
     mov rax, 1
-    mov rsi, msg_hi
-    mov rdx, 0xFFFF00   ; yellow
+    mov rdi, msg_hi
+    mov rsi, 0xFFFF00   ; yellow
     syscall
     jmp _start
 
@@ -140,26 +140,53 @@ read_loop:
     test rax, rax
     jne .cmp_cmd_exec
 
-    lea rsi, [input_buf+4] ; fname
-    lea rdx, file_content
-
-    mov rax, 6
+    mov rax, 10
+    lea rdi, [input_buf+4]
+    mov rsi, 0
     syscall
 
-    lea rdx, file_content
-    mov rcx, 0xFFFFFF   ; red
+    cmp rax, 0
+    jl .cat_fail
 
-    test rax, rax
-    jz .file_read_succ
-    lea rdx, msg_file_not_found
-.file_read_succ:
-    mov rax, 1
-    syscall
-
-    mov rax, 1
-    mov rsi, newline
-    syscall
+    mov rbx, rax
     
+.cat_read_loop:
+    mov rax, 12
+    mov rdi, rbx
+    lea rsi, [file_content] 
+    mov r14, 2047 ; 1 last byte for \0
+    syscall 
+
+    cmp rax, 0
+    jle .cat_close 
+
+    lea r8, [file_content]
+    add r8, rax
+    mov byte[r8], 0
+
+    mov rax, 1
+    lea rdi, [file_content]
+    mov rsi, 0x00FFFF ; cyan
+    syscall
+
+    jmp .cat_close
+.cat_close:
+    mov rax, 11
+    mov rdi, rbx
+    syscall
+
+    mov rax, 1
+    mov rdi, newline
+    syscall 
+
+    jmp _start
+
+.cat_fail:
+    mov rax, 1
+    mov rdi, msg_file_not_found
+    mov rsi, 0xFF0000   ; red
+    syscall
+
     jmp _start
 
 .cmp_cmd_exec:
@@ -171,16 +198,16 @@ read_loop:
     test rax, rax
     jne .unknown_cmd
 
-    lea rsi, [input_buf+5] ; fname
     mov rax, 7
+    lea rdi, [input_buf+5] ; fname
     syscall
 
     test rax, rax
     jz .exec_succ
 
     mov rax, 1
-    mov rsi, msg_file_not_found
-    mov rdx, 0xFF0000
+    mov rdi, msg_file_not_found
+    mov rsi, 0xFF0000
     syscall
     jmp _start
 

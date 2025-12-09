@@ -19,6 +19,8 @@
 #include "sched/sched.h"
 #include "elf.h"
 #include "fs/tar.h"
+#include "fs/vfs.h"
+#include "fs/tar_fs.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
 
@@ -214,7 +216,33 @@ void kmain(void)
     if (module_request.response->module_count >= 2)
     {
         struct limine_file* tar_file = module_request.response->modules[1];
-        tar_init(tar_file->address);
+        kprint("Initializing VFS...\n");
+        vfs_init();
+
+        vfs_node_t* tar_root = tar_fs_init(tar_file->address);
+        vfs_mount("/", tar_root);
+        
+        // test VFS
+        kprint("VFS Test: Opening hello.txt...\n");
+        file_handle_t* f = vfs_open("hello.txt", 0);
+        if (f)
+        {
+            kprint("VFS TEST: Success! Found hello.txt\n");
+            
+            // read some bytes
+            char buf[32];
+            uint64_t bytes_read = vfs_read(f, 13, (uint8_t*)buf);
+            buf[bytes_read] = 0;
+            kprint("Content: "); 
+            kprint(buf);
+            kprint("\n");
+
+            vfs_close(f);
+        }
+        else
+        {
+            kprint("VFS TEST: Failed to open hello.txt\n");
+        }
     }
     else
     {
