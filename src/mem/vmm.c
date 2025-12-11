@@ -1,11 +1,66 @@
 #include <stdbool.h>
+#include "cpu.h"
 #include "vmm.h"
 #include "pmm.h"
 
 extern void* memset(void *s, int c, size_t n);  // from main.c
+extern void *memcpy(void *restrict dest, const void *restrict src, size_t n);
 extern uint64_t hhdm_offset; // from pmm.c
 
 uint64_t* kern_pml4 = NULL; // shared to other components
+
+uint64_t vmm_new_pml4()
+{
+    void* pml4_virt = pmm_alloc_frame();
+    if (pml4_virt == NULL)
+    {
+        return NULL;
+    }
+
+    uint64_t pml4_phys = ((uint64_t)pml4_virt - hhdm_offset);
+    memset(pml4_virt, 0, PAGE_SIZE);
+    memcpy(
+        &((uint64_t*)pml4_virt)[256], 
+        &kern_pml4[256], 
+        256 * sizeof(uint64_t)
+    );
+
+    return pml4_phys;
+}
+
+void vmm_ret_pml4(uint64_t pml4_phys)
+{
+    void* pml4_virt = pml4_phys + hhdm_offset;
+    pmm_free_frame(pml4_virt);
+}
+
+void vmm_free_table(uint64_t* table, int level)
+{
+    for (int i = 0; i < 512; i++)
+    {
+        uint64_t entry = table[i];
+        if ((entry & VMM_FLAG_PRESENT) == 0)
+        {
+            continue;
+        }
+
+        uint64_t* virt_addr = (uint64_t*)(pte_get_addr(entry) + hhdm_offset);
+
+        if (level == 1)
+        {
+            pmm_free_frame(virt_addr);
+        }
+        else if (level == 4 && i > 255)
+        {
+            continue;
+        }
+        else
+        {
+            vmm_free_table(virt_addr, level - 1);
+        }
+    }
+    pmm_free_frame(table);
+}
 
 uint64_t pte_set_addr(uint64_t page_tab_entry, uint64_t phys_addr)
 {
@@ -166,14 +221,7 @@ void vmm_unmap_page(uint64_t* pml4, uint64_t virt_addr) {
 
 void vmm_init()
 {
-    uint64_t pml4_phys;
-    asm volatile(
-        "mov %%cr3, %0"     // system control-register 3 holds the PML4 base
-        : "=r"(pml4_phys)
-        : 
-        : "memory"
-    );
-
+    uint64_t pml4_phys = read_cr3();
     kern_pml4 = (uint64_t*)(pml4_phys + hhdm_offset);
 
     void* test_page_virt = pmm_alloc_frame(); 

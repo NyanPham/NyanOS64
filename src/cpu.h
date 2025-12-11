@@ -37,4 +37,27 @@ static inline void wrmsr(uint32_t msr, uint64_t value)
     );
 }
 
+static inline uint64_t read_cr3()
+{
+    uint64_t val;
+    asm volatile (
+        "mov %%cr3, %0" 
+        : "=r"(val)
+        :
+        : "memory"
+    );
+
+    return val;
+}
+
+static inline void write_cr3(uint64_t val)
+{
+    asm volatile (
+        "mov %0, %%cr3" 
+        : 
+        : "r"(val)
+        : "memory"
+    );
+}
+
 #endif

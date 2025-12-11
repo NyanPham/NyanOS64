@@ -21,6 +21,7 @@
 #include "fs/tar.h"
 #include "fs/vfs.h"
 #include "fs/tar_fs.h"
+#include "cpu.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
 
@@ -169,31 +170,31 @@ void kmain(void)
     sched_init();
 
     /*=========== Kmalloc test ===========*/
-    {
-        void* test_ptr1 = kmalloc(32);
-        if (test_ptr1 != NULL)
-        {
-            volatile uint32_t* kmalloc_test = (uint32_t*)test_ptr1;
-            *kmalloc_test = 0xCAFEBABE;
+    // {
+    //     void* test_ptr1 = kmalloc(32);
+    //     if (test_ptr1 != NULL)
+    //     {
+    //         volatile uint32_t* kmalloc_test = (uint32_t*)test_ptr1;
+    //         *kmalloc_test = 0xCAFEBABE;
 
-            if (*kmalloc_test != 0xCAFEBABE) {
-                hcf();
-            }
+    //         if (*kmalloc_test != 0xCAFEBABE) {
+    //             hcf();
+    //         }
             
-            kfree(test_ptr1);
+    //         kfree(test_ptr1);
             
-            void* test_ptr2 = kmalloc(32);
-            if (test_ptr1 != test_ptr2) {
-                hcf();
-            }
+    //         void* test_ptr2 = kmalloc(32);
+    //         if (test_ptr1 != test_ptr2) {
+    //             hcf();
+    //         }
             
-            kfree(test_ptr2);
-        }
-        else 
-        {
-            hcf();
-        }
-    }
+    //         kfree(test_ptr2);
+    //     }
+    //     else 
+    //     {
+    //         hcf();
+    //     }
+    // }
 
     
     // check if we have the framebuffer to render on screen
@@ -251,16 +252,21 @@ void kmain(void)
 
     kprint("Loading Shell...\n");
 
+    Task* shell_task = sched_new_task();
+
+    write_cr3(shell_task->pml4);
     uint64_t shell_entry = elf_load("shell.elf");
+    write_cr3((uint64_t)kern_pml4 - hhdm_offset);
 
     if (shell_entry != 0)
     {
-        kprint("Creating User Task...\n");
-        sched_create_task(shell_entry);
+        kprint("Loading User Task...\n");
+        sched_load_task(shell_task, shell_entry);
     }
     else 
     {
         kprint("Failed to load Shell!\n");
+        sched_destroy_task(shell_task);
         hcf();
     }
 

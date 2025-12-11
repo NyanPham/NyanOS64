@@ -4,6 +4,7 @@
 #include "mem/kmalloc.h"
 #include "arch/gdt.h"
 #include "drivers/serial.h"
+#include "cpu.h"
 
 #include <stddef.h>
 
@@ -11,6 +12,8 @@
 #define NEW_TASK_CS (GDT_OFFSET_USER_CODE | 0x3)
 #define NEW_TASK_RFLAGS 0x202
 #define KERN_TASK_PID 0x0
+
+#define USER_STACK_TOP 0x1000000
 
 // Linked list for Tasks
 static Task* g_head_task = NULL;
@@ -27,10 +30,102 @@ extern void task_start_stub(void);
 
 /*
  * Allocs mem for a Task
+ * Creates a new Task with its own PID, cr3.
+ * The state must be TASK_WAITING, because the 
+ * task still needs to has `entry` setup before
+ * being TASK_READY
+*/
+Task *sched_new_task(void)
+{
+    Task* new_task = (Task*)kmalloc(sizeof(Task));
+    new_task->pid = g_next_pid++;
+    new_task->next = NULL;
+    new_task->state = TASK_WAITING;
+    new_task->pml4 = vmm_new_pml4();
+
+    for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        new_task->fd_tbl[i] = NULL;
+    }
+
+    return new_task;
+}
+
+/*
  * Assigns a part of Kernel Stack to handle when interrupted
  * Allocs user stack for the program to run
  * Makes fake task scene
  */
+void sched_load_task(Task* task, uint64_t entry)
+{
+    uint64_t curr_pml4 = read_cr3();
+    write_cr3(task->pml4);
+
+    // alloc a page for within the Kernel Stack
+    // Note: kern_stk is virt hhdm addr.
+    void* kern_stk = pmm_alloc_frame();
+    uint64_t* sp = (uint64_t*)((uint8_t*)kern_stk + PAGE_SIZE);
+    task->kern_stk_top = (uint64_t)sp;
+
+    // alloc a page for User Stack, map it with a virt addr
+    uint64_t virt_usr_stk = USER_STACK_TOP;
+    uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
+
+    vmm_map_page(
+        (uint64_t*)(task->pml4 + hhdm_offset),
+        virt_usr_stk,
+        phys_usr_stk,
+        VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
+    );
+
+    // now make a fake scene from scratch for the new task
+    *(--sp) = NEW_TASK_SS;              // SS
+    *(--sp) = virt_usr_stk + PAGE_SIZE; // RSP
+    *(--sp) = NEW_TASK_RFLAGS;          // RFLAGS
+    *(--sp) = NEW_TASK_CS;              // CS
+    *(--sp) = entry;                    // RIP
+
+    // we push rax -> r15, they're all zeros, so order doesn't matter anyway.
+    for (uint8_t i = 0; i < 15; i++)
+    {
+        *(--sp) = 0;
+    }
+
+    // return address for a new switch_to_task's RET
+    *(--sp) = (uint64_t)task_start_stub;
+
+    for (uint8_t i = 0; i < 6; i++)
+    {
+        *(--sp) = 0;
+    }
+    
+    // now the top of the Kernel Stack is to store the whole state of the task
+    task->kern_stk_rsp = (uint64_t)sp;
+
+    // add to the linked list of Tasks
+    if (g_head_task == NULL)
+    {
+        g_head_task = task;
+        task->next = task; // (loop)
+        g_curr_task = task;
+    } 
+    else
+    {
+        task->next = g_head_task->next;
+        g_head_task->next = task;
+    }
+
+    task->state = TASK_READY;
+    write_cr3(curr_pml4);
+}
+
+void sched_destroy_task(Task* task)
+{
+    vmm_ret_pml4(task->pml4);
+    kfree(task);
+}
+
+#if 0
 void sched_create_task(uint64_t entry)
 {
     // construct a new task
@@ -38,6 +133,7 @@ void sched_create_task(uint64_t entry)
     new_task->pid = g_next_pid++;
     new_task->next = NULL;
     new_task->state = TASK_READY;
+    new_task->pml4 = vmm_new_pml4();
 
     for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
     {
@@ -98,6 +194,7 @@ void sched_create_task(uint64_t entry)
         g_head_task->next = new_task;
     }
 }
+#endif 
 
 void sched_init(void)
 {
@@ -109,6 +206,7 @@ void sched_init(void)
     Task* kern_task = (Task*)kmalloc(sizeof(Task));
     kern_task->pid = 0;
     kern_task->state = TASK_READY;
+    kern_task->pml4 = read_cr3();
 
     for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
     {
@@ -167,8 +265,13 @@ void schedule(void)
 
     Task* prev_task = g_curr_task;
     g_curr_task = next_task;
+
     tss_set_stack(next_task->kern_stk_top);
     kern_stk_ptr = next_task->kern_stk_top;
+
+    // Process Isolation
+    // store the pml4 of the task to the CR3
+    write_cr3(next_task->pml4);
 
     /*
     Context Switching
@@ -236,12 +339,10 @@ void sched_exit(void)
     tss_set_stack(next_task->kern_stk_top);
     kern_stk_ptr = next_task->kern_stk_top;
 
-    uint64_t virt_usr_stk = 0x500000 + (task_to_kill->pid * 0x10000);
-    uint64_t phys_addr = vmm_virt2phys(kern_pml4, virt_usr_stk);
-    vmm_unmap_page(kern_pml4, virt_usr_stk);
-    pmm_free_frame((void*)(phys_addr + hhdm_offset));
+    write_cr3(next_task->pml4);
+
     pmm_free_frame((void*)(task_to_kill->kern_stk_top - PAGE_SIZE));
-    kfree(task_to_kill);
+    sched_destroy_task(task_to_kill);
 
     kprint("Task exited. Switching to next...");
     switch_to_task(NULL, next_task->kern_stk_rsp);

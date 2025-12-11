@@ -5,6 +5,7 @@
 #include "mem/kmalloc.h"
 #include "drivers/serial.h"
 #include "./string.h"
+#include "cpu.h"
 
 #include <stddef.h>
 
@@ -34,6 +35,9 @@ uint64_t elf_load(const char* fname)
         return 0;
     }
 
+    uint64_t curr_pml4_phys = read_cr3();
+    uint64_t* curr_pml4_virt = (uint64_t*)(curr_pml4_phys + hhdm_offset);
+
     Elf64_Phdr* phdr = (Elf64_Phdr*)((uint8_t*)file_addr + elf_hdr->e_phoff);
     
     for (uint16_t i = 0; i < elf_hdr->e_phnum; i++)
@@ -61,7 +65,7 @@ uint64_t elf_load(const char* fname)
                 uint64_t targt_addr = vaddr + (j * PAGE_SIZE);
 
                 vmm_map_page(
-                    kern_pml4,
+                    curr_pml4_virt,
                     targt_addr,
                     phys_addr,
                     VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER

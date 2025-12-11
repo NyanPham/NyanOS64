@@ -6,6 +6,8 @@
 #include "vmm.h"
 #include "drivers/serial.h" // debugging
 
+extern uint64_t hhdm_offset;
+
 static FreeBlock *g_free_list_head = NULL;
 
 void kfree(void *ptr);
@@ -13,13 +15,20 @@ void kfree(void *ptr);
 // Request a new page frame and update the g_free_list_head
 void *request_new_page()
 {
-    FreeBlock *new_page = pmm_alloc_frame();
+    FreeBlock *ptr = pmm_alloc_frame();
 
-    if (new_page == NULL)
+    if (ptr == NULL)
     {
         return NULL;
     }
 
+    // we need to convertthe phys_addr to virt_addr
+    if ((uint64_t)ptr < hhdm_offset)
+    {
+        ptr = (void*)((uint64_t)ptr + hhdm_offset);
+    }
+
+    FreeBlock *new_page = (FreeBlock*)ptr;
     new_page->size = PAGE_SIZE;
     kfree((void*)((uint8_t*)new_page + sizeof(FreeBlock)));
 
@@ -97,7 +106,7 @@ void *kmalloc(size_t size)
     size_t allocated_size = sizeof(FreeBlock) + size;
     size_t remaining_size = blk->size - allocated_size;
     blk->size = allocated_size;
-    void *requested = (uint8_t *)blk + sizeof(FreeBlock);
+    void *ptr = (uint8_t *)blk + sizeof(FreeBlock);
 
     if (remaining_size >= sizeof(FreeBlock))
     {
@@ -110,7 +119,7 @@ void *kmalloc(size_t size)
         blk->size += remaining_size;
     }
 
-    return requested;
+    return ptr;
 }
 
 void kfree(void *ptr)
@@ -121,8 +130,8 @@ void kfree(void *ptr)
     }
 
     FreeBlock *blk_to_free = (FreeBlock *)((void *)ptr - sizeof(FreeBlock));
+    
     // coalescing
-
     if (blk_to_free->size == 0)
     {
         return;

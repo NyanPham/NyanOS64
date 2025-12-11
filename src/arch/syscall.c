@@ -9,6 +9,8 @@
 #include "../string.h"
 #include "elf.h"
 #include "sched/sched.h"
+#include "mem/kmalloc.h"
+
 #include <stddef.h>
 #include <stdbool.h>
 
@@ -138,13 +140,29 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         case 7:
         {
             // sys_exec
-            uint64_t entry = elf_load((const char*)(arg1));
+            size_t fname_len = strlen((char*)(arg1)) + 1;
+            char* fname = kmalloc(fname_len);
+            strcpy(fname, (char*)(arg1));
+
+            uint64_t old_pml4 = read_cr3();
+
+            Task* task = sched_new_task();
+            write_cr3(task->pml4);
+
+            uint64_t entry = elf_load(fname);
+
             if (entry == 0)
             {
+                write_cr3(old_pml4);
+                kfree(fname);
+                sched_destroy_task(task);
                 return -1;
             }
 
-            sched_create_task(entry);
+            write_cr3(old_pml4);
+            kfree(fname);
+            sched_load_task(task, entry);
+
             return 0;
         }
         case 8:

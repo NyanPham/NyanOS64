@@ -18,9 +18,15 @@ typedef struct Task
     short int state;
     struct Task* next;
     file_handle_t* fd_tbl[MAX_OPEN_FILES];
+    uint64_t pml4; // phys_addr of pml4
 } Task;
 
+Task *sched_new_task(void);
+void sched_load_task(Task* task, uint64_t entry);
+void sched_destroy_task(Task* task);
+#if 0
 void sched_create_task(uint64_t entry);
+#endif
 void sched_init(void);
 void schedule(void);
 void task_idle(void);

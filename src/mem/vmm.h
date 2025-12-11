@@ -15,6 +15,19 @@
 #define PT_INDEX 0xc
 
 /**
+ * @brief Create a new pml4 page for a Task
+ * It copies the kernel's entries 256-512
+ */
+uint64_t vmm_new_pml4(void);
+
+/**
+ * @brief Return the allocated page back to kernel
+ */
+void vmm_ret_pml4(uint64_t pml4_phys);
+
+void vmm_free_table(uint64_t* table, int level);
+
+/**
  * @brief Set the physical address into the page table entry.
  * It preserves the last 12 bits.
  */
