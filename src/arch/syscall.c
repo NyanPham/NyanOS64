@@ -163,13 +163,48 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             kfree(fname);
             sched_load_task(task, entry);
 
-            return 0;
+            return task->pid;
         }
         case 8:
         {
             // sys_exit
-            sched_exit();
+            sched_exit((int)(arg1));
             return 0;
+        }
+        case 9:
+        {
+            // sys_waitpid(pid, stat)
+            int pid = (int)arg1;
+            int* stat = (int*)arg2;
+
+            Task* child = sched_find_task(pid);
+            if (child == NULL)
+            {
+                return -1;
+            }
+
+            while (1)
+            {
+                if (child->state == TASK_ZOMBIE)
+                {
+                    if (stat != NULL)
+                    {
+                        if (!verify_usr_access(stat, sizeof(int)))
+                        {
+                            kprint("SYS_WAITPID: Invalid user access memory\n");
+                            return -1;   
+                        }
+                        *stat = child->ret_val;
+                    }   
+                    sched_unlink_task(child);
+                    sched_destroy_task(child);
+                    return pid;
+                }
+                else 
+                {
+                    sched_block();
+                }
+            }
         }
         case 10:
         {

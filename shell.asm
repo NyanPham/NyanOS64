@@ -203,7 +203,7 @@ _start:
     syscall
 
     test rax, rax
-    jz .exec_succ
+    jns .exec_succ
 
     mov rax, 1
     mov rdi, msg_file_not_found
@@ -212,12 +212,17 @@ _start:
     jmp _start
 
 .exec_succ:
+    mov rdi, rax
+    xor rsi, rsi
+    mov rax, 9
+    syscall
+
     jmp _start
 
 .unknown_cmd:
     mov rax, 1 
-    mov rsi, msg_unknown
-    mov rdx, 0xFF0000   ; red
+    mov rdi, msg_unknown
+    mov rsi, 0xFF0000   ; red
     syscall
     jmp _start
 

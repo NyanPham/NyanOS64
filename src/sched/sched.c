@@ -42,6 +42,7 @@ Task *sched_new_task(void)
     new_task->next = NULL;
     new_task->state = TASK_WAITING;
     new_task->pml4 = vmm_new_pml4();
+    new_task->parent = g_curr_task;
 
     for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
     {
@@ -119,10 +120,40 @@ void sched_load_task(Task* task, uint64_t entry)
     write_cr3(curr_pml4);
 }
 
+
+/*
+ * Frees the kernel Stack to PMM
+ * Returns the PML4 page (recursively) to the PMM
+ * Frees the struct Task
+ */
 void sched_destroy_task(Task* task)
 {
+    pmm_free_frame((void*)(task->kern_stk_top - PAGE_SIZE));
     vmm_ret_pml4(task->pml4);
     kfree(task);
+}
+
+void sched_unlink_task(Task *task)
+{
+    // find the task's predecessor
+    Task* prev = task;
+    while (prev->next != task)
+    {
+        prev = prev->next;
+    }
+
+    // unlink it
+    Task* next_task = task->next;
+    prev->next = next_task;
+
+    if (task == g_head_task)
+    {
+        g_head_task = next_task;
+        if (task == next_task)
+        {
+            g_head_task = NULL;
+        }
+    }
 }
 
 #if 0
@@ -296,20 +327,16 @@ void sched_block()
 
 void sched_wake_pid(int pid)
 {
-    Task* t = g_head_task;
-    do 
+    Task* t = sched_find_task(pid);
+    if (t == NULL)
     {
-        if (t->pid == pid)
-        {
-            t->state = TASK_READY;
-            return;
-        }
-        t = t->next;
+        return;
     }
-    while (t != g_head_task);
+
+    t->state = TASK_READY;
 }
 
-void sched_exit(void)
+void sched_exit(int code)
 {
     if (g_curr_task->pid == 0)
     {
@@ -317,19 +344,11 @@ void sched_exit(void)
         return;
     }
 
-    // find the task's predecessor
-    Task* prev = g_curr_task;
-    while (prev->next != g_curr_task)
-    {
-        prev = prev->next;
-    }
-
     // unlink it
-    Task* task_to_kill = g_curr_task;
-    Task* next_task = task_to_kill->next;
-    prev->next = next_task;
+    Task* task_to_exit = g_curr_task;
+    Task* next_task = task_to_exit->next;
     
-    if (g_head_task == task_to_kill)
+    if (g_head_task == task_to_exit)
     {
         g_head_task = next_task;
     }
@@ -341,8 +360,10 @@ void sched_exit(void)
 
     write_cr3(next_task->pml4);
 
-    pmm_free_frame((void*)(task_to_kill->kern_stk_top - PAGE_SIZE));
-    sched_destroy_task(task_to_kill);
+    // sched_destroy_task(task_to_exit);
+    task_to_exit->state = TASK_ZOMBIE;
+    task_to_exit->ret_val = code;
+    sched_wake_pid(task_to_exit->parent->pid);
 
     kprint("Task exited. Switching to next...");
     switch_to_task(NULL, next_task->kern_stk_rsp);
@@ -351,4 +372,25 @@ void sched_exit(void)
 Task* get_curr_task()
 {
     return g_curr_task;
+}
+
+Task* sched_find_task(int pid)
+{
+    if (g_head_task == NULL)
+    {
+        return NULL;
+    }
+
+    Task* t = g_head_task;
+    do 
+    {
+        if (t->pid == pid)
+        {
+            return t;
+        }
+        t = t->next;
+    }
+    while (t != g_head_task);
+
+    return NULL;
 }
