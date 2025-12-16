@@ -6,6 +6,7 @@ section .bss
     input_buf:   resb 64  
     buf_idx:     resq 1
     file_content: resb 2048
+    argv_ptrs: resq 16 ; max 16 arg ptrs
 
 section .data
     prompt: db "NyanOS> ", 0
@@ -198,13 +199,23 @@ _start:
     test rax, rax
     jne .unknown_cmd
 
+    lea rdi, [input_buf + 5] ; skip "exec "
+    lea rsi, [argv_ptrs]
+    call parse_args
+
+    mov rdi, [argv_ptrs] ; arg1: fname
+    cmp rdi, 0
+    ; *fname == NULL ?
+    je .exec_fail
+
+    lea rsi, [argv_ptrs]
     mov rax, 7
-    lea rdi, [input_buf+5] ; fname
     syscall
 
     test rax, rax
     jns .exec_succ
 
+.exec_fail:
     mov rax, 1
     mov rdi, msg_file_not_found
     mov rsi, 0xFF0000
@@ -287,4 +298,50 @@ starts_with:
     pop rbx
     mov rsp, rbp
     pop rbp
+    ret
+
+;============================================
+; parse_args(char* inp_str, char** argv_buf)
+; Converts the input string to tokens 
+; separated by \0, and 
+; store pointers in argv_buf
+;============================================
+parse_args: 
+    push rbx
+
+    xor rcx, rcx ; argc
+.skip_spaces:
+    cmp byte [rdi], 0x20
+    ; *inp_str != " "?
+    jne .check_end
+    inc rdi
+    jmp .skip_spaces
+
+.check_end:
+    cmp byte [rdi], 0
+    ; *input_str == NULL ?
+    je .done
+
+    ; found start of a token
+    mov [rsi + rcx*8], rdi ; save token's addr to argv_buf, will be null-terminated in .end_token
+    inc rcx
+
+.scan_token:
+    cmp byte [rdi], 0x20
+    ; *inp_str == " "?
+    je .end_token
+    cmp byte [rdi], 0
+    ; *inp_str == NULL? 
+    je .done
+    inc rdi
+    jmp .scan_token
+
+.end_token:
+    mov byte [rdi], 0
+    inc rdi
+    jmp .skip_spaces 
+
+.done:
+    mov qword [rsi + rcx*8], 0 ; add null at the end to terminate the argv
+    pop rbx 
     ret

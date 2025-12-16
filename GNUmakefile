@@ -165,11 +165,16 @@ clean:
 	@rm -f hello.o hello.elf
 	@rm -f rootfs.tar
 
+USER_CFLAGS := -Wall -Wextra -std=gnu11 -ffreestanding \
+	-fno-stack-protector -fno-stack-check -fno-lto -fno-PIC \
+	-m64 -march=x86-64 -mabi=sysv -mno-80387 -mno-mmx -mno-sse -mno-sse2 \
+	-mcmodel=small
+
 USER_OBJS := obj/src/libc/crt0.o obj/src/libc/libc.c.o
 
-shell.elf: shell.asm
+shell.elf: progs/shell.asm
 	@echo "Building Shell..."
-	nasm -f elf64 shell.asm -o shell.o
+	nasm -f elf64 progs/shell.asm -o shell.o
 	ld -nostdlib -Ttext=0x400000 shell.o -o shell.elf
 
 rootfs.tar: shell.elf hello.elf
@@ -186,10 +191,14 @@ hello.elf: progs/hello.c $(USER_OBJS)
 	@echo "Building Hello C program..."
 	mkdir -p obj/progs
 	
-	$(CC) $(CFLAGS) $(CPPFLAGS) -c progs/hello.c -o obj/progs/hello.c.o
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/hello.c -o obj/progs/hello.c.o
 
 	$(LD) -nostdlib -Ttext=0x800000 \
 		obj/src/libc/crt0.o \
 		obj/progs/hello.c.o \
 		obj/src/libc/libc.c.o \
 		-o hello.elf
+
+obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
+	mkdir -p "$(dir $@)"
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c $< -o $@

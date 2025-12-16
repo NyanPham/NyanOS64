@@ -22,6 +22,7 @@
 #include "fs/vfs.h"
 #include "fs/tar_fs.h"
 #include "cpu.h"
+#include "kern_defs.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
 
@@ -254,17 +255,37 @@ void kmain(void)
 
     Task* shell_task = sched_new_task();
 
+    uint64_t curr_pml4 = read_cr3(); // this could be kern_pml4, but nah, let's make thing variable :))
+
     write_cr3(shell_task->pml4);
+
     uint64_t shell_entry = elf_load("shell.elf");
-    write_cr3((uint64_t)kern_pml4 - hhdm_offset);
 
     if (shell_entry != 0)
     {
         kprint("Loading User Task...\n");
-        sched_load_task(shell_task, shell_entry);
+
+        uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
+        uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
+
+        vmm_map_page(
+            (uint64_t*)(shell_task->pml4 + hhdm_offset),
+            virt_usr_stk_base,
+            phys_usr_stk,
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
+        );
+        // no args, so argc = 0, no need space for argv
+        uint64_t* kern_view_stk = (uint64_t*)(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t) + hhdm_offset);
+        *kern_view_stk = 0;
+
+        uint64_t shell_rsp = USER_STACK_TOP - sizeof(uint64_t);
+        
+        write_cr3(curr_pml4);
+        sched_load_task(shell_task, shell_entry, shell_rsp);
     }
     else 
     {
+        write_cr3(curr_pml4);
         kprint("Failed to load Shell!\n");
         sched_destroy_task(shell_task);
         hcf();

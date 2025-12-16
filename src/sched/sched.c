@@ -5,6 +5,7 @@
 #include "arch/gdt.h"
 #include "drivers/serial.h"
 #include "cpu.h"
+#include "kern_defs.h"
 
 #include <stddef.h>
 
@@ -12,8 +13,6 @@
 #define NEW_TASK_CS (GDT_OFFSET_USER_CODE | 0x3)
 #define NEW_TASK_RFLAGS 0x202
 #define KERN_TASK_PID 0x0
-
-#define USER_STACK_TOP 0x1000000
 
 // Linked list for Tasks
 static Task* g_head_task = NULL;
@@ -57,7 +56,7 @@ Task *sched_new_task(void)
  * Allocs user stack for the program to run
  * Makes fake task scene
  */
-void sched_load_task(Task* task, uint64_t entry)
+void sched_load_task(Task* task, uint64_t entry, uint64_t rsp)
 {
     uint64_t curr_pml4 = read_cr3();
     write_cr3(task->pml4);
@@ -68,20 +67,9 @@ void sched_load_task(Task* task, uint64_t entry)
     uint64_t* sp = (uint64_t*)((uint8_t*)kern_stk + PAGE_SIZE);
     task->kern_stk_top = (uint64_t)sp;
 
-    // alloc a page for User Stack, map it with a virt addr
-    uint64_t virt_usr_stk = USER_STACK_TOP;
-    uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
-
-    vmm_map_page(
-        (uint64_t*)(task->pml4 + hhdm_offset),
-        virt_usr_stk,
-        phys_usr_stk,
-        VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
-    );
-
     // now make a fake scene from scratch for the new task
     *(--sp) = NEW_TASK_SS;              // SS
-    *(--sp) = virt_usr_stk + PAGE_SIZE; // RSP
+    *(--sp) = rsp; // RSP
     *(--sp) = NEW_TASK_RFLAGS;          // RFLAGS
     *(--sp) = NEW_TASK_CS;              // CS
     *(--sp) = entry;                    // RIP

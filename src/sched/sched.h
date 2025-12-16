@@ -25,7 +25,7 @@ typedef struct Task
 } Task;
 
 Task *sched_new_task(void);
-void sched_load_task(Task* task, uint64_t entry);
+void sched_load_task(Task* task, uint64_t entr, uint64_t rsp);
 void sched_destroy_task(Task* task);
 void sched_unlink_task(Task *task);
 #if 0

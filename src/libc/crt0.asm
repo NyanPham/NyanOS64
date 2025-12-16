@@ -6,10 +6,8 @@ extern main
 section .text
 
 _start:
-    ; NyanOS kernel not supports args, yet
-    ; so let's pretend argc = 0, and argv = NULL
-    xor rdi, rdi
-    xor rsi, rsi
+    pop rdi
+    mov rsi, rsp
 
     call main
 

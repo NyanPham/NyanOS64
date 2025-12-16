@@ -2,6 +2,8 @@
 #include "font.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
+#include "kern_defs.h"
+
 #include <stddef.h>
 
 #define BLACK 0x000000

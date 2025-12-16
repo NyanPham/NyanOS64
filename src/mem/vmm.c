@@ -2,6 +2,7 @@
 #include "cpu.h"
 #include "vmm.h"
 #include "pmm.h"
+#include "kern_defs.h"
 
 extern void* memset(void *s, int c, size_t n);  // from main.c
 extern void *memcpy(void *restrict dest, const void *restrict src, size_t n);

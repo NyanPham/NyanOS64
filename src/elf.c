@@ -6,6 +6,7 @@
 #include "drivers/serial.h"
 #include "./string.h"
 #include "cpu.h"
+#include "kern_defs.h"
 
 #include <stddef.h>
 

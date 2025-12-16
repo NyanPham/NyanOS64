@@ -12,6 +12,8 @@
  */
 
 #include "pmm.h"
+#include "kern_defs.h"
+
 #include <limine.h>
 #include <stddef.h>
 

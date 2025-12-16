@@ -10,6 +10,9 @@
 #include "elf.h"
 #include "sched/sched.h"
 #include "mem/kmalloc.h"
+#include "mem/pmm.h"
+#include "mem/vmm.h"
+#include "kern_defs.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -23,7 +26,9 @@
 #define REBOOT_PORT 0x64
 #define KERN_BASE 0xFFFFFFFF80000000
 
+extern uint64_t hhdm_offset;
 extern void syscall_entry(void);
+extern void *memcpy(void *restrict dest, const void *restrict src, size_t n);
 int8_t find_free_fd(Task* task);
 
 static bool verify_usr_access(uint64_t ptr, uint64_t size)
@@ -139,29 +144,95 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
         case 7:
         {
-            // sys_exec
-            size_t fname_len = strlen((char*)(arg1)) + 1;
-            char* fname = kmalloc(fname_len);
-            strcpy(fname, (char*)(arg1));
+            // sys_exec(char* path, char** argv)
+            char* fname = (char*)arg1;
+            char** argv = (char**)arg2;
+            
+            int argc = 0;
+            size_t argv_size = 0;
+            while (argv[argc] != NULL)
+            {
+                argv_size += strlen(argv[argc]) + 1;
+                argc++;
+            }
+
+            size_t argv_ptr_size = (argc + 1) * sizeof(uint64_t) ;
+            
+            char* argv_buf = kmalloc(argv_size);
+
+            int cpy_off = 0;
+            for (int i = 0; i < argc; i++)
+            {
+                size_t len = strlen(argv[i]) + 1;
+                memcpy(&argv_buf[cpy_off], argv[i], len);
+                cpy_off += len;
+            }
+
+            uint64_t start_usr_addr = USER_STACK_TOP - argv_size; // address to store the argv content in the new stack
+            uint64_t* argv_list = (uint64_t*)kmalloc(argv_ptr_size);
+
+            size_t curr_off = 0;
+            for (int i = 0; i < argc; i++)
+            {
+                argv_list[i] = start_usr_addr + curr_off;
+                curr_off += strlen(argv[i]) + 1; 
+            }
+
+            argv_list[argc] = 0;
+
+            char* elf_fname = kmalloc(strlen(fname) + 1);
+            strcpy(elf_fname, fname);
 
             uint64_t old_pml4 = read_cr3();
 
             Task* task = sched_new_task();
             write_cr3(task->pml4);
 
-            uint64_t entry = elf_load(fname);
+            uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
+            uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
+
+            vmm_map_page(
+                (uint64_t*)(task->pml4 + hhdm_offset),
+                virt_usr_stk_base,
+                phys_usr_stk,
+                VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
+            );
+
+            // copy the argv_buf
+            uint64_t offset_buf = start_usr_addr & 0xFFF;
+            void* dest_buf = (void*)(phys_usr_stk + offset_buf + hhdm_offset);
+            memcpy(dest_buf, argv_buf, argv_size);
+
+            // copy the argv_list
+            uint64_t start_list_addr = start_usr_addr - argv_ptr_size; 
+            uint64_t offset_list = start_list_addr & 0xFFF;
+            void* dest_list = (void*)(phys_usr_stk + offset_list + hhdm_offset);
+            memcpy(dest_list, argv_list, argv_ptr_size);
+
+            // write argc into the rsp top
+            // virt_rsp = start_list_addr - 8
+            uint64_t rsp_virt_addr = start_list_addr - sizeof(uint64_t);
+            uint64_t offset_rsp = rsp_virt_addr & 0xFFF;
+            uint64_t* dest_rsp = (uint64_t*)(phys_usr_stk + offset_rsp + hhdm_offset);
+            *dest_rsp = argc;
+
+            kfree(argv_buf);
+            kfree(argv_list);
+
+            uint64_t entry = elf_load(elf_fname);
 
             if (entry == 0)
             {
                 write_cr3(old_pml4);
-                kfree(fname);
+                kfree(elf_fname);
                 sched_destroy_task(task);
                 return -1;
             }
 
             write_cr3(old_pml4);
-            kfree(fname);
-            sched_load_task(task, entry);
+            kfree(elf_fname);
+
+            sched_load_task(task, entry, rsp_virt_addr);
 
             return task->pid;
         }

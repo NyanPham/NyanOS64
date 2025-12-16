@@ -5,6 +5,7 @@
 #include "pmm.h"
 #include "vmm.h"
 #include "drivers/serial.h" // debugging
+#include "kern_defs.h"
 
 extern uint64_t hhdm_offset;
 
