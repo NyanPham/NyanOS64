@@ -42,5 +42,6 @@ int vfs_mount(const char* path, vfs_node_t* fs_root);
 file_handle_t* vfs_open(const char* filename, uint32_t mode);
 void vfs_close(file_handle_t* file);
 uint64_t vfs_read(file_handle_t* file, uint64_t size, uint8_t* buffer);
+uint64_t vfs_write(file_handle_t* file, uint64_t size, uint8_t* buffer);
 
 #endif

@@ -68,36 +68,96 @@ void syscall_init(void)
     kprint("Syscall MSRs configured.\n");
 }
 
+/**
+ * @brief Handles system calls
+ *
+ * | Syscall # | Function Name    | Description                                |
+ * |-----------|------------------|--------------------------------------------|
+ * | 0         | sys_read         | Reads from a file descriptor.              |
+ * | 1         | sys_write        | Writes to a file descriptor.               |
+ * | 2         | -                | Reserved.                                  |
+ * | 3         | sys_clear        | Clears the video screen.                   |
+ * | 4         | sys_reboot       | Reboots the system.                        |
+ * | 5         | sys_list_files   | Lists files in the root directory (TAR).   |
+ * | 6         | sys_read_file    | Reads a file content (Legacy/Deprecated).  |
+ * | 7         | sys_exec         | Executes a new program (ELF).              |
+ * | 8         | sys_exit         | Terminates the current process.            |
+ * | 9         | sys_waitpid      | Waits for a child process to exit.         |
+ * | 10        | sys_open         | Opens a file.                              |
+ * | 11        | sys_close        | Closes a file descriptor.                  |
+ * | 12        | -                | Reserved.                                  |
+ *
+ * @param sys_num The system call number.
+ * @return The return value of the system call (typically 0 or bytes processed on success, -1 on error).
+ */
 uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
 {
-    (void)arg3; (void)arg4; (void)arg5;
+    (void)arg4; (void)arg5;
     switch (sys_num)
     {
         case 0:
         {
-            // kprint("Kernel: Syscall 0 called (test)\n");
-            return 0;
+            /*
+            sys_read(fd, buf, count)
+            */
+            int8_t fd = (int8_t)arg1;
+            char* buf = (char*)arg2;
+            uint64_t count = arg3;
+
+            // validate fd
+            if (fd < 0 || fd >= MAX_OPEN_FILES)
+            {
+                return -1;
+            }
+
+            Task* curr_task = get_curr_task(); 
+            if (curr_task->fd_tbl[fd] == NULL)
+            {
+                return -1;
+            }
+
+            // validate user access
+            if (!verify_usr_access((uint64_t)buf, count))
+            {
+                kprint("SYS_READ: invalid buffer\n");
+                return -1;
+            }
+
+            // call vfs (if fd == 0, we read the stdin_read)
+            return vfs_read(curr_task->fd_tbl[fd], count, (uint8_t*)buf);
         }
         case 1:
         {
-            // Sys_write(str, color)
-            // kprint((const char*)arg1);
-            video_write((const char*)arg1, (uint32_t)arg2);
-            return 0;
+            // sys_write(fd, buf, count)
+            int8_t fd = (int8_t)arg1;
+            char* buf = (char*)arg2;
+            uint64_t count = arg3;
+
+            // validate fd
+            if (fd < 0 || fd >= MAX_OPEN_FILES)
+            {
+                return -1;
+            }
+
+            Task* curr_task = get_curr_task();
+            if (curr_task->fd_tbl[fd] == NULL)
+            {
+                return -1;
+            }
+
+            // validate user access
+            if (!verify_usr_access((uint64_t)buf, count))
+            {
+                kprint("SYS_WRITE: invalid buffer\n");
+                return -1;
+            }
+
+            // call vfs (if fd == 1, it calls the stdout_write)
+            return vfs_write(curr_task->fd_tbl[fd], count, (uint8_t*)buf);
         }
         case 2:
         {
-            // Sys_read
-            asm volatile("sti");
-            while (1)
-            {
-                char c = keyboard_get_char();
-                if (c != 0)
-                {
-                    return (uint64_t)c;
-                }
-                sched_block();
-            }
+            kprint("SYSCALL 2: RESERVED");
             return 0;
         }
         case 3:
@@ -321,31 +381,8 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
         case 12:
         {
-            // sys_read_f(fd, buf, count)
-            int8_t fd = (int8_t)arg1;
-            char* buf = (char*)arg2;
-            uint64_t count = arg3;
-
-            if (fd < 0 || fd >= MAX_OPEN_FILES)
-            {
-                return -1;
-            }
-
-            Task* curr_task = get_curr_task();
-            file_handle_t* f = curr_task->fd_tbl[fd];
-
-            if (f == NULL)
-            {
-                return -1;
-            }
-
-            if (!(verify_usr_access((uint64_t)buf, count)))
-            {
-                kprint("Syscall read: Invalid User Buffer\n");
-                return -1;
-            }
-
-            return vfs_read(f, count, (uint8_t*)buf);
+            kprint("SYSCALL 12: RESERVED");
+            return 0;
         }
         default:
         {

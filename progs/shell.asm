@@ -10,9 +10,16 @@ section .bss
 
 section .data
     prompt: db "NyanOS> ", 0
+    prompt_len equ $ - prompt
+
     msg_hi: db "Hi! How are you doing?", 0x0A, 0
+    msg_hi_len equ $ - msg_hi
+
     msg_unknown: db "I don't understand that :(", 0x0A, 0
+    msg_unknown_len equ $ - msg_unknown
+
     newline: db 0x0A, 0
+    newline_len equ $ - newline
 
     cmd_hi: db "hi", 0
     cmd_clear: db "clear", 0
@@ -20,22 +27,36 @@ section .data
     cmd_ls: db "ls", 0
     cmd_cat: db "cat ", 0
     cmd_exec: db "exec ", 0
+
     msg_file_not_found: db "Error: file not found!", 0x0A, 0
+    msg_file_not_found_len equ $ - msg_file_not_found
+    
     bs_char: db 0x08, 0
+    bs_char_len equ $ - bs_char
 
 section .text
 _start:
-    mov rax, 1
-    mov rdi, prompt
-    mov rsi, 0x00FF00   ; green
+    mov rax, 1              ; sys_write
+    mov rdi, 1              ; fd = stdout
+    mov rsi, prompt         ; buf
+    mov rdx, prompt_len     ; count 
     syscall
 
     mov qword [buf_idx], 0
 
 .read_loop:
-    mov rax, 2
+    mov rbx, [buf_idx]
+
+    mov rax, 0              ; sys_read
+    mov rdi, 0              ; fd = stdin
+    lea rsi, [input_buf + rbx]  ; buf
+    mov rdx, 1              ; count = 1
     syscall
 
+    mov rbx, [buf_idx]
+    lea rsi, [input_buf + rbx]
+
+    mov al, byte [rsi]
     cmp al, 0x0A
     je .process_cmd
 
@@ -47,9 +68,10 @@ _start:
     mov byte [input_buf + rbx + 1], 0
     inc qword[buf_idx]
 
-    mov rax, 1
-    lea rdi, [input_buf + rbx]
-    mov rsi, 0xFFFFFF   ; white
+    mov rax, 1              ; sys_write
+    mov rdi, 1              ; fd = stdout
+    lea rsi, [input_buf + rbx]  ; buf
+    mov rdx, 1              ; count = 1
     syscall
 
     jmp .read_loop
@@ -63,9 +85,10 @@ _start:
     mov rbx, [buf_idx]
     mov byte [input_buf + rbx], 0
 
-    mov rax, 1
-    mov rdi, bs_char
-    mov rsi, 0xFFFFFF
+    mov rax, 1          ; sys_write
+    mov rdi, 1          ; fd = stdout
+    mov rsi, bs_char    ; buf
+    mov rdx, bs_char_len    ; count
     syscall 
 
     jmp .read_loop
@@ -74,8 +97,10 @@ _start:
     mov rbx, [buf_idx]
     mov byte [input_buf + rbx], 0
     
-    mov rax, 1
-    mov rdi, newline
+    mov rax, 1          ; sys_write
+    mov rdi, 1          ; fd = stdout
+    mov rsi, newline    ; buf
+    mov rdx, newline_len
     syscall
 
 .cmp_cmd_hi:
@@ -87,9 +112,10 @@ _start:
     test rax, rax
     jne .cmp_cmd_clear
 
-    mov rax, 1
-    mov rdi, msg_hi
-    mov rsi, 0xFFFF00   ; yellow
+    mov rax, 1              ; sys_write
+    mov rdi, 1              ; buf = stdout
+    mov rsi, msg_hi         ; buf
+    mov rdx, msg_hi_len     ; count
     syscall
     jmp _start
 
@@ -152,10 +178,10 @@ _start:
     mov rbx, rax
     
 .cat_read_loop:
-    mov rax, 12
-    mov rdi, rbx
+    mov rax, 0              ; sys_read
+    mov rdi, rbx            ; fd
     lea rsi, [file_content] 
-    mov r14, 2047 ; 1 last byte for \0
+    mov rdx, 2047           ; 1 last byte for \0
     syscall 
 
     cmp rax, 0
@@ -165,9 +191,10 @@ _start:
     add r8, rax
     mov byte[r8], 0
 
-    mov rax, 1
-    lea rdi, [file_content]
-    mov rsi, 0x00FFFF ; cyan
+    mov rdx, rax            ; count
+    mov rax, 1              ; sys_write
+    mov rdi, 1              ; stdout
+    lea rsi, [file_content] ; buf
     syscall
 
     jmp .cat_close
@@ -176,16 +203,19 @@ _start:
     mov rdi, rbx
     syscall
 
-    mov rax, 1
-    mov rdi, newline
+    mov rax, 1          ; sys_write
+    mov rdi, 1          ; fd = stdout
+    mov rsi, newline    ; buf
+    mov rdx, newline_len
     syscall 
 
     jmp _start
 
 .cat_fail:
-    mov rax, 1
-    mov rdi, msg_file_not_found
-    mov rsi, 0xFF0000   ; red
+    mov rax, 1                          ; sys_write
+    mov rdi, 2                          ; fd = stderr
+    mov rsi, msg_file_not_found         ; buf
+    mov rdx, msg_file_not_found_len     ; count
     syscall
 
     jmp _start
@@ -216,10 +246,12 @@ _start:
     jns .exec_succ
 
 .exec_fail:
-    mov rax, 1
-    mov rdi, msg_file_not_found
-    mov rsi, 0xFF0000
+    mov rax, 1                          ; sys_write
+    mov rdi, 2                          ; fd = stderr
+    mov rsi, msg_file_not_found         ; buf
+    mov rdx, msg_file_not_found_len     ; count
     syscall
+
     jmp _start
 
 .exec_succ:
@@ -231,9 +263,10 @@ _start:
     jmp _start
 
 .unknown_cmd:
-    mov rax, 1 
-    mov rdi, msg_unknown
-    mov rsi, 0xFF0000   ; red
+    mov rax, 1              ; sys_write
+    mov rdi, 2              ; fd = stderr
+    mov rsi, msg_unknown    ; buff
+    mov rdx, msg_unknown_len    ; count
     syscall
     jmp _start
 

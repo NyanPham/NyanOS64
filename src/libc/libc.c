@@ -6,7 +6,7 @@ static inline uint64_t syscall(uint64_t sys_num, uint64_t arg1, uint64_t arg2, u
     register uint64_t rax asm("rax") = sys_num;
     register uint64_t rdi asm("rdi") = arg1;
     register uint64_t rsi asm("rsi") = arg2;
-    register uint64_t r14 asm("r14") = arg3;
+    register uint64_t rdx asm("rdx") = arg3;
 
     /*
     Input:
@@ -24,7 +24,7 @@ static inline uint64_t syscall(uint64_t sys_num, uint64_t arg1, uint64_t arg2, u
         : "r"(rax),
           "r"(rdi),
           "r"(rsi),
-          "r"(r14)
+          "r"(rdx)
         : "rcx", "r11", "memory"
     );
 
@@ -39,7 +39,8 @@ void exit(int status)
 
 void print(const char* str, uint32_t color)
 {
-    syscall(1, (uint64_t)str, (uint64_t)color, 0);
+    uint64_t len = strlen(str);
+    syscall(1, 1, (uint64_t)str, len);
 }
 
 int open(const char* pathname, uint32_t flags)
@@ -56,8 +57,8 @@ int close(int fd)
 
 int read(int fd, void* buf, uint64_t count)
 {
-    // syscall 12: sys_read
-    return (int)syscall(12, (uint64_t)fd, (uint64_t)buf, count);
+    // syscall 0: sys_read
+    return (int)syscall(0, (uint64_t)fd, (uint64_t)buf, count);
 }
 
 size_t strlen(const char* s) {

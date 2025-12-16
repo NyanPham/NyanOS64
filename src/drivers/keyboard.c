@@ -58,10 +58,19 @@ static void keyboard_handler(void *regs)
 
             kbd_buf.buf[kbd_buf.head] = ascii_char;
             kbd_buf.head++;
-            
-            sched_wake_pid(1);
+
+            if (kbd_buf.waiting_pid != -1)
+            {
+                sched_wake_pid(kbd_buf.waiting_pid);
+                kbd_buf.waiting_pid = -1;
+            }
         }
     }
+}
+
+void keyboard_set_waiting(int64_t pid)
+{
+    kbd_buf.waiting_pid = pid;
 }
 
 char keyboard_get_char()
@@ -84,6 +93,7 @@ void keyboard_init(void)
     }
     kbd_buf.head = 0;
     kbd_buf.tail = 0;
+    kbd_buf.waiting_pid = -1;
     register_irq_handler(1, keyboard_handler);
     // pic_clear_mask(1);
 }

@@ -39,5 +39,6 @@ void sched_wake_pid(int pid);
 void sched_exit(int code);
 Task* get_curr_task(void);
 Task* sched_find_task(int pid);
+int64_t get_curr_task_pid();
 
 #endif

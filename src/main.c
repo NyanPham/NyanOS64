@@ -17,6 +17,7 @@
 #include "drivers/legacy/pic.h"
 #include "drivers/video.h"
 #include "sched/sched.h"
+#include "fs/dev.h"
 #include "elf.h"
 #include "fs/tar.h"
 #include "fs/vfs.h"
@@ -168,6 +169,7 @@ void kmain(void)
     timer_init();
 
     syscall_init();
+    dev_init_stdio();
     sched_init();
 
     /*=========== Kmalloc test ===========*/
@@ -267,7 +269,7 @@ void kmain(void)
 
         uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
         uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
-
+        
         vmm_map_page(
             (uint64_t*)(shell_task->pml4 + hhdm_offset),
             virt_usr_stk_base,

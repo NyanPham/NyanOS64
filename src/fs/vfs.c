@@ -74,6 +74,24 @@ uint64_t vfs_read(file_handle_t* file, uint64_t size, uint8_t* buffer)
     return 0;
 }
 
+uint64_t vfs_write(file_handle_t* file, uint64_t size, uint8_t* buffer)
+{
+    if (file == NULL)
+    {
+        kprint("VFS WRITE: Invalid file\n"); 
+        return 0;
+    }
+    
+    if (file->node && file->node->ops && file->node->ops->write)
+    {
+        uint64_t nbytes = file->node->ops->write(file->node, file->offset, size, buffer);
+        file->offset += nbytes;
+        return nbytes;
+    }
+
+    return 0;
+}
+
 void vfs_close(file_handle_t* file)
 {
     if (file == NULL)

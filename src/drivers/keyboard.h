@@ -10,9 +10,11 @@ typedef struct
     char buf[kbd_buf_SIZE];
     uint8_t head;
     uint8_t tail;
+    int64_t waiting_pid;
 } kbd_buf_t;
 
 char keyboard_get_char(void); 
+void keyboard_set_waiting(int64_t pid);
 void keyboard_init(void);
 
 #endif

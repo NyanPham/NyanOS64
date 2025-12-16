@@ -6,6 +6,7 @@
 #include "drivers/serial.h"
 #include "cpu.h"
 #include "kern_defs.h"
+#include "fs/dev.h"
 
 #include <stddef.h>
 
@@ -47,6 +48,8 @@ Task *sched_new_task(void)
     {
         new_task->fd_tbl[i] = NULL;
     }
+
+    dev_attach_stdio(new_task->fd_tbl);
 
     return new_task;
 }
@@ -381,4 +384,15 @@ Task* sched_find_task(int pid)
     while (t != g_head_task);
 
     return NULL;
+}
+
+int64_t get_curr_task_pid()
+{
+    Task* t = get_curr_task();
+    if (t == NULL)
+    {
+        return -1;
+    }
+
+    return t->pid;
 }
