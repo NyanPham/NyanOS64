@@ -153,7 +153,6 @@ debug: image
 	@echo "Waiting for GDB to connect on port 1234 (run: gdb -ex 'target remote :1234' bin/nyanOS)"
 	@qemu-system-x86_64 -hda $(IMAGE_FILE) -S -s -serial stdio
 
-
 .PHONY: clean
 clean:
 	@echo "Cleaning build artifacts..."
@@ -163,6 +162,7 @@ clean:
 	@echo "Cleaning User-space artifacts..."
 	@rm -f shell.o shell.elf
 	@rm -f hello.o hello.elf
+	@rm -f snake.o snake.elf
 	@rm -f rootfs.tar
 
 USER_CFLAGS := -Wall -Wextra -std=gnu11 -ffreestanding \
@@ -177,10 +177,11 @@ shell.elf: progs/shell.asm
 	nasm -f elf64 progs/shell.asm -o shell.o
 	ld -nostdlib -Ttext=0x400000 shell.o -o shell.elf
 
-rootfs.tar: shell.elf hello.elf
+rootfs.tar: shell.elf hello.elf snake.elf
 	@echo "Creating rootfs.tar..."
 	cp shell.elf rootfs/
 	cp hello.elf rootfs/
+	cp snake.elf rootfs/
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
 obj/src/libc/crt0.o: src/libc/crt0.asm
@@ -198,6 +199,18 @@ hello.elf: progs/hello.c $(USER_OBJS)
 		obj/progs/hello.c.o \
 		obj/src/libc/libc.c.o \
 		-o hello.elf
+
+snake.elf: progs/snake.c $(USER_OBJS)
+	@echo "Building snake game..."
+	mkdir -p obj/progs
+	
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/snake.c -o obj/progs/snake.c.o
+
+	$(LD) -nostdlib -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/snake.c.o \
+		obj/src/libc/libc.c.o \
+		-o snake.elf
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
 	mkdir -p "$(dir $@)"

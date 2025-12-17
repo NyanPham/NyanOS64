@@ -416,6 +416,8 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                     kprint("SYS_BRK: out of memory!\n");
                     return -1;
                 }
+                
+                memset(phys_addr_hhdm, 0, PAGE_SIZE); // Security: Clean the page
 
                 uint64_t phys_addr = (uint64_t)phys_addr_hhdm - hhdm_offset;
                 

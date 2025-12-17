@@ -5,7 +5,6 @@
 #include <stdint.h>
 
 void video_init(struct limine_framebuffer* fb);
-void video_put_char(char c, uint32_t color);
 void video_write(const char* str, uint32_t color);
 void video_clear();
 void video_scroll(int delta);
