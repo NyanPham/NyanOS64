@@ -22,6 +22,7 @@ typedef struct Task
     uint64_t pml4; // phys_addr of pml4
     struct Task* parent;
     int ret_val;    // exit code
+    uint64_t heap_end;
 } Task;
 
 Task *sched_new_task(void);

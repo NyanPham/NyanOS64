@@ -105,5 +105,10 @@ void vfs_close(file_handle_t* file)
         file->node->ops->close(file->node);
     }
 
+    if (file->node != g_fs_root) 
+    {
+        kfree((void*)file->node);
+    }
+
     kfree((void*)file);
 }

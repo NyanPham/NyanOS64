@@ -24,7 +24,6 @@
 #define EFER_SCE 1              
 #define INT_FLAGS 0x200 
 #define REBOOT_PORT 0x64
-#define KERN_BASE 0xFFFFFFFF80000000
 
 extern uint64_t hhdm_offset;
 extern void syscall_entry(void);
@@ -85,7 +84,8 @@ void syscall_init(void)
  * | 9         | sys_waitpid      | Waits for a child process to exit.         |
  * | 10        | sys_open         | Opens a file.                              |
  * | 11        | sys_close        | Closes a file descriptor.                  |
- * | 12        | -                | Reserved.                                  |
+ * | 12        | sys_sbrk         | Change program break / allocate user heap  |
+ * | 13        | sys_kprint       | Kernel debug print callable from userland |
  *
  * @param sys_num The system call number.
  * @return The return value of the system call (typically 0 or bytes processed on success, -1 on error).
@@ -246,6 +246,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             uint64_t old_pml4 = read_cr3();
 
             Task* task = sched_new_task();
+            task->heap_end = USER_HEAP_START;
             write_cr3(task->pml4);
 
             uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
@@ -381,7 +382,68 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
         case 12:
         {
-            kprint("SYSCALL 12: RESERVED");
+            // sys_sbrk(int64_t incr_payload)
+            int64_t incr_payload = (int64_t)arg1;
+            Task* curr_task = get_curr_task();
+
+            uint64_t prev_brk = curr_task->heap_end;
+            uint64_t next_brk = prev_brk + incr_payload; 
+
+            if (incr_payload == 0)
+            {
+                return prev_brk;
+            }
+
+            // TODO: Support the shrink heap
+            if (incr_payload < 0)
+            {
+                return prev_brk;
+            }
+
+            // old page: (prev_brk - 1) / PAGE_SIZE
+            // new page: (next_brk - 1) / PAGE_SIZE
+            // new page > old page, then map more
+            uint64_t start_page_addr = (prev_brk % PAGE_SIZE) == 0
+                                        ? prev_brk
+                                        : (prev_brk + 0xFFF) & ~0xFFF;
+            uint64_t end_page_addr = (next_brk + 0xFFF) & ~0xFFF;
+
+            for (uint64_t virt_addr = start_page_addr; virt_addr < end_page_addr; virt_addr += PAGE_SIZE)
+            {
+                void *phys_addr_hhdm = pmm_alloc_frame();
+                if (phys_addr_hhdm == NULL)
+                {
+                    kprint("SYS_BRK: out of memory!\n");
+                    return -1;
+                }
+
+                uint64_t phys_addr = (uint64_t)phys_addr_hhdm - hhdm_offset;
+                
+                vmm_map_page(
+                    (uint64_t*)(curr_task->pml4 + hhdm_offset),
+                    virt_addr,
+                    (uint64_t)phys_addr,
+                    VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
+                );
+            }
+            curr_task->heap_end = next_brk;
+            return prev_brk;
+        }
+        case 13:
+        {
+            // sys_kprint(char* s)
+            char* s = (char*)arg1;
+            if (!verify_usr_access((uint64_t)s, 1))
+            {
+                kprint("SYS_KPRINT: invalid buffer\n");
+                return -1;
+            }
+            if (!verify_usr_access((uint64_t)s, strlen(s) + 1))
+            {
+                kprint("SYS_KPRINT: invalid buffer\n");
+                return -1;
+            }
+            kprint(s);
             return 0;
         }
         default:
