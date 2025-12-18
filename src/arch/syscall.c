@@ -87,6 +87,8 @@ void syscall_init(void)
  * | 12        | sys_sbrk         | Change program break / allocate user heap  |
  * | 13        | sys_kprint       | Kernel debug print callable from userland |
  * | 14        | sys_get_key      | Reads a key from the keyboard buffer      |
+ * | 15        | sys_chdir        | Change directory                          |
+ * | 14        | sys_getcwd       | Get current working directory             |
  *
  * @param sys_num The system call number.
  * @return The return value of the system call (typically 0 or bytes processed on success, -1 on error).
@@ -111,8 +113,8 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 return -1;
             }
 
-            Task* curr_task = get_curr_task(); 
-            if (curr_task->fd_tbl[fd] == NULL)
+            Task* curr_tsk = get_curr_task(); 
+            if (curr_tsk->fd_tbl[fd] == NULL)
             {
                 return -1;
             }
@@ -125,7 +127,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             }
 
             // call vfs (if fd == 0, we read the stdin_read)
-            return vfs_read(curr_task->fd_tbl[fd], count, (uint8_t*)buf);
+            return vfs_read(curr_tsk->fd_tbl[fd], count, (uint8_t*)buf);
         }
         case 1:
         {
@@ -140,8 +142,8 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 return -1;
             }
 
-            Task* curr_task = get_curr_task();
-            if (curr_task->fd_tbl[fd] == NULL)
+            Task* curr_tsk = get_curr_task();
+            if (curr_tsk->fd_tbl[fd] == NULL)
             {
                 return -1;
             }
@@ -154,7 +156,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             }
 
             // call vfs (if fd == 1, it calls the stdout_write)
-            return vfs_write(curr_task->fd_tbl[fd], count, (uint8_t*)buf);
+            return vfs_write(curr_tsk->fd_tbl[fd], count, (uint8_t*)buf);
         }
         case 2:
         {
@@ -345,9 +347,9 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             char* fname = (char*)arg1;
             uint32_t mode = (uint32_t)arg2;
 
-            Task* curr_task = get_curr_task();
+            Task* curr_tsk = get_curr_task();
 
-            int8_t fd = find_free_fd(curr_task);
+            int8_t fd = find_free_fd(curr_tsk);
             if (fd < 0)
             {
                 return -1;
@@ -359,7 +361,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 return -1;
             }
 
-            curr_task->fd_tbl[fd] = f;
+            curr_tsk->fd_tbl[fd] = f;
             return fd;
         }
         case 11:
@@ -371,23 +373,23 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 return -1;
             }
 
-            Task* curr_task = get_curr_task();
-            if (curr_task->fd_tbl[fd] == NULL)
+            Task* curr_tsk = get_curr_task();
+            if (curr_tsk->fd_tbl[fd] == NULL)
             {
                 return -1;
             }
 
-            vfs_close(curr_task->fd_tbl[fd]);
-            curr_task->fd_tbl[fd] = NULL;
+            vfs_close(curr_tsk->fd_tbl[fd]);
+            curr_tsk->fd_tbl[fd] = NULL;
             return 0;
         }
         case 12:
         {
             // sys_sbrk(int64_t incr_payload)
             int64_t incr_payload = (int64_t)arg1;
-            Task* curr_task = get_curr_task();
+            Task* curr_tsk = get_curr_task();
 
-            uint64_t prev_brk = curr_task->heap_end;
+            uint64_t prev_brk = curr_tsk->heap_end;
             uint64_t next_brk = prev_brk + incr_payload; 
 
             if (incr_payload == 0)
@@ -423,13 +425,13 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 uint64_t phys_addr = (uint64_t)phys_addr_hhdm - hhdm_offset;
                 
                 vmm_map_page(
-                    (uint64_t*)(curr_task->pml4 + hhdm_offset),
+                    (uint64_t*)(curr_tsk->pml4 + hhdm_offset),
                     virt_addr,
                     (uint64_t)phys_addr,
                     VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
                 );
             }
-            curr_task->heap_end = next_brk;
+            curr_tsk->heap_end = next_brk;
             return prev_brk;
         }
         case 13:
@@ -453,6 +455,60 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         {
             // sys_get_key()
             return (uint64_t)keyboard_get_char();
+        }
+        case 15:
+        {
+            // sys_chdir(path)
+            char* path = (char*) arg1;
+            if (!verify_usr_access((uint64_t)path, 1))
+            {
+                return -1;
+            }
+
+            Task* curr_tsk = get_curr_task();
+
+            // TODO: check if the directory exists
+            // now just assumes we always have it
+
+            if (strcmp(path, "/") == 0)
+            {
+                strcpy(curr_tsk->cwd, "/");
+            }
+            else 
+            {
+                // path starting with '/' is an absolute path
+                if (path[0] == '/')
+                {
+                    strcpy(curr_tsk->cwd, path);
+                }
+                else 
+                {
+                    // TODO:
+                }
+            }
+            return 0;
+        }
+        case 16:
+        {
+            // sys_getcwd(buf, size)
+            char* buf = (char*)arg1;
+            uint64_t size = arg2;
+
+            if (!verify_usr_access((uint64_t)buf, size))
+            {
+                return -1;
+            }
+
+            Task* curr_tsk = get_curr_task();
+            uint64_t len = strlen(curr_tsk->cwd);
+
+            if (size < len + 1)
+            {
+                return -1;
+            }
+
+            strcpy(buf, curr_tsk->cwd);
+            return 0;
         }
         default:
         {

@@ -14,6 +14,7 @@ void kprint(const char* s);
 int open(const char* pathname, uint32_t flags);
 int close(int fd);
 int read(int fd, void* buf, uint64_t count);
+void reboot(void);
 
 char* strcpy(char* dest, const char* src);
 int strncmp(const char* s1, const char* s2, size_t n); 
@@ -32,6 +33,15 @@ void* realloc(void* ptr, size_t size);
 /* Rand */
 int rand(void);
 void srand(unsigned int seed);
+
+/* Dir sys */
+int chdir(const char* path);
+char* getcwd(char* buf, size_t size);
+void list_files(void);
+
+/* Process/syscall */
+int exec(const char* path, char* const argv[]);
+int waitpid(int pid, int* status);
 
 /* Others */
 void move_cursor(int row, int col);

@@ -16,8 +16,8 @@
 #define KERN_TASK_PID 0x0
 
 // Linked list for Tasks
-static Task* g_head_task = NULL;
-static Task* g_curr_task = NULL;
+static Task* g_head_tsk = NULL;
+static Task* g_curr_tsk = NULL;
 static int g_next_pid = KERN_TASK_PID + 1;      // value "0" is our OS kernel
 
 extern uint64_t hhdm_offset;
@@ -37,21 +37,32 @@ extern void task_start_stub(void);
 */
 Task *sched_new_task(void)
 {
-    Task* new_task = (Task*)kmalloc(sizeof(Task));
-    new_task->pid = g_next_pid++;
-    new_task->next = NULL;
-    new_task->state = TASK_WAITING;
-    new_task->pml4 = vmm_new_pml4();
-    new_task->parent = g_curr_task;
+    Task* new_tsk = (Task*)kmalloc(sizeof(Task));
+    new_tsk->pid = g_next_pid++;
+    new_tsk->next = NULL;
+    new_tsk->kern_stk_top = 0;
+    new_tsk->state = TASK_WAITING;
+    new_tsk->pml4 = vmm_new_pml4();
+    new_tsk->parent = g_curr_tsk;
+    new_tsk->heap_end = USER_HEAP_START;
+
+    if (g_curr_tsk != NULL) // has parent -> copy dir from him
+    {
+        strcpy(new_tsk->cwd, g_curr_tsk->cwd);
+    }
+    else  // else, it's the first task, root is "/"
+    {
+        strcpy(new_tsk->cwd, "/");
+    }
 
     for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
     {
-        new_task->fd_tbl[i] = NULL;
+        new_tsk->fd_tbl[i] = NULL;
     }
 
-    dev_attach_stdio(new_task->fd_tbl);
+    dev_attach_stdio(new_tsk->fd_tbl);
 
-    return new_task;
+    return new_tsk;
 }
 
 /*
@@ -59,16 +70,16 @@ Task *sched_new_task(void)
  * Allocs user stack for the program to run
  * Makes fake task scene
  */
-void sched_load_task(Task* task, uint64_t entry, uint64_t rsp)
+void sched_load_task(Task* tsk, uint64_t entry, uint64_t rsp)
 {
     uint64_t curr_pml4 = read_cr3();
-    write_cr3(task->pml4);
+    write_cr3(tsk->pml4);
 
     // alloc a page for within the Kernel Stack
     // Note: kern_stk is virt hhdm addr.
     void* kern_stk = pmm_alloc_frame();
     uint64_t* sp = (uint64_t*)((uint8_t*)kern_stk + PAGE_SIZE);
-    task->kern_stk_top = (uint64_t)sp;
+    tsk->kern_stk_top = (uint64_t)sp;
 
     // now make a fake scene from scratch for the new task
     *(--sp) = NEW_TASK_SS;              // SS
@@ -92,22 +103,22 @@ void sched_load_task(Task* task, uint64_t entry, uint64_t rsp)
     }
     
     // now the top of the Kernel Stack is to store the whole state of the task
-    task->kern_stk_rsp = (uint64_t)sp;
+    tsk->kern_stk_rsp = (uint64_t)sp;
 
     // add to the linked list of Tasks
-    if (g_head_task == NULL)
+    if (g_head_tsk == NULL)
     {
-        g_head_task = task;
-        task->next = task; // (loop)
-        g_curr_task = task;
+        g_head_tsk = tsk;
+        tsk->next = tsk; // (loop)
+        g_curr_tsk = tsk;
     } 
     else
     {
-        task->next = g_head_task->next;
-        g_head_task->next = task;
+        tsk->next = g_head_tsk->next;
+        g_head_tsk->next = tsk;
     }
 
-    task->state = TASK_READY;
+    tsk->state = TASK_READY;
     write_cr3(curr_pml4);
 }
 
@@ -117,32 +128,36 @@ void sched_load_task(Task* task, uint64_t entry, uint64_t rsp)
  * Returns the PML4 page (recursively) to the PMM
  * Frees the struct Task
  */
-void sched_destroy_task(Task* task)
+void sched_destroy_task(Task* tsk)
 {
-    pmm_free_frame((void*)(task->kern_stk_top - PAGE_SIZE));
-    vmm_ret_pml4(task->pml4);
-    kfree(task);
+    if (tsk->kern_stk_top != 0)
+    {
+        pmm_free_frame((void*)(tsk->kern_stk_top - PAGE_SIZE));
+    }
+
+    vmm_ret_pml4(tsk->pml4);
+    kfree(tsk);
 }
 
-void sched_unlink_task(Task *task)
+void sched_unlink_task(Task *tsk)
 {
     // find the task's predecessor
-    Task* prev = task;
-    while (prev->next != task)
+    Task* prev = tsk;
+    while (prev->next != tsk)
     {
         prev = prev->next;
     }
 
     // unlink it
-    Task* next_task = task->next;
-    prev->next = next_task;
+    Task* next_tsk = tsk->next;
+    prev->next = next_tsk;
 
-    if (task == g_head_task)
+    if (tsk == g_head_tsk)
     {
-        g_head_task = next_task;
-        if (task == next_task)
+        g_head_tsk = next_tsk;
+        if (tsk == next_tsk)
         {
-            g_head_task = NULL;
+            g_head_tsk = NULL;
         }
     }
 }
@@ -151,25 +166,25 @@ void sched_unlink_task(Task *task)
 void sched_create_task(uint64_t entry)
 {
     // construct a new task
-    Task* new_task = (Task*)kmalloc(sizeof(Task));
-    new_task->pid = g_next_pid++;
-    new_task->next = NULL;
-    new_task->state = TASK_READY;
-    new_task->pml4 = vmm_new_pml4();
+    Task* new_tsk = (Task*)kmalloc(sizeof(Task));
+    new_tsk->pid = g_next_pid++;
+    new_tsk->next = NULL;
+    new_tsk->state = TASK_READY;
+    new_tsk->pml4 = vmm_new_pml4();
 
     for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
     {
-        new_task->fd_tbl[i] = NULL;
+        new_tsk->fd_tbl[i] = NULL;
     }
 
     // alloc a page for within the Kernel Stack
     // Note: kern_stk is virt hhdm addr.
     void* kern_stk = pmm_alloc_frame();
     uint64_t* sp = (uint64_t*)((uint8_t*)kern_stk + PAGE_SIZE);
-    new_task->kern_stk_top = (uint64_t)sp;
+    new_tsk->kern_stk_top = (uint64_t)sp;
 
     // alloc a page for User Stack, map it with a virt addr
-    uint64_t virt_usr_stk = 0x500000 + (new_task->pid * 0x10000);
+    uint64_t virt_usr_stk = 0x500000 + (new_tsk->pid * 0x10000);
     uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
 
     vmm_map_page(
@@ -201,19 +216,19 @@ void sched_create_task(uint64_t entry)
     }
     
     // now the top of the Kernel Stack is to store the whole state of the task
-    new_task->kern_stk_rsp = (uint64_t)sp;
+    new_tsk->kern_stk_rsp = (uint64_t)sp;
 
     // add to the linked list of Tasks
-    if (g_head_task == NULL)
+    if (g_head_tsk == NULL)
     {
-        g_head_task = new_task;
-        new_task->next = new_task; // (loop)
-        g_curr_task = new_task;
+        g_head_tsk = new_tsk;
+        new_tsk->next = new_tsk; // (loop)
+        g_curr_tsk = new_tsk;
     } 
     else
     {
-        new_task->next = g_head_task->next;
-        g_head_task->next = new_task;
+        new_tsk->next = g_head_tsk->next;
+        g_head_tsk->next = new_tsk;
     }
 }
 #endif 
@@ -248,8 +263,8 @@ void sched_init(void)
     *(--sp) = 0; // R15
     kern_task->kern_stk_rsp = (uint64_t)sp;
     kern_task->next = kern_task;
-    g_head_task = kern_task;
-    g_curr_task = NULL; 
+    g_head_tsk = kern_task;
+    g_curr_tsk = NULL; 
 }
 
 void task_idle(void)
@@ -263,56 +278,56 @@ void task_idle(void)
 
 void schedule(void)
 {
-    Task* next_task;
+    Task* next_tsk;
 
-    if (g_curr_task == NULL)
+    if (g_curr_tsk == NULL)
     {
-        next_task = g_head_task;
+        next_tsk = g_head_tsk;
     }
     else 
     {
-        next_task = g_curr_task->next;
+        next_tsk = g_curr_tsk->next;
 
-        while (next_task->state != TASK_READY)
+        while (next_tsk->state != TASK_READY)
         {
-            next_task = next_task->next;
+            next_tsk = next_tsk->next;
         }
 
-        if (next_task == g_curr_task) 
+        if (next_tsk == g_curr_tsk) 
         {
             // kprint("Only 1 task, no switch!\n");
             return;
         }
     }
 
-    Task* prev_task = g_curr_task;
-    g_curr_task = next_task;
+    Task* prev_task = g_curr_tsk;
+    g_curr_tsk = next_tsk;
 
-    tss_set_stack(next_task->kern_stk_top);
-    kern_stk_ptr = next_task->kern_stk_top;
+    tss_set_stack(next_tsk->kern_stk_top);
+    kern_stk_ptr = next_tsk->kern_stk_top;
 
     // Process Isolation
     // store the pml4 of the task to the CR3
-    write_cr3(next_task->pml4);
+    write_cr3(next_tsk->pml4);
 
     /*
     Context Switching
     We do save current RSP value into &prev_task->kern_stk_rsp
-    and pass new RSP value from next_task->kern_stk_rsp
+    and pass new RSP value from next_tsk->kern_stk_rsp
     */
     if (prev_task == NULL)
     {
-        switch_to_task(NULL, next_task->kern_stk_rsp);
+        switch_to_task(NULL, next_tsk->kern_stk_rsp);
     }
     else
     {
-        switch_to_task(&prev_task->kern_stk_rsp, next_task->kern_stk_rsp);
+        switch_to_task(&prev_task->kern_stk_rsp, next_tsk->kern_stk_rsp);
     }
 }
 
 void sched_block()
 {
-    g_curr_task->state = TASK_WAITING;
+    g_curr_tsk->state = TASK_WAITING;
     schedule();
 }
 
@@ -329,27 +344,27 @@ void sched_wake_pid(int pid)
 
 void sched_exit(int code)
 {
-    if (g_curr_task->pid == 0)
+    if (g_curr_tsk->pid == 0)
     {
         kprint("Kernel cannot exit!\n");
         return;
     }
 
     // unlink it
-    Task* task_to_exit = g_curr_task;
-    Task* next_task = task_to_exit->next;
+    Task* task_to_exit = g_curr_tsk;
+    Task* next_tsk = task_to_exit->next;
     
-    if (g_head_task == task_to_exit)
+    if (g_head_tsk == task_to_exit)
     {
-        g_head_task = next_task;
+        g_head_tsk = next_tsk;
     }
 
-    g_curr_task = next_task;
+    g_curr_tsk = next_tsk;
 
-    tss_set_stack(next_task->kern_stk_top);
-    kern_stk_ptr = next_task->kern_stk_top;
+    tss_set_stack(next_tsk->kern_stk_top);
+    kern_stk_ptr = next_tsk->kern_stk_top;
 
-    write_cr3(next_task->pml4);
+    write_cr3(next_tsk->pml4);
 
     // sched_destroy_task(task_to_exit);
     task_to_exit->state = TASK_ZOMBIE;
@@ -357,22 +372,22 @@ void sched_exit(int code)
     sched_wake_pid(task_to_exit->parent->pid);
 
     kprint("Task exited. Switching to next...");
-    switch_to_task(NULL, next_task->kern_stk_rsp);
+    switch_to_task(NULL, next_tsk->kern_stk_rsp);
 }
 
 Task* get_curr_task()
 {
-    return g_curr_task;
+    return g_curr_tsk;
 }
 
 Task* sched_find_task(int pid)
 {
-    if (g_head_task == NULL)
+    if (g_head_tsk == NULL)
     {
         return NULL;
     }
 
-    Task* t = g_head_task;
+    Task* t = g_head_tsk;
     do 
     {
         if (t->pid == pid)
@@ -381,7 +396,7 @@ Task* sched_find_task(int pid)
         }
         t = t->next;
     }
-    while (t != g_head_task);
+    while (t != g_head_tsk);
 
     return NULL;
 }

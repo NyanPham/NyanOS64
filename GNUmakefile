@@ -172,10 +172,15 @@ USER_CFLAGS := -Wall -Wextra -std=gnu11 -ffreestanding \
 
 USER_OBJS := obj/src/libc/crt0.o obj/src/libc/libc.c.o
 
-shell.elf: progs/shell.asm
+shell.elf: progs/shell.c $(USER_OBJS)
 	@echo "Building Shell..."
-	nasm -f elf64 progs/shell.asm -o shell.o
-	ld -nostdlib -Ttext=0x400000 shell.o -o shell.elf
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/shell.c -o obj/progs/shell.c.o
+	$(LD) -nostdlib -Ttext=0x400000 \
+		obj/src/libc/crt0.o \
+		obj/progs/shell.c.o \
+		obj/src/libc/libc.c.o \
+		-o shell.elf
 
 rootfs.tar: shell.elf hello.elf snake.elf
 	@echo "Creating rootfs.tar..."

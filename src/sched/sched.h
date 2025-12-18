@@ -23,6 +23,7 @@ typedef struct Task
     struct Task* parent;
     int ret_val;    // exit code
     uint64_t heap_end;
+    char cwd[256];
 } Task;
 
 Task *sched_new_task(void);

@@ -67,6 +67,11 @@ int read(int fd, void* buf, uint64_t count)
     return (int)syscall(0, (uint64_t)fd, (uint64_t)buf, count);
 }
 
+void reboot(void)
+{
+    syscall(4, 0, 0, 0);
+}
+
 /* ======= STRING, MEMORY FUNCTIONS =======*/
 size_t strlen(const char* s) {
     size_t len = 0;
@@ -325,6 +330,39 @@ int rand(void)
 void srand(unsigned int seed)
 {
     rand_next = seed;
+}
+
+/*======= PROCESS/SYSCALL =======*/
+int exec(const char* path, char* const argv[])
+{
+    return (int)syscall(7, (uint64_t)path, (uint64_t)argv, 0);
+}
+
+int waitpid(int pid, int* status)
+{
+    return (int)syscall(9, (uint64_t)pid, (uint64_t)status, 0);
+}
+
+/*======= DIR SYS =======*/
+int chdir(const char* path)
+{
+    return (int)syscall(15, (uint64_t)path, 0, 0);
+}
+
+char* getcwd(char* buf, size_t size)
+{
+    int ret = (int)syscall(16, (uint64_t)buf, (uint64_t)size, 0);
+    if (ret < 0)
+    {
+        return NULL;
+    }
+
+    return buf;
+}
+
+void list_files(void)
+{
+    syscall(5, 0, 0, 0);
 }
 
 /*======= OTHERS =======*/
