@@ -29,4 +29,13 @@ void* malloc(size_t size);
 void free(void* ptr);
 void* realloc(void* ptr, size_t size);
 
+/* Rand */
+int rand(void);
+void srand(unsigned int seed);
+
+/* Others */
+void move_cursor(int row, int col);
+int get_key(void);
+void sleep(uint64_t loop_cnt);
+
 #endif

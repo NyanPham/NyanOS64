@@ -214,6 +214,13 @@ static void execute_ansi_command(char cmd)
             }
             break;
         }
+        case 'l':   // reset mode
+        case 'h':   // set mode
+        {
+            // trivial
+            // TODO:
+            break;
+        }
         default:
         {
             char tmp[2];
@@ -290,7 +297,7 @@ static void video_putc_internal(char c)
     // Round 3: record those dance
     else if (g_ansi_state == ANSI_CSI)
     {
-        if ((c >= '0' && c <= '9') || c == ';')
+        if ((c >= '0' && c <= '9') || c == ';' || c == '?')
         {
             // 10;20?
             if (g_ansi_idx < sizeof(g_ansi_buf) - 1)

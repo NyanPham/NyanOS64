@@ -1,6 +1,5 @@
 #include "libc.h"
 
-
 /* ======= SYSCALL WRAPPERS =======*/
 static inline uint64_t syscall(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_t arg3)
 {
@@ -312,4 +311,87 @@ void* realloc(void* ptr, size_t size)
     memcpy(new_ptr, ptr, blk_ptr->size);
     free(ptr);
     return new_ptr;
+}
+
+/*======= RAND =======*/
+static unsigned long int rand_next = 1;
+
+int rand(void)
+{
+    rand_next = rand_next * 1103515245 + 12345;
+    return (unsigned int)(rand_next / 65536) % 32768; 
+}
+
+void srand(unsigned int seed)
+{
+    rand_next = seed;
+}
+
+/*======= OTHERS =======*/
+void move_cursor(int row, int col)
+{
+    print("\033[");
+
+    char buf[16];
+    int i = 0;
+
+    int r = row;
+    if (r == 0)
+    {
+        buf[i++] = '0';
+    }
+    else
+    {
+        char tmp[10];
+        int j = 0;
+        while (r > 0)
+        {
+            tmp[j++] = (r % 10) + '0';
+            r /= 10;
+        }
+        while (j > 0)
+        {
+            buf[i++] = tmp[--j];
+        }
+    }
+
+    buf[i++] = ';';
+
+    int c = col;
+    if (c == 0)
+    {
+        buf[i++] = '0';
+    }
+    else 
+    {
+        char tmp[10]; 
+        int j=0;
+        while(c > 0) 
+        { 
+            tmp[j++] = (c % 10) + '0'; 
+            c /= 10; 
+        }
+        while(j > 0) 
+        {
+            buf[i++] = tmp[--j];
+        }
+    }
+    
+    buf[i++] = 'H';
+    buf[i] = 0;
+    
+    print(buf);
+}
+
+int get_key(void)
+{
+    return (int)syscall(14, 0, 0, 0);
+}
+
+void sleep(uint64_t loop_cnt)
+{
+    for (volatile uint64_t i = 0; i < loop_cnt; i++)
+    {
+        asm volatile ("nop");
+    }
 }

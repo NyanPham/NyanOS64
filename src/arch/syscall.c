@@ -86,6 +86,7 @@ void syscall_init(void)
  * | 11        | sys_close        | Closes a file descriptor.                  |
  * | 12        | sys_sbrk         | Change program break / allocate user heap  |
  * | 13        | sys_kprint       | Kernel debug print callable from userland |
+ * | 14        | sys_get_key      | Reads a key from the keyboard buffer      |
  *
  * @param sys_num The system call number.
  * @return The return value of the system call (typically 0 or bytes processed on success, -1 on error).
@@ -447,6 +448,11 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             }
             kprint(s);
             return 0;
+        }
+        case 14:
+        {
+            // sys_get_key()
+            return (uint64_t)keyboard_get_char();
         }
         default:
         {
