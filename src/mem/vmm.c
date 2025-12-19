@@ -2,10 +2,9 @@
 #include "cpu.h"
 #include "vmm.h"
 #include "pmm.h"
+#include "../string.h"
 #include "kern_defs.h"
 
-extern void* memset(void *s, int c, size_t n);  // from main.c
-extern void *memcpy(void *restrict dest, const void *restrict src, size_t n);
 extern uint64_t hhdm_offset; // from pmm.c
 
 uint64_t* kern_pml4 = NULL; // shared to other components

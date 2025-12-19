@@ -27,7 +27,6 @@
 
 extern uint64_t hhdm_offset;
 extern void syscall_entry(void);
-extern void *memcpy(void *restrict dest, const void *restrict src, size_t n);
 int8_t find_free_fd(Task* task);
 
 static bool verify_usr_access(uint64_t ptr, uint64_t size)
@@ -208,7 +207,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         case 7:
         {
             // sys_exec(char* path, char** argv)
-            char* fname = (char*)arg1;
+            char* raw_path = (char*)arg1;
             char** argv = (char**)arg2;
             
             int argc = 0;
@@ -243,8 +242,13 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
             argv_list[argc] = 0;
 
-            char* elf_fname = kmalloc(strlen(fname) + 1);
-            strcpy(elf_fname, fname);
+            // handle the path
+            Task* curr_tsk = get_curr_task();
+            char full_path[256];
+            resolve_path(curr_tsk->cwd, raw_path, full_path);
+
+            char* elf_fname = kmalloc(strlen(full_path) + 1);
+            strcpy(elf_fname, full_path);
 
             uint64_t old_pml4 = read_cr3();
 
@@ -467,25 +471,17 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
             Task* curr_tsk = get_curr_task();
 
-            // TODO: check if the directory exists
+            char new_path[256];
+            resolve_path(curr_tsk->cwd, path, new_path);
+            // TODO: check if the directory exists with new vfs_is_dir(path)
             // now just assumes we always have it
 
-            if (strcmp(path, "/") == 0)
+            if (strlen(new_path) >= 255)
             {
-                strcpy(curr_tsk->cwd, "/");
+                return -1;
             }
-            else 
-            {
-                // path starting with '/' is an absolute path
-                if (path[0] == '/')
-                {
-                    strcpy(curr_tsk->cwd, path);
-                }
-                else 
-                {
-                    // TODO:
-                }
-            }
+
+            strcpy(curr_tsk->cwd, new_path);
             return 0;
         }
         case 16:
@@ -531,4 +527,86 @@ int8_t find_free_fd(Task* task)
     }
 
     return -1;
+}
+
+void resolve_path(const char* cwd, const char* inp_path, char* out_buf)
+{
+    char tmp[256];
+
+    // First, let's find the starting point
+    if (inp_path[0] == '/')
+    {
+        // absolute path
+        strcpy(tmp, inp_path);
+    }
+    else
+    {
+        // relative path -> cwd + "/" + inp_path
+        strcpy(tmp, cwd);
+        int len = strlen(tmp);
+        if (len > 1 && tmp[len-1] != '/')
+        {
+            strcat(tmp, "/");
+        }
+        strcat(tmp, inp_path);
+    }
+
+    // Second, handle the Stack logic with `..` and `.`
+    char stack[32][32];
+    int top = 0;
+    int i = 0;
+
+    if (tmp[0] == '/')
+    {
+        i = 1;
+    }
+
+    char name_buf[32];
+    int n_idx = 0;
+
+    while (1)
+    {
+        char c = tmp[i];
+
+        if (c == '/' || c == 0)
+        {
+            name_buf[n_idx] = 0;
+            if (n_idx > 0)
+            {
+                if (strcmp(name_buf, "..") == 0)
+                {
+                    if (top > 0) top--;
+                }
+                else if (strcmp(name_buf, ".") == 0)
+                {
+                    // ignore
+                }
+                else
+                {
+                    strcpy(stack[top++], name_buf);
+                }
+            }
+            n_idx = 0;
+            if (c == 0)
+            {
+                break;
+            }
+        }
+        else 
+        {
+            name_buf[n_idx++] = c;
+        }
+        i++;
+    }
+
+    // Last, rebuild the stack path
+    strcpy(out_buf, "/");
+    for (int k = 0; k < top; k++)
+    {
+        if (k > 0)
+        {
+            strcat(out_buf, "/");
+        }
+        strcat(out_buf, stack[k]);
+    }
 }

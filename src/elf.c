@@ -12,8 +12,6 @@
 
 extern uint64_t hhdm_offset;
 extern uint64_t* kern_pml4;
-extern void *memset(void *s, int c, size_t n);
-void *memcpy(void *restrict dest, const void *restrict src, size_t n);
 
 uint64_t elf_load(const char* fname)
 {

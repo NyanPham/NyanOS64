@@ -45,6 +45,12 @@ char* tar_read_file(const char* fname)
 
     tar_header* hdr = (tar_header*)g_tar_addr;
 
+    const char* search_name = fname;
+    if (*search_name == '/')
+    {
+        search_name++;
+    }
+
     while (1)
     {
         if (!tar_validate(hdr))
@@ -52,7 +58,7 @@ char* tar_read_file(const char* fname)
             break;
         }
 
-        if (strcmp(hdr->name, fname) == 0)
+        if (strcmp(hdr->name, search_name) == 0)
         {
             return (char*)((uint64_t)hdr + 512);
         }

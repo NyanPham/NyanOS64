@@ -3,6 +3,7 @@
 #include "mem/pmm.h"
 #include "mem/vmm.h"
 #include "kern_defs.h"
+#include "../string.h"
 #include "drivers/serial.h" // debugging
 
 #include <stddef.h>
@@ -19,7 +20,6 @@
 
 extern uint64_t hhdm_offset;
 extern uint64_t* kern_pml4;
-extern void* memset(void *s, int c, size_t n);
 
 static struct limine_framebuffer* g_fb = NULL;
 static uint64_t g_cursor_x = 0;

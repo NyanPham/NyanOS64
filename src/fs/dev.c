@@ -7,7 +7,6 @@
 #include "sched/sched.h"
 #include "../io.h"
 
-extern void *memcpy(void *restrict dest, const void *restrict src, size_t n);
 
 static vfs_node_t* g_stdin_node = NULL;
 static vfs_node_t* g_stdout_node = NULL;
