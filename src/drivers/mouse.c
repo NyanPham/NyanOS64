@@ -154,14 +154,23 @@ static void mouse_handler(void *regs)
 
         if (mouse_byte[0] & 0x01)
         {
-            draw_mouse(0x00FF00);
-            save_mouse_bg();
-        }
-
-        // TEST:
-        if (mouse_byte[0] & 0x01)
-        {
-            kprint("Left click!\n");
+            // int64_t screen_h = (int64_t)video_get_height();
+            // if (g_mouse_x >= 16 && g_mouse_x <= 66 && g_mouse_y >= (screen_h - 100) && g_mouse_y <= (screen_h - 50))
+            // {
+            //     kprint("Reboot btn clicked! See you soon...\n");
+            //     uint8_t good = 0x02;
+            //     while (good & 0x02)
+            //     {
+            //         good = inb(MOUSE_PORT_CMD);
+            //     }
+            //     outb(MOUSE_PORT_CMD, 0xFE);
+            //     asm volatile ("hlt");
+            // }
+            // else
+            // {
+                draw_mouse(0x00FF00);
+                save_mouse_bg();
+            // }
         }
     }
 }

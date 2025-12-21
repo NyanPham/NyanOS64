@@ -378,6 +378,8 @@ void video_refresh()
             draw_char_at(x, y, c, color); 
         }
     }
+
+    video_draw_overlay();
 }
 
 void video_clear()
@@ -426,4 +428,25 @@ uint32_t video_get_pixel(int64_t x, int64_t y)
     }
     
     return g_fb_ptr[y*g_pitch32 + x];
+}
+
+void video_draw_overlay()
+{
+    uint64_t h = g_fb_height;
+
+    for (int y = h - 100; y < h - 50; y++) 
+    {
+        for (int x = 16; x < 66; x++) 
+        {
+            put_pixel(x, y, 0xFFFFFF); 
+        }
+    }
+
+    for (int y = h - 85; y < h - 65; y++) 
+    {
+        for (int x = 31; x < 51; x++) 
+        {
+            put_pixel(x, y, 0xFF0000);
+        }
+    }
 }
