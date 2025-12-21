@@ -68,6 +68,17 @@ static void save_mouse_bg()
     }
 }
 
+static void draw_mouse(uint32_t color)
+{
+    for (int y = 0; y < CURSOR_H; y++)
+    {
+        for (int x = 0; x < CURSOR_W; x++)
+        {
+            video_plot_pixel(g_mouse_x + x, g_mouse_y + y, color);
+        }
+    }
+}
+
 static void restore_mouse_bg()
 {
     for (int y = 0; y < CURSOR_H; y++)
@@ -139,12 +150,12 @@ static void mouse_handler(void *regs)
         save_mouse_bg();
 
         // draw the mouse again
-        for (int y = 0; y < CURSOR_H; y++)
+        draw_mouse(0xFF0000);
+
+        if (mouse_byte[0] & 0x01)
         {
-            for (int x = 0; x < CURSOR_W; x++)
-            {
-                video_plot_pixel(g_mouse_x + x, g_mouse_y + y, 0xFF0000);
-            }
+            draw_mouse(0x00FF00);
+            save_mouse_bg();
         }
 
         // TEST:
@@ -183,7 +194,6 @@ void mouse_init(void)
     mouse_read();
 
     save_mouse_bg();
-
 
     // finally, hook it up to our IRQ system
     register_irq_handler(12, mouse_handler);
