@@ -103,6 +103,7 @@ void kmain(void)
     serial_init();
     apic_init();
     keyboard_init();
+    mouse_init();
     timer_init();
 
     syscall_init();

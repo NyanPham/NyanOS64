@@ -102,9 +102,21 @@ void apic_init()
 
     g_ioapic_base = (volatile uint32_t*)ioapic_virt;
 
+    /*
+    Each irq takes up 2 32-bit regs.
+    The offset to calc starts at 0x10.
+    For keyboard: irq 1 -> 0x10 + (1 * 2) = 0x12 and 0x13
+    For mouse: irq 12 -> 0x10 + (12 * 2) = 0x28 and 0x29
+    */
+
     // wire up the keyboard handler
     ioapic_write(0x12, 0x21);
     ioapic_write(0x13, 0x00);
+
+    // wire up the mouse handle 
+   
+    ioapic_write(0x28, 0x2c);
+    ioapic_write(0x29, 0x00);
 
     // Test, read the I/O APIC chip's version at the 0x01 reg
     // kprint("Version is: ");

@@ -396,3 +396,21 @@ void video_clear()
     g_ansi_state = ANSI_NORMAL;
     g_curr_color = WHITE;
 }
+
+/**
+ * @brief A wrapper function to call the static inline put_pixel func
+ */
+void video_plot_pixel(int64_t x, int64_t y, uint32_t color)
+{
+    put_pixel(x, y, color);
+}
+
+uint64_t video_get_width(void)
+{
+    return g_fb_width;
+}
+
+uint64_t video_get_height(void)
+{
+    return g_fb_height;
+}
