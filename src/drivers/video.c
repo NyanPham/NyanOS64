@@ -414,3 +414,16 @@ uint64_t video_get_height(void)
 {
     return g_fb_height;
 }
+
+/**
+ * @brief Reads a pixel from screen
+ */
+uint32_t video_get_pixel(int64_t x, int64_t y)
+{
+    if (x < 0 || x >= (int64_t)g_fb_width || y < 0 || y >= (int64_t)g_fb_height)
+    {
+        return 0;
+    }
+    
+    return g_fb_ptr[y*g_pitch32 + x];
+}
