@@ -24,6 +24,7 @@
 #include "fs/tar_fs.h"
 #include "cpu.h"
 #include "string.h"
+#include "gui/window.h"
 #include "kern_defs.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
@@ -105,6 +106,7 @@ void kmain(void)
     keyboard_init();
     mouse_init();
     timer_init();
+    init_window_manager();
 
     syscall_init();
     dev_init_stdio();
@@ -143,9 +145,27 @@ void kmain(void)
     {
         hcf();
     }
-
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     video_init(fb);
+
+    int rect_x = 0;
+    int rect_y = 200;
+
+    while (1)
+    {
+        video_clear();
+        rect_x += 2;
+        if (rect_x > video_get_width())
+        {
+            rect_x = 0;
+        }
+        draw_rect(rect_x, rect_y, 100, 100, Cyan);
+        video_swap();
+        for (volatile int i = 0; i < 5000000; i++) 
+        {}
+    }
+    return;
+
     video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
 
     /*=========== Test the initramfs ===========*/

@@ -1,5 +1,6 @@
 #ifndef VIDEO_H
 #define VIDEO_H
+#include "kern_defs.h"
 
 #include <limine.h>
 #include <stdint.h>
@@ -12,6 +13,7 @@ void video_plot_pixel(int64_t x, int64_t y, uint32_t color);
 uint64_t video_get_width(void);
 uint64_t video_get_height(void);
 uint32_t video_get_pixel(int64_t x, int64_t y);
-
+void video_swap(void);
+void draw_rect(int rect_x, int rect_y, int width, int height, GBA_Color color);
 
 #endif

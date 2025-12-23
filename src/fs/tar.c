@@ -3,6 +3,8 @@
 #include "drivers/serial.h"
 #include "drivers/video.h"
 #include "mem/kmalloc.h"
+#include "kern_defs.h"
+
 #include <stddef.h>
 
 static void *g_tar_addr = NULL;
@@ -93,7 +95,7 @@ void tar_list()
         uint64_t size = oct2bin(hdr->size, 11);
 
         video_write("- ", 0x00FF00);
-        video_write(hdr->name, 0xFFFFFF);
+        video_write(hdr->name, White);
         video_write("\n", 0);
 
         uint64_t size_aligned = (size + 511) / 512 * 512;

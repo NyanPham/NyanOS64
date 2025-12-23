@@ -6,6 +6,7 @@
 #include "drivers/keyboard.h"
 #include "sched/sched.h"
 #include "../io.h"
+#include "kern_defs.h"
 
 
 static vfs_node_t* g_stdin_node = NULL;
@@ -30,7 +31,7 @@ uint64_t stdout_write(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t*
         memcpy(tmp, &buf[i], nbytes);
         tmp[nbytes] = 0;
 
-        video_write(tmp, 0xFFFFFF);
+        video_write(tmp, White);
     }
 
     return size;

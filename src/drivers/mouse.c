@@ -2,6 +2,8 @@
 #include "../io.h"
 #include "../arch/irq.h"
 #include "video.h"
+#include "gui/window.h"
+#include "kern_defs.h"
 #include "serial.h"
 
 #define MOUSE_PORT_DATA 0x60
@@ -113,6 +115,15 @@ static void mouse_handler(void *regs)
     {
         mouse_cycle = 0;
 
+        // DEBUG:
+        kprint("RAW: [");
+        kprint_hex_64(mouse_byte[0]); 
+        kprint(", ");
+        kprint_hex_64(mouse_byte[1]);
+        kprint(", ");
+        kprint_hex_64(mouse_byte[2]);
+        kprint("]\n");
+
         // Note
         // byte 0: stat (left/right btn, sign bit, etc)
         // byte 1: delta x
@@ -121,14 +132,38 @@ static void mouse_handler(void *regs)
         // bit 3 must be always 1
         if ((mouse_byte[0] & 0x08) == 0)
         {
+            kprint("Error: Bag alignment!\n");
             return;
         }
 
-        int8_t dx = (int8_t)mouse_byte[1];
-        int8_t dy = (int8_t)mouse_byte[2];
+        /*
+        NOTE: Delta X and Delta Y sent from the mouse
+        are 9-bits. The byte 1 and 2 are the 8-bit quantity 
+        values of the delta, and the sign bit is in the byte 0.
+        byte[0] bit 5 is sign-bit for delta y
+        byte[0] bit 4 is sign-bit for delta x
+        So, we treat byte 1 and 2 as raw unsigned values, and or
+        with negative leading bits if the corresponding 
+        flag of sign bit is set.
+        */
+
+        int16_t dx = (uint8_t)mouse_byte[1];
+        int16_t dy = (uint8_t)mouse_byte[2];
+
+        if (mouse_byte[0] & 0x10)
+        {
+            dx |= 0xFF00;
+        }
+
+        if ( mouse_byte[0] & 0x20)
+        {
+            dy |= 0xFF00;
+        }
 
         // RESTORE the background
         restore_mouse_bg();
+
+        update_window_drag(dx, dy);
 
         // update the latest mouse coord
         g_mouse_x += dx;
@@ -150,10 +185,14 @@ static void mouse_handler(void *regs)
         save_mouse_bg();
 
         // draw the mouse again
-        draw_mouse(0xFF0000);
+        draw_mouse(Red);
 
         if (mouse_byte[0] & 0x01)
         {
+            if (check_window_drag(g_mouse_x, g_mouse_y))
+            {
+
+            }
             // int64_t screen_h = (int64_t)video_get_height();
             // if (g_mouse_x >= 16 && g_mouse_x <= 66 && g_mouse_y >= (screen_h - 100) && g_mouse_y <= (screen_h - 50))
             // {
@@ -166,11 +205,15 @@ static void mouse_handler(void *regs)
             //     outb(MOUSE_PORT_CMD, 0xFE);
             //     asm volatile ("hlt");
             // }
-            // else
-            // {
-                draw_mouse(0x00FF00);
-                save_mouse_bg();
-            // }
+            else
+            {
+            draw_mouse(Cyan);
+            save_mouse_bg();
+            }
+        }
+        else
+        {
+            stop_window_drag();
         }
     }
 }
