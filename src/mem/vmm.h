@@ -2,6 +2,7 @@
 #define VMM_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #define VMM_FLAG_PRESENT 1
 #define VMM_FLAG_WRITABLE (1 << 1)
@@ -18,7 +19,7 @@ typedef struct VmFreeRegion
 {
     uint64_t addr;
     size_t size;
-    VmFreeRegion* next;
+    struct VmFreeRegion* next;
 } VmFreeRegion;
 
 /**

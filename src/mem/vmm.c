@@ -13,6 +13,8 @@ uint64_t* kern_pml4 = NULL; // shared to other components
 
 static VmFreeRegion* g_vm_free_head;
 
+static void vmm_add_free_region(uint64_t addr, size_t size);
+
 uint64_t vmm_new_pml4()
 {
     void* pml4_virt = pmm_alloc_frame();
@@ -214,7 +216,8 @@ void vmm_map_page(uint64_t* pml4_virt, uint64_t virt_addr, uint64_t phys_addr, u
 void vmm_unmap_page(uint64_t* pml4, uint64_t virt_addr) {
     uint64_t* pte = vmm_walk_to_pte(pml4, virt_addr, false);
 
-    if (pte == NULL) {
+    if (pte == NULL) 
+    {
         return;
     }
     
@@ -276,9 +279,8 @@ void* vmm_alloc(size_t size)
     }
 
     uint64_t npages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
-    uint64_t* phys_addrs = (uint64_t*)kmalloc(npages * sizeof(uint64_t));
-
     uint64_t i = 0;
+    uint64_t* pml4 = (uint64_t*)(read_cr3() + hhdm_offset);
 
     for (i = 0; i < npages; i++)
     {
@@ -287,7 +289,13 @@ void* vmm_alloc(size_t size)
         {
             break;
         }
-        phys_addrs[i] = phys_hhdm_addr - hhdm_offset;
+
+        vmm_map_page(
+            pml4,
+            virt_start_addr + i * PAGE_SIZE,
+            phys_hhdm_addr - hhdm_offset,
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE
+        );
     }
 
     if (i < npages) // Partial failure, roll back
@@ -296,26 +304,16 @@ void* vmm_alloc(size_t size)
 
         for (uint64_t j = 0; j < i; j++)
         {
-            pmm_free_frame(phys_addrs[j] + hhdm_offset);
+            uint64_t virt_addr = virt_start_addr + j * PAGE_SIZE;
+            uint64_t phys_addr = vmm_virt2phys(pml4, virt_addr);
+            vmm_unmap_page(pml4, virt_addr);
+            pmm_free_frame(phys_addr + hhdm_offset);
         }
-
-        kfree(phys_addrs);
+        
+        vmm_add_free_region(virt_start_addr, size);
         return NULL;
     }
     
-    uint64_t* pml4 = (uint64_t*)(read_cr3() + hhdm_offset);
-
-    for (uint64_t j = 0; j < i; j++)
-    {
-        vmm_map_page(
-            pml4,
-            virt_start_addr + j*PAGE_SIZE,
-            phys_addrs[j],
-            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE
-        );
-    }      
-
-    kfree(phys_addrs);
     return (void*)virt_start_addr;
 }
 
