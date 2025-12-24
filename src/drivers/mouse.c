@@ -1,8 +1,7 @@
 #include "mouse.h"
 #include "../io.h"
-#include "../arch/irq.h"
-#include "video.h"
-#include "gui/window.h"
+#include "arch/irq.h"
+#include "drivers/video.h"
 #include "kern_defs.h"
 #include "serial.h"
 
@@ -10,15 +9,18 @@
 #define MOUSE_PORT_CMD 0x64
 #define MOUSE_IRQ_VECTOR 0x2C // 32 (exception) + 12 (IRQ) = 44 (0x2C)
 
-static uint8_t mouse_cycle = 0; // (0: stat , 1: x, 2: y)
-static int8_t mouse_byte[3];
-static int64_t g_mouse_x = 100;
-static int64_t g_mouse_y = 100;
-
 #define CURSOR_W 4
 #define CURSOR_H 4
 
-static uint32_t mouse_bg[CURSOR_W * CURSOR_H]; // mouse background buffer to do: Save -> draw -> restore
+static Mouse mouse =
+    {
+        .cycle = 0,
+        .byte = {0, 0, 0},
+        .x = 100,
+        .y = 100,
+        .w = CURSOR_W,
+        .h = CURSOR_H,
+};
 
 static void mouse_wait(uint8_t type)
 {
@@ -59,39 +61,6 @@ static uint8_t mouse_read()
     return inb(MOUSE_PORT_DATA);
 }
 
-static void save_mouse_bg()
-{
-    for (int y = 0; y < CURSOR_H; y++)
-    {
-        for (int x = 0; x < CURSOR_W; x++)
-        {
-            mouse_bg[y * CURSOR_W + x] = video_get_pixel(g_mouse_x + x, g_mouse_y + y);
-        }
-    }
-}
-
-static void draw_mouse(uint32_t color)
-{
-    for (int y = 0; y < CURSOR_H; y++)
-    {
-        for (int x = 0; x < CURSOR_W; x++)
-        {
-            video_plot_pixel(g_mouse_x + x, g_mouse_y + y, color);
-        }
-    }
-}
-
-static void restore_mouse_bg()
-{
-    for (int y = 0; y < CURSOR_H; y++)
-    {
-        for (int x = 0; x < CURSOR_W; x++)
-        {
-            video_plot_pixel(g_mouse_x + x, g_mouse_y + y, mouse_bg[y * CURSOR_W + x]);
-        }
-    }
-}
-
 /**
  * @brief Handle the interrupts from ISR
  */
@@ -110,19 +79,11 @@ static void mouse_handler(void *regs)
 
     uint8_t data = inb(MOUSE_PORT_DATA);
 
-    mouse_byte[mouse_cycle++] = data;
-    if (mouse_cycle >= 3)
-    {
-        mouse_cycle = 0;
+    mouse.byte[mouse.cycle++] = data;
 
-        // DEBUG:
-        kprint("RAW: [");
-        kprint_hex_64(mouse_byte[0]); 
-        kprint(", ");
-        kprint_hex_64(mouse_byte[1]);
-        kprint(", ");
-        kprint_hex_64(mouse_byte[2]);
-        kprint("]\n");
+    if (mouse.cycle >= 3)
+    {
+        mouse.cycle = 0;
 
         // Note
         // byte 0: stat (left/right btn, sign bit, etc)
@@ -130,7 +91,7 @@ static void mouse_handler(void *regs)
         // byte 2: delta y
 
         // bit 3 must be always 1
-        if ((mouse_byte[0] & 0x08) == 0)
+        if ((mouse.byte[0] & 0x08) == 0)
         {
             kprint("Error: Bag alignment!\n");
             return;
@@ -138,83 +99,45 @@ static void mouse_handler(void *regs)
 
         /*
         NOTE: Delta X and Delta Y sent from the mouse
-        are 9-bits. The byte 1 and 2 are the 8-bit quantity 
+        are 9-bits. The byte 1 and 2 are the 8-bit quantity
         values of the delta, and the sign bit is in the byte 0.
         byte[0] bit 5 is sign-bit for delta y
         byte[0] bit 4 is sign-bit for delta x
         So, we treat byte 1 and 2 as raw unsigned values, and or
-        with negative leading bits if the corresponding 
+        with negative leading bits if the corresponding
         flag of sign bit is set.
         */
 
-        int16_t dx = (uint8_t)mouse_byte[1];
-        int16_t dy = (uint8_t)mouse_byte[2];
+        int16_t dx = (uint8_t)mouse.byte[1];
+        int16_t dy = (uint8_t)mouse.byte[2];
 
-        if (mouse_byte[0] & 0x10)
+        if (mouse.byte[0] & 0x10)
         {
             dx |= 0xFF00;
         }
 
-        if ( mouse_byte[0] & 0x20)
+        if (mouse.byte[0] & 0x20)
         {
             dy |= 0xFF00;
         }
 
-        // RESTORE the background
-        restore_mouse_bg();
-
-        update_window_drag(dx, dy);
-
         // update the latest mouse coord
-        g_mouse_x += dx;
-        g_mouse_y -= dy; // mouse's Y logic is opposite than ours
+        mouse.x += dx;
+        mouse.y -= dy; // mouse's Y logic is opposite than ours
 
-        if (g_mouse_x < 0)
-            g_mouse_x = 0;
+        if (mouse.x < 0)
+            mouse.x = 0;
 
-        if (g_mouse_y < 0)
-            g_mouse_y = 0;
+        if (mouse.y < 0)
+            mouse.y = 0;
 
-        if (g_mouse_x >= (int64_t)video_get_width() - CURSOR_W)
-            g_mouse_x = video_get_width() - CURSOR_W;
+        if (mouse.x >= (int64_t)video_get_width() - CURSOR_W)
+            mouse.x = video_get_width() - CURSOR_W;
 
-        if (g_mouse_y >= (int64_t)video_get_height() - CURSOR_H)
-            g_mouse_y = video_get_height() - CURSOR_H;
+        if (mouse.y >= (int64_t)video_get_height() - CURSOR_H)
+            mouse.y = video_get_height() - CURSOR_H;
 
-        // SAVE the background
-        save_mouse_bg();
-
-        // draw the mouse again
-        draw_mouse(Red);
-
-        if (mouse_byte[0] & 0x01)
-        {
-            if (check_window_drag(g_mouse_x, g_mouse_y))
-            {
-
-            }
-            // int64_t screen_h = (int64_t)video_get_height();
-            // if (g_mouse_x >= 16 && g_mouse_x <= 66 && g_mouse_y >= (screen_h - 100) && g_mouse_y <= (screen_h - 50))
-            // {
-            //     kprint("Reboot btn clicked! See you soon...\n");
-            //     uint8_t good = 0x02;
-            //     while (good & 0x02)
-            //     {
-            //         good = inb(MOUSE_PORT_CMD);
-            //     }
-            //     outb(MOUSE_PORT_CMD, 0xFE);
-            //     asm volatile ("hlt");
-            // }
-            else
-            {
-            draw_mouse(Cyan);
-            save_mouse_bg();
-            }
-        }
-        else
-        {
-            stop_window_drag();
-        }
+        mouse_set();
     }
 }
 
@@ -245,8 +168,6 @@ void mouse_init(void)
     mouse_write(0xF4);
     mouse_read();
 
-    save_mouse_bg();
-
     // finally, hook it up to our IRQ system
     register_irq_handler(12, mouse_handler);
 
@@ -255,10 +176,15 @@ void mouse_init(void)
 
 int64_t mouse_get_x(void)
 {
-    return g_mouse_x;
+    return mouse.x;
 }
 
 int64_t mouse_get_y(void)
 {
-    return g_mouse_y;
+    return mouse.y;
+}
+
+int64_t mouse_get_stat(void)
+{
+    return mouse.stat;
 }

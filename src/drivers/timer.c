@@ -3,13 +3,22 @@
 #include "sched/sched.h"
 #include "drivers/serial.h"
 #include "drivers/apic.h"
+#include "drivers/video.h"
+#include "gui/window.h"
 
 static volatile uint64_t g_ticks = 0;
 
-static void timer_handler(void* regs)
+static void timer_handler(void *regs)
 {
     (void)regs;
     g_ticks++;
+
+    window_update();
+
+    if (mouse_ack())
+    {
+        video_refresh();
+    }
 
     lapic_send_eoi();
     schedule();

@@ -148,23 +148,9 @@ void kmain(void)
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     video_init(fb);
 
-    int rect_x = 0;
-    int rect_y = 200;
+    // int rect_x = 0;
+    // int rect_y = 200;
 
-    while (1)
-    {
-        video_clear();
-        rect_x += 2;
-        if (rect_x > video_get_width())
-        {
-            rect_x = 0;
-        }
-        draw_rect(rect_x, rect_y, 100, 100, Cyan);
-        video_swap();
-        for (volatile int i = 0; i < 5000000; i++) 
-        {}
-    }
-    return;
 
     video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
 

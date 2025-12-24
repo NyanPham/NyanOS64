@@ -7,6 +7,7 @@
 #include "../string.h"
 #include "drivers/serial.h" // debugging
 #include "gui/window.h"
+#include "drivers/mouse.h"
 
 #include <stddef.h>
 
@@ -30,11 +31,12 @@ static uint32_t *g_fb_ptr = 0;
 static void *g_fb_addr = 0;
 static uint64_t g_fb_width = 0;
 static uint64_t g_fb_height = 0;
-static uint64_t g_pitch32 = 0;
+static uint64_t g_pitch32 = 0; // Nums of pixels per row
 static uint64_t g_rows_on_screen = 0;
 static uint64_t g_visible_rows = 0;
 
 static uint32_t *g_back_buf = NULL;
+static volatile bool mouse_moved = false;
 
 typedef enum
 {
@@ -67,8 +69,6 @@ typedef struct
 } TermCell;
 
 static TermCell *buf = (TermCell *)BUF_VIRT_ENTRY;
-
-void video_refresh(void);
 
 void video_init_buf()
 {
@@ -104,7 +104,7 @@ void video_init(struct limine_framebuffer *fb)
     g_rows_on_screen = g_fb_height / FONT_H;
     g_visible_rows = g_rows_on_screen - MARGIN_BOTTOM;
     
-    g_back_buf = (uint32_t *)kmalloc(g_pitch32 * g_fb_height * sizeof(uint32_t));
+    g_back_buf = (uint32_t *)vmm_alloc(g_pitch32 * g_fb_height * sizeof(uint32_t));
 
     video_init_buf();
     video_clear();
@@ -125,7 +125,7 @@ static inline void put_pixel(int64_t x, int64_t y, uint32_t color)
 static void draw_char_at(uint64_t x, uint64_t y, char c, uint32_t color)
 {
     uint8_t *glyph = (uint8_t *)font8x8_basic[(int)c];
-    uint32_t *screen_ptr = g_fb_ptr + (y * 8 * g_pitch32) + (x * 8);
+    uint32_t *screen_ptr = g_back_buf + (y * 8 * g_pitch32) + (x * 8);
 
     for (int gy = 0; gy < 8; gy++)
     {
@@ -384,8 +384,21 @@ void video_refresh()
         }
     }
 
-    video_draw_overlay();
     window_paint();
+
+    /* Draw the mouse */
+    int64_t mx = mouse_get_x();
+    int64_t my = mouse_get_y();
+
+    for (int y = 0; y < 4; y++)
+    {
+        for (int x = 0; x < 4; x++)
+        {
+            put_pixel(mx + x, my + y, Red);
+        }
+    }
+
+    video_swap();
 }
 
 void video_clear()
@@ -434,27 +447,6 @@ uint32_t video_get_pixel(int64_t x, int64_t y)
     return g_back_buf[y * g_pitch32 + x];
 }
 
-void video_draw_overlay()
-{
-    uint64_t h = g_fb_height;
-
-    for (int y = h - 100; y < h - 50; y++)
-    {
-        for (int x = 16; x < 66; x++)
-        {
-            put_pixel(x, y, White);
-        }
-    }
-
-    for (int y = h - 85; y < h - 65; y++)
-    {
-        for (int x = 31; x < 51; x++)
-        {
-            put_pixel(x, y, Red);
-        }
-    }
-}
-
 /**
  * @brief Copy all the contents from back buff to VRAM
  * Handles Pitch/Padding correctly to avoid image skewing
@@ -483,4 +475,19 @@ void draw_rect(int rect_x, int rect_y, int width, int height, GBA_Color color)
             put_pixel(r, c, color);
         }
     }
+}
+
+bool mouse_ack()
+{
+    if (mouse_moved)
+    {
+        mouse_moved = false;
+        return true;
+    }
+    return false;
+}
+
+void mouse_set()
+{
+    mouse_moved = true;
 }
