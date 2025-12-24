@@ -2,12 +2,16 @@
 #include "cpu.h"
 #include "vmm.h"
 #include "pmm.h"
+#include "kmalloc.h"
 #include "../string.h"
 #include "kern_defs.h"
 
-extern uint64_t hhdm_offset; // from pmm.c
+#include <stddef.h>
 
+extern uint64_t hhdm_offset; // from pmm.c
 uint64_t* kern_pml4 = NULL; // shared to other components
+
+static VmFreeRegion* g_vm_free_head;
 
 uint64_t vmm_new_pml4()
 {
@@ -219,31 +223,235 @@ void vmm_unmap_page(uint64_t* pml4, uint64_t virt_addr) {
     __asm__ volatile ("invlpg (%0)" :: "r"(virt_addr) : "memory");
 }
 
+uint64_t find_free_addr(size_t size)
+{
+    if (g_vm_free_head == NULL)
+    {
+        kprint("VMM not inited successfully before!\n");
+        return 0;
+    }
+
+    VmFreeRegion *curr = g_vm_free_head;
+    VmFreeRegion *prev = NULL;
+    while (curr != NULL)
+    {
+        if (curr->size > size)
+        {
+            uint64_t addr = curr->addr;
+            curr->addr += size;
+            curr->size -= size;
+
+            return addr;
+        }
+        else if (curr->size == size)
+        {
+            uint64_t addr = curr->addr;
+            if (prev != NULL)
+            {
+                prev->next = curr->next; 
+                curr->next = NULL;
+            }
+            else 
+            {
+                g_vm_free_head = curr->next;
+            }
+            kfree(curr);
+
+            return addr;
+        }
+        prev = curr;
+        curr = curr->next;
+    }
+
+    return 0;
+}
+
+void* vmm_alloc(size_t size)
+{
+    uint64_t virt_start_addr = find_free_addr(size);
+    if (virt_start_addr == 0)
+    {
+        kprint("VMM ALLOC: Out of memory\n");
+        return NULL;
+    }
+
+    uint64_t npages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint64_t* phys_addrs = (uint64_t*)kmalloc(npages * sizeof(uint64_t));
+
+    uint64_t i = 0;
+
+    for (i = 0; i < npages; i++)
+    {
+        void* phys_hhdm_addr = pmm_alloc_frame();
+        if (phys_hhdm_addr == NULL)
+        {
+            break;
+        }
+        phys_addrs[i] = phys_hhdm_addr - hhdm_offset;
+    }
+
+    if (i < npages) // Partial failure, roll back
+    {
+        kprint("VMM ALLOC: Out of memory\n");
+
+        for (uint64_t j = 0; j < i; j++)
+        {
+            pmm_free_frame(phys_addrs[j] + hhdm_offset);
+        }
+
+        kfree(phys_addrs);
+        return NULL;
+    }
+    
+    uint64_t* pml4 = (uint64_t*)(read_cr3() + hhdm_offset);
+
+    for (uint64_t j = 0; j < i; j++)
+    {
+        vmm_map_page(
+            pml4,
+            virt_start_addr + j*PAGE_SIZE,
+            phys_addrs[j],
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE
+        );
+    }      
+
+    kfree(phys_addrs);
+    return (void*)virt_start_addr;
+}
+
+static void vmm_add_free_region(uint64_t addr, size_t size)
+{
+    if (size == 0)
+    {
+        return;
+    }
+
+    VmFreeRegion* curr = g_vm_free_head;
+    VmFreeRegion* prev = NULL;
+
+    while (curr != NULL && curr->addr < addr)
+    {
+        prev = curr;
+        curr = curr->next;
+    }
+
+    bool merged = false;
+
+    // Merge left with Prev
+    if (prev != NULL)
+    {
+        if (prev->addr + prev->size == addr)
+        {
+            // merge left
+            prev->size += size;
+            merged = true;
+
+            // merge right?
+            if (curr != NULL && prev->addr + prev->size == curr->addr)
+            {
+                prev->size += curr->size;
+                prev->next = curr->next;
+                kfree(curr);
+            }
+        }
+    }
+
+    // If not merged, need a new node
+    if (!merged)
+    {
+        VmFreeRegion* new_node = (VmFreeRegion*)kmalloc(sizeof(VmFreeRegion));
+        if (new_node == NULL)
+        {
+            kprint("VMM FREE: Metadata allocation failed! Memory leaked\n");
+            return;
+        }
+
+        new_node->addr = addr;
+        new_node->size = size;
+        new_node->next = curr;
+
+        if (prev != NULL)
+        {
+            prev->next = new_node;
+        }
+        else
+        {
+            g_vm_free_head = new_node;
+        }
+
+        // then try Merge right with Next
+        if (curr != NULL && new_node->addr + new_node->size == curr->addr)
+        {
+            new_node->size += curr->size;
+            new_node->next = curr->next;
+            kfree(curr);
+        }
+    }
+}
+
+void vmm_free(void* ptr, size_t size)
+{
+    if (ptr == NULL || size == 0)
+    {
+        return;
+    }
+
+    uint64_t npages = ((size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)) / PAGE_SIZE;
+    uint64_t* pml4 = (uint64_t*)(read_cr3() + hhdm_offset);
+    uint64_t virt_start_addr = (uint64_t)ptr;
+
+    // Physical free
+    for (uint64_t i = 0; i < npages; i++)
+    {
+        uint64_t virt_addr = virt_start_addr + i * PAGE_SIZE;
+        uint64_t phys_addr = vmm_virt2phys(pml4, virt_addr);
+        if (phys_addr != 0)
+        {
+            pmm_free_frame(phys_addr + hhdm_offset);
+            vmm_unmap_page(pml4, virt_addr);
+        }
+    }
+
+    // Virtual Allocator Free
+    vmm_add_free_region(virt_start_addr, size);
+}
+
 void vmm_init()
 {
     uint64_t pml4_phys = read_cr3();
     kern_pml4 = (uint64_t*)(pml4_phys + hhdm_offset);
 
-    void* test_page_virt = pmm_alloc_frame(); 
-    if (test_page_virt) {
-        uint64_t test_page_phys = (uintptr_t)test_page_virt - hhdm_offset;
-        uint64_t flags = VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE;
-
-        vmm_map_page(kern_pml4, 0xABCD000, test_page_phys, flags);
-
-        volatile uint64_t* test_ptr = (uint64_t*)0xABCD000;
-        *test_ptr = 0xDEADBEEF; 
-        
-        if (*test_ptr != 0xDEADBEEF) {
-            for (;;) { asm ("hlt"); }
-        }
-
-        vmm_unmap_page(kern_pml4, 0xABCD000);
-        pmm_free_frame(test_page_virt);
-        
-        // TODO: need to handle the PAGE FAULT
-        // *test_ptr = 0xCAFEBABE; // running this will cause PAGE FAULT
+    g_vm_free_head = (VmFreeRegion*)kmalloc(sizeof(VmFreeRegion));
+    if (g_vm_free_head == NULL)
+    {
+        kprint("Failed to allocate memory for g_vm_free_head\n");
+        return;
     }
+    
+    g_vm_free_head->addr = KERN_HEAP_START;
+    g_vm_free_head->size = 0x10000000; // 256MB
+    g_vm_free_head->next = NULL;
+
+    // void* test_page_virt = pmm_alloc_frame(); 
+    // if (test_page_virt) {
+    //     uint64_t test_page_phys = (uintptr_t)test_page_virt - hhdm_offset;
+    //     uint64_t flags = VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE;
+
+    //     vmm_map_page(kern_pml4, 0xABCD000, test_page_phys, flags);
+
+    //     volatile uint64_t* test_ptr = (uint64_t*)0xABCD000;
+    //     *test_ptr = 0xDEADBEEF; 
+        
+    //     if (*test_ptr != 0xDEADBEEF) {
+    //         for (;;) { asm ("hlt"); }
+    //     }
+
+    //     vmm_unmap_page(kern_pml4, 0xABCD000);
+    //     pmm_free_frame(test_page_virt);
+        
+    //     // TODO: need to handle the PAGE FAULT
+    //     // *test_ptr = 0xCAFEBABE; // running this will cause PAGE FAULT
+    // }
 }
 
 /*
