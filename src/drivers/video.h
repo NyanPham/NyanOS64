@@ -6,6 +6,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef struct
+{
+    char glyph;
+    uint32_t color;
+} TermCell;
+
+typedef struct Pixel
+{
+    uint32_t color;
+} Pixel;
+
 void video_init(struct limine_framebuffer* fb);
 void video_write(const char* str, uint32_t color);
 void video_clear();

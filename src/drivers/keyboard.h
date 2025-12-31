@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-#define kbd_buf_SIZE 0x100 // 256
+#define KBD_BUF_SIZE 0x100 // 256
 
 typedef struct
 {
-    char buf[kbd_buf_SIZE];
+    char buf[KBD_BUF_SIZE];
     uint8_t head;
     uint8_t tail;
     int64_t waiting_pid;

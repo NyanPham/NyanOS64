@@ -1,6 +1,8 @@
 #ifndef LIBC_H
 #define LIBC_H
 
+#include "syscall_args.h"
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -11,12 +13,14 @@
 void exit(int status);
 void print(const char* str);
 void kprint(const char* s);
+void kprint_int(int x);
 int open(const char* pathname, uint32_t flags);
 int close(int fd);
 int read(int fd, void* buf, uint64_t count);
 void reboot(void);
 
 char* strcpy(char* dest, const char* src);
+char* strncpy(char* dest, const char* src, size_t n);
 int strncmp(const char* s1, const char* s2, size_t n); 
 size_t strlen(const char* s);
 void* memset(void* s, int c, size_t n);
@@ -37,7 +41,7 @@ void srand(unsigned int seed);
 /* Dir sys */
 int chdir(const char* path);
 char* getcwd(char* buf, size_t size);
-void list_files(void);
+void list_files(char* list, uint64_t max_len);
 
 /* Process/syscall */
 int exec(const char* path, char* const argv[]);
@@ -47,5 +51,6 @@ int waitpid(int pid, int* status);
 void move_cursor(int row, int col);
 int get_key(void);
 void sleep(uint64_t loop_cnt);
+void create_win(WinParams_t* win_params);
 
 #endif

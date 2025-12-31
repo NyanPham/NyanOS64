@@ -12,7 +12,9 @@
 #include "mem/kmalloc.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
+#include "gui/window.h"
 #include "kern_defs.h"
+#include "include/syscall_args.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -87,7 +89,7 @@ void syscall_init(void)
  * | 13        | sys_kprint       | Kernel debug print callable from userland |
  * | 14        | sys_get_key      | Reads a key from the keyboard buffer      |
  * | 15        | sys_chdir        | Change directory                          |
- * | 14        | sys_getcwd       | Get current working directory             |
+ * | 16        | sys_getcwd       | Get current working directory             |
  *
  * @param sys_num The system call number.
  * @return The return value of the system call (typically 0 or bytes processed on success, -1 on error).
@@ -131,6 +133,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         case 1:
         {
             // sys_write(fd, buf, count)
+
             int8_t fd = (int8_t)arg1;
             char* buf = (char*)arg2;
             uint64_t count = arg3;
@@ -154,8 +157,23 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 return -1;
             }
 
-            // call vfs (if fd == 1, it calls the stdout_write)
-            return vfs_write(curr_tsk->fd_tbl[fd], count, (uint8_t*)buf);
+            if (curr_tsk->win != NULL && (fd == 1 || fd == 2))
+            {
+                // detour the flow to print within the 
+                // window of task rather than the universal screen
+
+                for (uint64_t i = 0; i < count; i++)
+                {
+                    win_put_char(curr_tsk->win, buf[i]);
+                }
+
+                return count; 
+            }
+            else 
+            {
+                // call vfs (if fd == 1, it calls the stdout_write)
+                return vfs_write(curr_tsk->fd_tbl[fd], count, (uint8_t*)buf);
+            }
         }
         case 2:
         {
@@ -176,7 +194,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         case 5:
         {
             //  Sys_list_files
-            tar_list();
+            tar_list((char* )arg1, arg2);
             return 0;
         }
         case 6:
@@ -504,6 +522,48 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             }
 
             strcpy(buf, curr_tsk->cwd);
+            return 0;
+        }
+        case 17:
+        {
+            // sys_create_win(win_params)
+
+            WinParams_t* win_params = (WinParams_t*)arg1;
+            
+            if (win_params == NULL)
+            {
+                kprint("Not having window params passed!\n");
+                return -1;
+            }
+
+            if (!verify_usr_access(win_params, sizeof(WinParams_t)))
+            {
+                kprint("Invalid WinParams space!\n");
+                return -1;
+            }
+
+            char w_title[256]; 
+            strncpy(w_title, win_params->title, 256);
+            w_title[255] = 0;
+
+            Task* tsk = get_curr_task();
+            if (tsk->win != NULL)
+            {
+                kprint("Task already has window, on attempt to create win: ");
+                kprint(w_title);
+                kprint("\n");
+
+                return -1;
+            }
+            
+            create_win(win_params->x, win_params->y, win_params->width, win_params->height, w_title);
+            return 0;
+        }
+        case 18:
+        {
+            // kprint_int(int x )
+            int x = (int)arg1;
+            kprint_int(x);
             return 0;
         }
         default:

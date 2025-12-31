@@ -22,10 +22,12 @@ section .text
 ;===========================
 syscall_entry:
     ;   swap the user stack with the kernel stack manually
+    cli
     mov [usr_stk_tmp], rsp
     mov rsp, [kern_stk_ptr]
     
     push qword [usr_stk_tmp]
+    sti
 
     ; save the context (CPU-saved and Caller-saved regs)
     ; CPU saved regs
@@ -35,6 +37,9 @@ syscall_entry:
     ; and caller-saved regs
     push rbp
     push rbx
+    push r8
+    push r9
+    push r10
     push r12
     push r13
     push r14
@@ -52,6 +57,9 @@ syscall_entry:
     pop r14
     pop r13
     pop r12
+    pop r10
+    pop r9
+    pop r8
     pop rbx 
     pop rbp
 

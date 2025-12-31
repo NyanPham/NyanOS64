@@ -25,6 +25,7 @@
 #include "cpu.h"
 #include "string.h"
 #include "gui/window.h"
+#include "gui/cursor.h"
 #include "kern_defs.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
@@ -152,8 +153,6 @@ void kmain(void)
     // int rect_y = 200;
 
 
-    video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
-
     /*=========== Test the initramfs ===========*/
     if (module_request.response == NULL || module_request.response->module_count < 1)
     {
@@ -243,5 +242,17 @@ void kmain(void)
     kprint("Hello from the kernel side!\n");
 
     asm volatile ("sti");
-    hcf();
+    while (true)
+    {
+        window_update();
+        
+        video_clear();
+        video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
+
+        window_paint();
+        draw_mouse();
+        video_swap();
+        
+        asm volatile ("hlt");
+    }
 }

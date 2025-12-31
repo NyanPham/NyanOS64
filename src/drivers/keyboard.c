@@ -57,7 +57,7 @@ static void keyboard_handler(void *regs)
             // kprint("\n"); 
 
             kbd_buf.buf[kbd_buf.head] = ascii_char;
-            kbd_buf.head++;
+            kbd_buf.head = (kbd_buf.head + 1) % KBD_BUF_SIZE;
 
             if (kbd_buf.waiting_pid != -1)
             {
@@ -81,13 +81,13 @@ char keyboard_get_char()
     }
 
     char c = kbd_buf.buf[kbd_buf.tail];
-    kbd_buf.tail++;
+    kbd_buf.tail = (kbd_buf.tail + 1) % KBD_BUF_SIZE;
     return c;
 }
 
 void keyboard_init(void)
 {
-    for (int i = 0; i < kbd_buf_SIZE; i++)
+    for (int i = 0; i < KBD_BUF_SIZE; i++)
     {
         kbd_buf.buf[i] = 0;
     }

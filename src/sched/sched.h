@@ -11,6 +11,9 @@
 
 #define MAX_OPEN_FILES 0x10 // each task has at most 16 files open
 
+// Forward declartion, not include window.h to avoid circular dependency
+struct Window;
+
 typedef struct Task 
 {
     uint64_t kern_stk_rsp;
@@ -24,6 +27,7 @@ typedef struct Task
     int ret_val;    // exit code
     uint64_t heap_end;
     char cwd[256];
+    struct Window* win;
 } Task;
 
 Task *sched_new_task(void);

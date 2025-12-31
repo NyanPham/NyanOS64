@@ -74,7 +74,7 @@ char* tar_read_file(const char* fname)
     return NULL;
 }
 
-void tar_list()
+void tar_list(char* list, uint64_t max_len)
 {
     if (g_tar_addr == NULL)
     {
@@ -83,6 +83,7 @@ void tar_list()
     }
 
     tar_header *hdr = (tar_header *)g_tar_addr;
+    uint64_t curr_len = 0;
 
     while (1)
     {
@@ -93,15 +94,26 @@ void tar_list()
         }
 
         uint64_t size = oct2bin(hdr->size, 11);
+        uint64_t len = strlen(hdr->name) + 1;
 
-        video_write("- ", 0x00FF00);
-        video_write(hdr->name, White);
-        video_write("\n", 0);
+        if (curr_len + len >= max_len)
+        {
+            break;
+        }
+
+        strncpy(list, hdr->name, len);
+        list += len;
+        curr_len += len;
+        // video_write("- ", 0x00FF00);
+        // video_write(hdr->name, White);
+        // video_write("\n", 0);
 
         uint64_t size_aligned = (size + 511) / 512 * 512;
         uint64_t next_hdr_addr = (uint64_t)hdr + 512 + size_aligned;
         hdr = (tar_header *)next_hdr_addr;
     }
+
+    *list = 0;
 }
 
 void tar_init(void *tar_addr)

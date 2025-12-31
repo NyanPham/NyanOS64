@@ -109,6 +109,11 @@ void kprint_hex_32(uint32_t val)
 #endif
 }
 
+void kprint_int(int val)
+{
+    kprint_hex_32((uint32_t)val);
+}
+
 void serial_init()
 {
 #ifdef DEBUG_SERIAL

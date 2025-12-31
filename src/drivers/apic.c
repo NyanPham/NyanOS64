@@ -93,7 +93,7 @@ void apic_init()
     // Timer
     g_lapic_regs[TIMER_OFFSET / sizeof(uint32_t)] = (0x20 | (1 << 17)); // Set up the timer, 0x20 is our irq0_stub, bit 17 is the "Periodic" mode
     g_lapic_regs[DIVIDE_CONFIG_OFFSET / sizeof(uint32_t)] |= 0x03;  // divide config to /16
-    g_lapic_regs[INITIAL_COUNT_OFFSET / sizeof(uint32_t)] = 0x1000;// initial count
+    g_lapic_regs[INITIAL_COUNT_OFFSET / sizeof(uint32_t)] = 0x100000;// initial count
 
     // get the phys_addr and virt_addr of DEFAULT_IOAPICBASE, and do mapping
     uint64_t ioapic_phys = DEFAULT_IOAPICBASE;

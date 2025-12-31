@@ -1,22 +1,33 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
+#include "drivers/video.h"
+#include "ansi.h"
+
 #include <stdint.h>
 #include <stdbool.h>
 
 typedef struct Window
 {
-    int64_t x;
-    int64_t y;
-    uint64_t width;
-    uint64_t height;
+    int64_t x;       // coord x in pixels
+    int64_t y;       // coord y in pixels
+    uint64_t width;  // width in pixels
+    uint64_t height; // height in pixels
     char *title;
     bool is_dragging;
 
+    Pixel *pixels;
+
+    int64_t cursor_x; // Row cell index, not a pixel
+    int64_t cursor_y; // Col cell index, not a pixel
+
     // Doubly Linked List to handle bring to front
     // and back more easily
+
     struct Window *prev;
     struct Window *next;
+
+    AnsiContext ansi_ctx;
 } Window;
 
 typedef struct WinDragCtx
@@ -36,5 +47,7 @@ Window *create_win(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
 Window *get_win_at(int64_t mx, int64_t my);
 void focus_win(Window *win);
 void close_win(Window *win);
+void win_put_char(Window *win, char c);
+void win_handle_key(char c);
 
 #endif

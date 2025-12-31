@@ -7,7 +7,9 @@
 #include "../string.h"
 #include "drivers/serial.h" // debugging
 #include "gui/window.h"
+#include "gui/cursor.h"
 #include "drivers/mouse.h"
+#include "ansi.h"
 
 #include <stddef.h>
 
@@ -38,39 +40,92 @@ static uint64_t g_visible_rows = 0;
 static uint32_t *g_back_buf = NULL;
 static volatile bool mouse_moved = false;
 
-typedef enum
-{
-    ANSI_NORMAL, // normal text
-    ANSI_ESC,    // Escape (\033)
-    ANSI_CSI,    // '[' after ESC
-} ansi_state_t;
-
-static ansi_state_t g_ansi_state = ANSI_NORMAL;
-static char g_ansi_buf[32]; // buff to save nums like "10 20"
-static int g_ansi_idx = 0;
-static uint32_t g_curr_color = White;
-
-static uint32_t g_ansi_palette[] =
-    {
-        Black,   // 30
-        Red,     // 31
-        Green,   // 32
-        Yellow,  // 33
-        Blue,    // 34
-        Magenta, // 35
-        Cyan,    // 36
-        White,   // 37
-};
-
-typedef struct
-{
-    char glyph;
-    uint32_t color;
-} TermCell;
-
 static TermCell *buf = (TermCell *)BUF_VIRT_ENTRY;
 
-void video_init_buf()
+static AnsiContext g_ansi_ctx;
+
+/* START: ANSI DRIVER IMPLEMENTATION FOR VIDEO */
+
+static void video_driver_put_char(void *data, char c)
+{
+    (void)data; // we use the static variales, data is not needed
+
+    if (c == '\n')
+    {
+        g_cursor_x = 0;
+        g_cursor_y++;
+    }
+    else if (c == '\b')
+    {
+        if (g_cursor_x > 0)
+        {
+            g_cursor_x--;
+            size_t idx = g_cursor_y * BUF_COL + g_cursor_x;
+            buf[idx].glyph = ' ';
+            buf[idx].color = g_ansi_ctx.color;
+        }
+    }
+    else
+    {
+        size_t idx = g_cursor_y * BUF_COL + g_cursor_x;
+        if (idx < BUF_ROW * BUF_COL)
+        {
+            buf[idx].glyph = c;
+            buf[idx].color = g_ansi_ctx.color;
+        }
+        g_cursor_x++;
+
+        if (g_cursor_x >= BUF_COL)
+        {
+            g_cursor_x = 0;
+            g_cursor_y++;
+        }
+    }
+}
+
+static void video_driver_set_cursor(void *data, int x, int y)
+{
+    (void)data;
+    g_cursor_x = x;
+    g_cursor_y = y;
+    if (g_cursor_x >= BUF_COL)
+    {
+        g_cursor_x = BUF_COL - 1;
+    }
+    if (g_cursor_y >= BUF_ROW)
+    {
+        g_cursor_y = BUF_ROW - 1;
+    }
+}
+
+static void video_driver_set_color(void *data, uint32_t color)
+{
+    // already done internally in the ansi.c
+    (void)data;
+    (void)color;
+}
+
+static void video_driver_clear(void *data, int mode)
+{
+    (void)data;
+    if (mode == 2)
+    {
+        video_clear();
+    }
+}
+
+static const AnsiDriver g_video_driver = {
+    .put_char = video_driver_put_char,
+    .set_color = video_driver_set_color,
+    .set_cursor = video_driver_set_cursor,
+    .clear_screen = video_driver_clear,
+    .scroll = NULL,
+};
+
+/* END: ANSI DRIVER IMPLEMENTATION FOR VIDEO */
+
+void
+video_init_buf()
 {
     for (size_t i = 0; i < 75; i++)
     {
@@ -103,8 +158,13 @@ void video_init(struct limine_framebuffer *fb)
     g_fb_ptr = (uint32_t *)g_fb_addr;
     g_rows_on_screen = g_fb_height / FONT_H;
     g_visible_rows = g_rows_on_screen - MARGIN_BOTTOM;
-    
+
     g_back_buf = (uint32_t *)vmm_alloc(g_pitch32 * g_fb_height * sizeof(uint32_t));
+
+    g_ansi_ctx.state = ANSI_NORMAL;
+    g_ansi_ctx.color = White;
+    g_ansi_ctx.idx = 0;
+    memset(g_ansi_ctx.buf, 0, ANSI_BUF_SIZE);
 
     video_init_buf();
     video_clear();
@@ -137,186 +197,12 @@ static void draw_char_at(uint64_t x, uint64_t y, char c, uint32_t color)
     }
 }
 
-static int my_atoi(const char *s)
-{
-    int res = 0;
-
-    while (*s >= '0' && *s <= '9')
-    {
-        res = res * 10 + (*s - '0');
-        s++;
-    }
-
-    return res;
-}
-
-static void execute_ansi_command(char cmd)
-{
-    // analyze the g_ansi_buf
-    int params[4] = {0};
-    int param_cnt = 0;
-    char *ptr = g_ansi_buf;
-    char *start = ptr;
-
-    // split by ';'
-    while (*ptr)
-    {
-        if (*ptr == ';')
-        {
-            *ptr = 0;
-            if (param_cnt < 4)
-            {
-                params[param_cnt++] = my_atoi(start);
-            }
-            start = ptr + 1;
-        }
-        ptr++;
-    }
-
-    if (param_cnt < 4)
-    {
-        params[param_cnt++] = my_atoi(start);
-    }
-
-    // now process the cmd
-    switch (cmd)
-    {
-    case 'H': // cmd ESC [ y; x H -> move the cursor
-    case 'f':
-    {
-        int r = (params[0] > 0) ? params[0] : 1;
-        int c = (params[1] > 0) ? params[1] : 1;
-        g_cursor_y = r - 1; // ANSI index starts at 1, NyanOS's is at 0
-        g_cursor_x = c - 1;
-        if (g_cursor_x >= BUF_COL)
-        {
-            g_cursor_x = BUF_COL - 1;
-        }
-        break;
-    }
-    case 'J': // ESC [ 2 J -> clear the screen
-    {
-        if (params[0] == 2)
-        {
-            video_clear();
-        }
-        break;
-    }
-    case 'm': // ESC [31 m -> change color
-    {
-        for (int i = 0; i < param_cnt; i++)
-        {
-            int code = params[i];
-            if (code >= 30 && code <= 37)
-            {
-                g_curr_color = g_ansi_palette[code - 30];
-            }
-            else if (code == 0)
-            {
-                g_curr_color = White;
-            }
-        }
-        break;
-    }
-    case 'l': // reset mode
-    case 'h': // set mode
-    {
-        // trivial
-        // TODO:
-        break;
-    }
-    default:
-    {
-        char tmp[2];
-        tmp[0] = cmd;
-        tmp[1] = 0;
-        kprint("Unknown ansi command: ");
-        kprint(tmp);
-        kprint("\n");
-    }
-    }
-}
-
 /**
  * @brief Process one char with state machine
  */
 static void video_putc_internal(char c)
 {
-    // Round 1: we're nor-malle
-    if (g_ansi_state == ANSI_NORMAL)
-    {
-        if (c == '\033')
-        {
-            g_ansi_state = ANSI_ESC;
-        }
-        else
-        {
-            if (c == '\n')
-            {
-                g_cursor_x = 0;
-                g_cursor_y++;
-            }
-            else if (c == '\b')
-            {
-                if (g_cursor_x > 0)
-                {
-                    g_cursor_x--;
-                    size_t idx = g_cursor_y * BUF_COL + g_cursor_x;
-                    buf[idx].glyph = ' ';
-                    buf[idx].color = g_curr_color;
-                }
-            }
-            else
-            {
-                size_t idx = g_cursor_y * BUF_COL + g_cursor_x;
-                if (idx < BUF_ROW * BUF_COL)
-                {
-                    buf[idx].glyph = c;
-                    buf[idx].color = g_curr_color;
-                }
-                g_cursor_x++;
-
-                if (g_cursor_x >= BUF_COL)
-                {
-                    g_cursor_x = 0;
-                    g_cursor_y++;
-                }
-            }
-        }
-    }
-    // Round 2: let's run away from here
-    else if (g_ansi_state == ANSI_ESC)
-    {
-        if (c == '[')
-        {
-            g_ansi_state = ANSI_CSI;
-            g_ansi_idx = 0;
-            memset(g_ansi_buf, 0, sizeof(g_ansi_buf));
-        }
-        else
-        {
-            g_ansi_state = ANSI_NORMAL;
-        }
-    }
-    // Round 3: record those dance
-    else if (g_ansi_state == ANSI_CSI)
-    {
-        if ((c >= '0' && c <= '9') || c == ';' || c == '?')
-        {
-            // 10;20?
-            if (g_ansi_idx < sizeof(g_ansi_buf) - 1)
-            {
-                g_ansi_buf[g_ansi_idx] = c;
-                g_ansi_idx++;
-            }
-        }
-        else
-        {
-            // H, J, m, ...?
-            execute_ansi_command(c);
-            g_ansi_state = ANSI_NORMAL;
-        }
-    }
+    ansi_write_char(&g_ansi_ctx, c, &g_video_driver, NULL);
 }
 
 void video_scroll(int delta)
@@ -385,19 +271,7 @@ void video_refresh()
     }
 
     window_paint();
-
-    /* Draw the mouse */
-    int64_t mx = mouse_get_x();
-    int64_t my = mouse_get_y();
-
-    for (int y = 0; y < 4; y++)
-    {
-        for (int x = 0; x < 4; x++)
-        {
-            put_pixel(mx + x, my + y, Red);
-        }
-    }
-
+    draw_mouse();
     video_swap();
 }
 
@@ -410,8 +284,8 @@ void video_clear()
     g_cursor_y = 0;
     g_scroll_y = 0;
 
-    g_ansi_state = ANSI_NORMAL;
-    g_curr_color = White;
+    g_ansi_ctx.state = ANSI_NORMAL;
+    g_ansi_ctx.color = White;
 }
 
 /**

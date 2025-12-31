@@ -1,4 +1,5 @@
 #include "libc/libc.h"
+#include "syscall_args.h"
 
 int parse_cmd(char *line, char **argv)
 {
@@ -26,6 +27,16 @@ int parse_cmd(char *line, char **argv)
 
 int main()
 {
+    WinParams_t win_params = 
+    {
+        .x = 100,
+        .y = 200,
+        .width = 250,
+        .height = 150,
+        .title = "Shell",
+    };
+    create_win(&win_params);
+
     char line[128];
     char cwd[128];
     char *argv[16];
@@ -69,7 +80,7 @@ int main()
                     if (i > 0)
                     {
                         i--;
-                        print("\b \b");
+                        print("\b");
                     }
                     continue;
                 }
@@ -126,7 +137,15 @@ int main()
         /* --- LS --- */
         else if (strncmp(argv[0], "ls", 2) == 0)
         {
-            list_files();
+            char* list = (char*) malloc(512);
+            list_files(list, 512);
+            
+            while (*list != 0)
+            {
+                print(list);
+                print("\n");
+                list += strlen(list) + 1;
+            }
         }
 
         /* --- PWD --- */

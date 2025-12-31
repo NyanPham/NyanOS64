@@ -18,6 +18,26 @@ char* strcpy(char* dest, const char* src)
     return ret;
 }
 
+char* strncpy(char* dest, const char* src, size_t n)
+{
+    char* ret = dest;
+    for (size_t i = 0; i < n; i++)
+    {
+        if (*src != 0)
+        {
+            *dest = *src;
+            dest++;
+            src++;
+        }
+        else // padding
+        {
+            *dest = 0;
+            dest++;
+        }
+    }
+    return ret;
+}
+
 size_t strlen(const char* s)
 {
     size_t size = 0;

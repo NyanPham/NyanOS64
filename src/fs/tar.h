@@ -25,7 +25,7 @@ typedef struct tar_header
     char padding[12];
 } __attribute__((packed)) tar_header;
 
-void tar_list(void);
+void tar_list(char* list, uint64_t max_len);
 char* tar_read_file(const char* fname);
 void tar_init(void* tar_addr);
 

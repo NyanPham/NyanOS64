@@ -49,6 +49,11 @@ void kprint(const char* s)
     syscall(13, (uint64_t)s, 0, 0);
 }
 
+void kprint_int(int x)
+{
+    syscall(18, (uint64_t)x, 0, 0);
+}
+
 int open(const char* pathname, uint32_t flags)
 {
     // syscall 10: sys_open
@@ -72,6 +77,11 @@ void reboot(void)
     syscall(4, 0, 0, 0);
 }
 
+void create_win(WinParams_t* win_params)
+{
+    syscall(17, (uint64_t)win_params, 0, 0);   
+}
+
 /* ======= STRING, MEMORY FUNCTIONS =======*/
 size_t strlen(const char* s) {
     size_t len = 0;
@@ -86,6 +96,26 @@ char* strcpy(char* dest, const char* src)
 {
     char* ret = dest;
     while ((*dest++ = *src++));
+    return ret;
+}
+
+char* strncpy(char* dest, const char* src, size_t n)
+{
+    char* ret = dest;
+    for (size_t i = 0; i < n; i++)
+    {
+        if (*src != 0)
+        {
+            *dest = *src;
+            dest++;
+            src++;
+        }
+        else // padding
+        {
+            *dest = 0;
+            dest++;
+        }
+    }
     return ret;
 }
 
@@ -360,9 +390,9 @@ char* getcwd(char* buf, size_t size)
     return buf;
 }
 
-void list_files(void)
+void list_files(char* list, uint64_t max_len)
 {
-    syscall(5, 0, 0, 0);
+    syscall(5, (uint64_t)list, max_len, 0);
 }
 
 /*======= OTHERS =======*/

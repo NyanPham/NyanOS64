@@ -45,10 +45,12 @@ Task *sched_new_task(void)
     new_tsk->pml4 = vmm_new_pml4();
     new_tsk->parent = g_curr_tsk;
     new_tsk->heap_end = USER_HEAP_START;
+    new_tsk->win = NULL;
 
     if (g_curr_tsk != NULL) // has parent -> copy dir from him
     {
         strcpy(new_tsk->cwd, g_curr_tsk->cwd);
+        new_tsk->win = g_curr_tsk->win;
     }
     else  // else, it's the first task, root is "/"
     {
@@ -249,22 +251,24 @@ void sched_init(void)
     {
         kern_task->fd_tbl[i] = NULL;
     }
+    kern_task->kern_stk_rsp = 0;
+    kern_task->kern_stk_top = 0;
 
-    void* stk_phys = pmm_alloc_frame();
-    kern_task->kern_stk_top = (uint64_t)stk_phys + PAGE_SIZE;
+    // void* stk_phys = pmm_alloc_frame();
+    // kern_task->kern_stk_top = (uint64_t)stk_phys + PAGE_SIZE;
     
-    uint64_t* sp = (uint64_t*)kern_task->kern_stk_top;
-    *(--sp) = (uint64_t)task_idle;
-    *(--sp) = 0; // RBX
-    *(--sp) = 0; // RBP
-    *(--sp) = 0; // R12
-    *(--sp) = 0; // R13
-    *(--sp) = 0; // R14
-    *(--sp) = 0; // R15
-    kern_task->kern_stk_rsp = (uint64_t)sp;
+    // uint64_t* sp = (uint64_t*)kern_task->kern_stk_top;
+    // *(--sp) = (uint64_t)task_idle;
+    // *(--sp) = 0; // RBX
+    // *(--sp) = 0; // RBP
+    // *(--sp) = 0; // R12
+    // *(--sp) = 0; // R13
+    // *(--sp) = 0; // R14
+    // *(--sp) = 0; // R15
+    // kern_task->kern_stk_rsp = (uint64_t)sp;
     kern_task->next = kern_task;
     g_head_tsk = kern_task;
-    g_curr_tsk = NULL; 
+    g_curr_tsk = kern_task; 
 }
 
 void task_idle(void)
