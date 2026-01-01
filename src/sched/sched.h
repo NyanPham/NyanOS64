@@ -13,6 +13,7 @@
 
 // Forward declartion, not include window.h to avoid circular dependency
 struct Window;
+struct Terminal;
 
 typedef struct Task 
 {
@@ -27,7 +28,10 @@ typedef struct Task
     int ret_val;    // exit code
     uint64_t heap_end;
     char cwd[256];
-    struct Window* win;
+
+    // GUI & CLI
+    struct Window* win; // For GUI app
+    struct Terminal* term; // For CLI app (.e.g Shell)
 } Task;
 
 Task *sched_new_task(void);

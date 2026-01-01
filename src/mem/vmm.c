@@ -271,14 +271,16 @@ uint64_t find_free_addr(size_t size)
 
 void* vmm_alloc(size_t size)
 {
-    uint64_t virt_start_addr = find_free_addr(size);
+    size_t aligned_size = (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    uint64_t virt_start_addr = find_free_addr(aligned_size);
     if (virt_start_addr == 0)
     {
         kprint("VMM ALLOC: Out of memory\n");
         return NULL;
     }
 
-    uint64_t npages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint64_t npages = aligned_size / PAGE_SIZE;
     uint64_t i = 0;
     uint64_t* pml4 = (uint64_t*)(read_cr3() + hhdm_offset);
 
@@ -310,7 +312,7 @@ void* vmm_alloc(size_t size)
             pmm_free_frame(phys_addr + hhdm_offset);
         }
         
-        vmm_add_free_region(virt_start_addr, size);
+        vmm_add_free_region(virt_start_addr, aligned_size);
         return NULL;
     }
     

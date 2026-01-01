@@ -13,6 +13,7 @@
 #include "mem/pmm.h"
 #include "mem/vmm.h"
 #include "gui/window.h"
+#include "gui/terminal.h"
 #include "kern_defs.h"
 #include "include/syscall_args.h"
 
@@ -127,7 +128,12 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 return -1;
             }
 
-            // call vfs (if fd == 0, we read the stdin_read)
+            if (fd == 0 && curr_tsk && curr_tsk->term)
+            {
+                return term_read(curr_tsk->term, (uint8_t*)buf, count);
+            }
+
+            // call vfs (if fd > 2, we read the stdin_read)
             return vfs_read(curr_tsk->fd_tbl[fd], count, (uint8_t*)buf);
         }
         case 1:
@@ -157,11 +163,16 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 return -1;
             }
 
-            if (curr_tsk->win != NULL && (fd == 1 || fd == 2))
+            if (curr_tsk->term != NULL && (fd == 1 || fd == 2))
             {
-                // detour the flow to print within the 
-                // window of task rather than the universal screen
+                for (uint64_t i = 0; i < count; i++)
+                {
+                    term_put_char(curr_tsk->term, buf[i]);
+                }
 
+                return count;
+            } else if (curr_tsk->win != NULL && (fd == 1 || fd == 2))
+            {
                 for (uint64_t i = 0; i < count; i++)
                 {
                     win_put_char(curr_tsk->win, buf[i]);
@@ -320,6 +331,11 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
             sched_load_task(task, entry, rsp_virt_addr);
 
+            if (task->term != NULL)
+            {
+                task->term->child_pid = task->pid;
+            }
+            
             return task->pid;
         }
         case 8:

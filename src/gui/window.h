@@ -7,6 +7,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define WIN_W 700
+#define WIN_H 350
+#define WIN_TITLE_BAR_H 20
+#define WIN_BORDER_SIZE 1
+
 typedef struct Window
 {
     int64_t x;       // coord x in pixels
@@ -28,6 +33,8 @@ typedef struct Window
     struct Window *next;
 
     AnsiContext ansi_ctx;
+
+    int64_t owner_pid;
 } Window;
 
 typedef struct WinDragCtx
@@ -49,5 +56,7 @@ void focus_win(Window *win);
 void close_win(Window *win);
 void win_put_char(Window *win, char c);
 void win_handle_key(char c);
+void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color color);
+Window* win_get_active(void);
 
 #endif

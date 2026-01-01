@@ -26,6 +26,8 @@
 #include "string.h"
 #include "gui/window.h"
 #include "gui/cursor.h"
+#include "gui/terminal.h"
+#include "event/event.h"
 #include "kern_defs.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
@@ -75,10 +77,21 @@ static void hcf(void)
     }
 }
 
+static void sti(void)
+{
+    asm volatile ("sti");
+}
+
+static void hlt(void)
+{
+    asm volatile ("hlt");
+}
+
 extern uint64_t hhdm_offset;
 extern uint64_t* kern_pml4;
 extern uint64_t kern_stk_ptr;
 extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
+extern EventBuf g_event_queue;
 
 void kmain(void)
 {
@@ -199,6 +212,9 @@ void kmain(void)
     kprint("Loading Shell...\n");
 
     Task* shell_task = sched_new_task();
+    Terminal* console = term_create(100, 100, 600, 400, 100);
+    shell_task->term = console;
+    console->win->owner_pid = shell_task->pid;
 
     uint64_t curr_pml4 = read_cr3(); // this could be kern_pml4, but nah, let's make thing variable :))
 
@@ -241,9 +257,32 @@ void kmain(void)
     // if not working, don't crash our OS :)))
     kprint("Hello from the kernel side!\n");
 
-    asm volatile ("sti");
+    sti();
+
     while (true)
     {
+        // Event Loop
+        Event e;
+        if (event_queue_pop(&g_event_queue, &e))
+        {
+            switch (e.type)
+            {
+            case EVENT_KEY_PRESSED:
+            {
+                Window* top_win = win_get_active();
+                if (top_win != NULL && top_win->owner_pid != -1)
+                {
+                    sched_wake_pid(top_win->owner_pid);
+                }
+                break;
+            }
+            default:
+            {
+                // do nothing
+            }
+            }
+        }
+
         window_update();
         
         video_clear();
@@ -253,6 +292,6 @@ void kmain(void)
         draw_mouse();
         video_swap();
         
-        asm volatile ("hlt");
+        hlt();
     }
 }

@@ -21,4 +21,7 @@ typedef enum
     Slate = 0x708090,
 } GBA_Color;
 
+#define CHAR_W 8 // based on the font.h
+#define CHAR_H 8
+
 #endif

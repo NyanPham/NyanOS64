@@ -27,16 +27,6 @@ int parse_cmd(char *line, char **argv)
 
 int main()
 {
-    WinParams_t win_params = 
-    {
-        .x = 100,
-        .y = 200,
-        .width = 250,
-        .height = 150,
-        .title = "Shell",
-    };
-    create_win(&win_params);
-
     char line[128];
     char cwd[128];
     char *argv[16];

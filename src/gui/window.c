@@ -8,15 +8,9 @@
 #include "../string.h"
 #include "ansi.h"
 #include "drivers/serial.h" // debugging
+#include "kern_defs.h"
 
 #include <stddef.h>
-
-#define WIN_W 700
-#define WIN_H 350
-#define TITLE_BAR_H 20
-#define BORDER_SIZE 1
-#define CHAR_W 8 // based on the font.h
-#define CHAR_H 8
 
 // From font.h
 extern char font8x8_basic[128][8];
@@ -30,8 +24,6 @@ static WinDragCtx drag_ctx =
         .off_x = 0,
         .off_y = 0,
 };
-
-static void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color color);
 
 /* START: ANSI DRIVER IMPLEMENTATION FOR WINDOW */
 
@@ -48,8 +40,8 @@ static void win_driver_put_char(void *data, char c)
         if (win->cursor_x >= CHAR_W)
         {
             win->cursor_x -= CHAR_W;
-            uint64_t start_x = win->cursor_x + BORDER_SIZE;
-            uint64_t start_y = win->cursor_y + TITLE_BAR_H;
+            uint64_t start_x = win->cursor_x + WIN_BORDER_SIZE;
+            uint64_t start_y = win->cursor_y + WIN_TITLE_BAR_H;
 
             for (uint64_t dy = 0; dy < CHAR_H; dy++)
             {
@@ -63,19 +55,19 @@ static void win_driver_put_char(void *data, char c)
     }
     else
     {
-        int64_t scrn_x = win->x + BORDER_SIZE + win->cursor_x;
-        // int64_t scrn_y = win->y + TITLE_BAR_H + win->cursor_y;
+        int64_t scrn_x = win->x + WIN_BORDER_SIZE + win->cursor_x;
+        // int64_t scrn_y = win->y + WIN_TITLE_BAR_H + win->cursor_y;
 
-        if (scrn_x >= win->x + win->width - BORDER_SIZE)
+        if (scrn_x >= win->x + win->width - WIN_BORDER_SIZE)
         {
             win->cursor_x = 0;
             win->cursor_y += CHAR_H;
 
-            scrn_x = win->x + BORDER_SIZE + win->cursor_x;
-            // scrn_y = win->y + TITLE_BAR_H + win->cursor_y;
+            scrn_x = win->x + WIN_BORDER_SIZE + win->cursor_x;
+            // scrn_y = win->y + WIN_TITLE_BAR_H + win->cursor_y;
         }
 
-        win_draw_char_at(win, c, win->cursor_x + BORDER_SIZE, win->cursor_y + TITLE_BAR_H, win->ansi_ctx.color);
+        win_draw_char_at(win, c, win->cursor_x + WIN_BORDER_SIZE, win->cursor_y + WIN_TITLE_BAR_H, win->ansi_ctx.color);
         win->cursor_x += CHAR_W;
     }
 }
@@ -97,13 +89,13 @@ static void win_driver_set_cursor(void *data, int x, int y)
     win->cursor_y = y * CHAR_H;
 
     // check boundary
-    if (win->cursor_x >= win->width - BORDER_SIZE)
+    if (win->cursor_x >= win->width - WIN_BORDER_SIZE)
     {
-        win->cursor_x = win->width - CHAR_W - BORDER_SIZE;
+        win->cursor_x = win->width - CHAR_W - WIN_BORDER_SIZE;
     }
-    if (win->cursor_y >= win->height - TITLE_BAR_H)
+    if (win->cursor_y >= win->height - WIN_TITLE_BAR_H)
     {
-        win->cursor_y = win->height - CHAR_H - TITLE_BAR_H;
+        win->cursor_y = win->height - CHAR_H - WIN_TITLE_BAR_H;
     }
 }
 
@@ -116,9 +108,9 @@ static void win_driver_clear(void *data, int mode)
         win->cursor_y = 0;
 
         // repaint the color for the whole terminal
-        for (uint64_t r = TITLE_BAR_H; r < win->height; r++)
+        for (uint64_t r = WIN_TITLE_BAR_H; r < win->height; r++)
         {
-            for (uint64_t c = BORDER_SIZE; c < win->width - BORDER_SIZE; c++)
+            for (uint64_t c = WIN_BORDER_SIZE; c < win->width - WIN_BORDER_SIZE; c++)
             {
                 win->pixels[r * win->width + c].color = Slate;
             }
@@ -159,7 +151,7 @@ static void init_win_pixels(Window *win)
 {
     /* TITLE BAR */
     // init the title bar
-    for (uint64_t r = 0; r < TITLE_BAR_H; r++)
+    for (uint64_t r = 0; r < WIN_TITLE_BAR_H; r++)
     {
         for (uint64_t c = 0; c < win->width; c++)
         {
@@ -177,7 +169,7 @@ static void init_win_pixels(Window *win)
     }
 
     /* CONTENT BACKGROUND */
-    for (uint64_t r = TITLE_BAR_H; r < win->height; r++)
+    for (uint64_t r = WIN_TITLE_BAR_H; r < win->height; r++)
     {
         for (uint64_t c = 0; c < win->width; c++)
         {
@@ -255,8 +247,9 @@ Window *create_win(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     else
     {
         tsk->win = win;
+        tsk->win->owner_pid = tsk->pid;
     }
-
+    
     return win;
 }
 
@@ -276,7 +269,7 @@ void update_window_drag(Window *win, int16_t dx, int16_t dy)
 
 bool check_window_drag(Window *win, int64_t mouse_x, int64_t mouse_y)
 {
-    if (mouse_x >= win->x && mouse_x < win->x + WIN_W && mouse_y >= win->y && mouse_y < win->y + TITLE_BAR_H)
+    if (mouse_x >= win->x && mouse_x < win->x + WIN_W && mouse_y >= win->y && mouse_y < win->y + WIN_TITLE_BAR_H)
     {
         win->is_dragging = true;
         return true;
@@ -394,7 +387,7 @@ void close_win(Window *win)
     kfree(win);
 }
 
-static void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color color)
+void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color color)
 {
     char *glyph = font8x8_basic[(int)c];
     for (uint8_t dy = 0; dy < CHAR_H; dy++)
@@ -458,4 +451,9 @@ void window_update(void)
     {
         drag_ctx.target = NULL;
     }
+}
+
+Window* win_get_active()
+{
+    return g_win_top;
 }

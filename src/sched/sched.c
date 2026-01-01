@@ -7,6 +7,8 @@
 #include "cpu.h"
 #include "kern_defs.h"
 #include "fs/dev.h"
+#include "gui/window.h"
+#include "gui/terminal.h"
 
 #include <stddef.h>
 
@@ -46,11 +48,13 @@ Task *sched_new_task(void)
     new_tsk->parent = g_curr_tsk;
     new_tsk->heap_end = USER_HEAP_START;
     new_tsk->win = NULL;
+    new_tsk->term = NULL;
 
     if (g_curr_tsk != NULL) // has parent -> copy dir from him
     {
         strcpy(new_tsk->cwd, g_curr_tsk->cwd);
         new_tsk->win = g_curr_tsk->win;
+        new_tsk->term = g_curr_tsk->term;
     }
     else  // else, it's the first task, root is "/"
     {
@@ -138,6 +142,29 @@ void sched_destroy_task(Task* tsk)
     }
 
     vmm_ret_pml4(tsk->pml4);
+    
+    // Handle GUI vs CLI
+    if (tsk->win != NULL)
+    {
+        close_win(tsk->win);
+    }
+    
+    if (tsk->term != NULL)
+    {
+        if (tsk->term->child_pid == tsk->pid)
+        {
+            if (tsk->parent != NULL)
+            {
+                tsk->term->child_pid = tsk->parent->pid;
+            }
+            else 
+            {
+                tsk->term->child_pid = -1;
+            }
+        }
+        tsk->term = NULL;
+    }
+
     kfree(tsk);
 }
 

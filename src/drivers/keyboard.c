@@ -3,7 +3,18 @@
 #include "arch/irq.h"
 #include "serial.h"
 #include "video.h"
+#include "utils/ring_buf.h"
+#include "event/event.h"
 // #include "pic.h"
+
+extern EventBuf g_event_queue;
+
+typedef struct
+{
+    RingBuf buf;
+    int64_t waiting_pid;
+} kbd_buf_t;
+
 
 static volatile uint8_t scancode = 0;
 static volatile kbd_buf_t kbd_buf;
@@ -56,14 +67,19 @@ static void keyboard_handler(void *regs)
             // serial_write(ascii_char);
             // kprint("\n"); 
 
-            kbd_buf.buf[kbd_buf.head] = ascii_char;
-            kbd_buf.head = (kbd_buf.head + 1) % KBD_BUF_SIZE;
+            rb_push(&kbd_buf.buf, ascii_char);
 
-            if (kbd_buf.waiting_pid != -1)
-            {
-                sched_wake_pid(kbd_buf.waiting_pid);
-                kbd_buf.waiting_pid = -1;
-            }
+            Event e = {
+                .type = EVENT_KEY_PRESSED,
+                .key = ascii_char,
+            };
+
+            event_queue_push(&g_event_queue, e);
+            // if (kbd_buf.waiting_pid != -1)
+            // {
+            //     sched_wake_pid(kbd_buf.waiting_pid);
+            //     kbd_buf.waiting_pid = -1;
+            // }
         }
     }
 }
@@ -75,24 +91,17 @@ void keyboard_set_waiting(int64_t pid)
 
 char keyboard_get_char()
 {
-    if (kbd_buf.head == kbd_buf.tail)
+    char c;
+    if (rb_pop(&kbd_buf.buf, &c))
     {
-        return 0;
+        return c;
     }
-
-    char c = kbd_buf.buf[kbd_buf.tail];
-    kbd_buf.tail = (kbd_buf.tail + 1) % KBD_BUF_SIZE;
-    return c;
+    return 0;
 }
 
 void keyboard_init(void)
 {
-    for (int i = 0; i < KBD_BUF_SIZE; i++)
-    {
-        kbd_buf.buf[i] = 0;
-    }
-    kbd_buf.head = 0;
-    kbd_buf.tail = 0;
+    rb_init(&kbd_buf.buf);
     kbd_buf.waiting_pid = -1;
     register_irq_handler(1, keyboard_handler);
     // pic_clear_mask(1);
