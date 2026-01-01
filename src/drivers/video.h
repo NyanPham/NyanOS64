@@ -6,12 +6,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct
-{
-    char glyph;
-    uint32_t color;
-} TermCell;
-
 typedef struct Pixel
 {
     uint32_t color;

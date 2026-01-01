@@ -32,8 +32,6 @@ typedef struct Window
     struct Window *prev;
     struct Window *next;
 
-    AnsiContext ansi_ctx;
-
     int64_t owner_pid;
 } Window;
 
@@ -55,8 +53,7 @@ Window *get_win_at(int64_t mx, int64_t my);
 void focus_win(Window *win);
 void close_win(Window *win);
 void win_put_char(Window *win, char c);
-void win_handle_key(char c);
-void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color color);
+void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color fg_color, GBA_Color bg_color);
 Window* win_get_active(void);
 
 #endif

@@ -2,6 +2,7 @@
 #define TERMINAL_H
 
 #include "window.h"
+#include "kern_defs.h"
 #include "utils/ring_buf.h"
 
 #include <stddef.h>
@@ -24,6 +25,8 @@ typedef struct Terminal
 
     // CONTROLLER (Shell)
     int child_pid;
+
+    AnsiContext ansi_ctx;
 
     // INPUT BUFFER
     RingBuf input_buf;

@@ -24,4 +24,10 @@ typedef enum
 #define CHAR_W 8 // based on the font.h
 #define CHAR_H 8
 
+typedef struct
+{
+    char glyph;
+    GBA_Color color;
+} TermCell;
+
 #endif
