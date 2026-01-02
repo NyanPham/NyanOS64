@@ -48,9 +48,9 @@ static void init_win_pixels(Window *win)
 {
     /* TITLE BAR */
     // init the title bar
-    for (uint64_t r = 0; r < WIN_TITLE_BAR_H; r++)
+    for (int64_t r = 0; r < WIN_TITLE_BAR_H; r++)
     {
-        for (uint64_t c = 0; c < win->width; c++)
+        for (int64_t c = 0; c < win->width; c++)
         {
             win->pixels[r * win->width + c].color = Blue;
         }
@@ -58,17 +58,42 @@ static void init_win_pixels(Window *win)
 
     // draw the title
     char *title = win->title;
-    for (uint64_t x = 5; (x < win->width - 15 && *title); x += CHAR_W)
+    for (int64_t x = 5; (x < win->width - 15 && *title); x += CHAR_W)
     {
         // y is always 5
         win_draw_char_at(win, *title, x, 5, White, Blue);
         title++;
     }
 
-    /* CONTENT BACKGROUND */
-    for (uint64_t r = WIN_TITLE_BAR_H; r < win->height; r++)
+    // draw the close button
+    int64_t btn_size = WIN_TITLE_BAR_H;
+    int64_t btn_x = win->width - btn_size;
+    int64_t btn_y = 0;
+
+    for (int64_t r = btn_y; r < btn_y + btn_size; r++)
     {
-        for (uint64_t c = 0; c < win->width; c++)
+        for (int64_t c = btn_x; c < btn_x + btn_size; c++)
+        {
+            int64_t rel_x = c - btn_x;
+            int64_t rel_y = r - btn_y;
+            bool is_cross = (rel_x == rel_y) || (rel_x + rel_y == btn_size - 1);
+            GBA_Color color = Red;
+
+            if (is_cross)
+            {
+                if (rel_x > 2 && rel_x < btn_size - 3)
+                {
+                    color = White;
+                }
+            }
+            win->pixels[r * win->width + c].color = color;
+        }
+    }
+
+    /* CONTENT BACKGROUND */
+    for (int64_t r = WIN_TITLE_BAR_H; r < win->height; r++)
+    {
+        for (int64_t c = 0; c < win->width; c++)
         {
             win->pixels[r * win->width + c].color = Slate;
         }
@@ -347,11 +372,22 @@ void window_update(void)
             if (curr_win != NULL)
             {
                 focus_win(curr_win);
+                int64_t off_mx = mx - curr_win->x;
+                int64_t off_my = my - curr_win->y;
                 if (check_window_drag(curr_win, mx, my))
                 {
                     drag_ctx.target = curr_win;
-                    drag_ctx.off_x = mx - curr_win->x;
-                    drag_ctx.off_y = my - curr_win->y;
+                    drag_ctx.off_x = off_mx;
+                    drag_ctx.off_y = off_my;
+                }
+
+                int64_t btn_size = WIN_TITLE_BAR_H;
+                int64_t btn_x = curr_win->width - btn_size;
+                int64_t btn_y = 0;
+
+                if (is_point_in_rect(off_mx, off_my, btn_x, btn_y, btn_size, btn_size))
+                {
+                    sched_kill(curr_win->owner_pid);
                 }
             }
         }
@@ -365,4 +401,12 @@ void window_update(void)
 Window* win_get_active()
 {
     return g_win_top;
+}
+
+bool is_point_in_rect(int64_t px, int64_t py, int64_t rx, int64_t ry, int64_t rw, int64_t rh)
+{
+    return (
+        px >= rx && px < rx + rw &&
+        py >= ry && py < ry + rh
+    );
 }

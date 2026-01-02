@@ -55,5 +55,6 @@ void close_win(Window *win);
 void win_put_char(Window *win, char c);
 void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color fg_color, GBA_Color bg_color);
 Window* win_get_active(void);
+bool is_point_in_rect(int64_t px, int64_t py, int64_t rx, int64_t ry, int64_t rw, int64_t rh);
 
 #endif

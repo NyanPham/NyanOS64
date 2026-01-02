@@ -146,7 +146,7 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
         kprint("Panic: term_create cannot vmm_alloc for text_buf\n");
         return NULL;
     }
-
+    term->text_buf_siz = buf_size;
     memset(term->text_buf, 0, buf_size);
 
     // State
@@ -163,6 +163,32 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
     memset(term->ansi_ctx.buf, 0, ANSI_BUF_SIZE);
 
     return term;
+}
+
+/**
+ * @brief
+ */
+void term_destroy(Terminal* term)
+{
+    if (term == NULL)
+    {
+        return;
+    }
+
+    if (term->text_buf != NULL)
+    {
+        vmm_free(term->text_buf, term->text_buf_siz);
+        term->text_buf = NULL;
+        term->text_buf_siz = 0;
+    }
+    
+    if (term->win != NULL)
+    {
+        close_win(term->win);
+        term->win = NULL;
+    }
+
+    kfree(term);
 }
 
 /**

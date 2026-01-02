@@ -143,28 +143,7 @@ void sched_destroy_task(Task* tsk)
 
     vmm_ret_pml4(tsk->pml4);
     
-    // Handle GUI vs CLI
-    if (tsk->win != NULL)
-    {
-        close_win(tsk->win);
-    }
-    
-    if (tsk->term != NULL)
-    {
-        if (tsk->term->child_pid == tsk->pid)
-        {
-            if (tsk->parent != NULL)
-            {
-                tsk->term->child_pid = tsk->parent->pid;
-            }
-            else 
-            {
-                tsk->term->child_pid = -1;
-            }
-        }
-        tsk->term = NULL;
-    }
-
+    sched_clean_gui(tsk);
     kfree(tsk);
 }
 
@@ -406,6 +385,34 @@ void sched_exit(int code)
     switch_to_task(NULL, next_tsk->kern_stk_rsp);
 }
 
+void sched_kill(int pid)
+{
+    // Suicide
+    if (pid == g_curr_tsk->pid)
+    {
+        sched_exit(-1);
+        return;
+    }
+
+    // Assassinate 
+    Task* tgt_tsk = sched_find_task(pid);
+    if (tgt_tsk == NULL)
+    {
+        kprint("SCHED: Kill failed, PID not found\n");
+        return;
+    }
+
+    // close the ui immediately to make it look fast
+    sched_clean_gui(tgt_tsk);
+    tgt_tsk->state = TASK_ZOMBIE;
+    tgt_tsk->ret_val = -1;
+    
+    if (tgt_tsk->parent != NULL)
+    {
+        sched_wake_pid(tgt_tsk->parent->pid);
+    }
+}
+
 Task* get_curr_task()
 {
     return g_curr_tsk;
@@ -441,4 +448,38 @@ int64_t get_curr_task_pid()
     }
 
     return t->pid;
+}
+
+static void inline sched_clean_gui(Task *tsk)
+{
+    // Handle GUI vs CLI
+    if (tsk->term != NULL)
+    {
+        if (tsk->term->child_pid == tsk->pid)
+        {
+            if (tsk->parent != NULL)
+            {
+                tsk->term->child_pid = tsk->parent->pid;
+            }
+            else
+            {
+                tsk->term->child_pid = -1;
+            }
+        }
+        if (tsk->term->win != NULL && tsk->term->win->owner_pid == tsk->pid)
+        {
+            term_destroy(tsk->term);
+        }
+        tsk->term = NULL;
+        tsk->win = NULL;
+    }
+
+    if (tsk->win != NULL)
+    {
+        if (tsk->win->owner_pid == tsk->pid)
+        {
+            close_win(tsk->win);
+        }
+        tsk->win = NULL;
+    }
 }

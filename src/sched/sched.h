@@ -47,8 +47,11 @@ void task_idle(void);
 void sched_block();
 void sched_wake_pid(int pid);
 void sched_exit(int code);
+void sched_kill(int pid);
 Task* get_curr_task(void);
 Task* sched_find_task(int pid);
 int64_t get_curr_task_pid();
+
+static void inline sched_clean_gui(Task* tsk);
 
 #endif
