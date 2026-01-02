@@ -1,10 +1,10 @@
 #include "libc/libc.h"
 
 // Game Settings
-#define WIDTH  40
+#define WIDTH 40
 #define HEIGHT 20
 #define MAX_LEN 1000
-#define DELAY  5000000
+#define DELAY 5000000
 
 // Snake body (circular buffer)
 int *snake_x = NULL;
@@ -77,6 +77,12 @@ void game_over(const char *reason)
 
 int main(void)
 {
+    // Create the game terminal
+    if (create_term(100, 100, WIDTH * 8 + 16, HEIGHT * 8 + 40, "Snyake") < 0)
+    {
+        return -1;
+    }
+
     // Allocate memory for snake
     snake_x = (int *)malloc(MAX_LEN * sizeof(int));
     snake_y = (int *)malloc(MAX_LEN * sizeof(int));

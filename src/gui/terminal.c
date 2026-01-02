@@ -128,11 +128,11 @@ static const AnsiDriver g_term_driver = {
  * First, crates the View (window)
  * Then initializes the Data Model like n_rows, n_cols
  */
-Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max_rows)
+Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max_rows, const char* title)
 {
     // View
     Terminal *term = (Terminal *)kmalloc(sizeof(Terminal));
-    term->win = create_win(x, y, w, h, "Terminal");
+    term->win = create_win(x, y, w, h, title);
 
     // Data Model
     term->n_rows = max_rows;

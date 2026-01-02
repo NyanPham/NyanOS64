@@ -582,6 +582,46 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             kprint_int(x);
             return 0;
         }
+        case 19: 
+        {
+            // sys_create_term(WinParams_t* win_params)
+            WinParams_t* win_params = (WinParams_t*)arg1;
+            
+            if (win_params == NULL)
+            {
+                kprint("Not having window params passed!\n");
+                return -1;
+            }
+            
+            if (!verify_usr_access(win_params, sizeof(WinParams_t)))
+            {
+                kprint("Invalid WinParams space!\n");
+                return -1;
+            }
+
+            char w_title[256]; 
+            strncpy(w_title, win_params->title, 256);
+            w_title[255] = 0;
+
+            Terminal* new_term = term_create(win_params->x, win_params->y, win_params->width, win_params->height, win_params->height*3, w_title);
+            if (new_term == NULL)
+            {
+                kprint("Failed to create term in SYSCALL 19\n");
+                return -1;
+            }
+            
+            Task* tsk = get_curr_task();
+            if (tsk == NULL)
+            {
+                kprint("No running while trying to creating terms in SYSCALL 19\n");
+                return -1;
+            }
+            tsk->term = new_term;
+            tsk->win = tsk->term->win;
+            tsk->win->owner_pid = tsk->pid;
+
+            return 0;
+        }
         default:
         {
             kprint("Kernel: unknown sys_num: ");

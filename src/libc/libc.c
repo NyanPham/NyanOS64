@@ -77,9 +77,23 @@ void reboot(void)
     syscall(4, 0, 0, 0);
 }
 
-void create_win(WinParams_t* win_params)
+int create_win(WinParams_t* win_params)
 {
-    syscall(17, (uint64_t)win_params, 0, 0);   
+    return syscall(17, (uint64_t)win_params, 0, 0);   
+}
+
+int create_term(int x, int y, uint32_t w, uint32_t h, const char *title)
+{
+    WinParams_t win_params =
+    {
+        .x = x,
+        .y = y,
+        .width = w,
+        .height = h,
+    };
+    strncpy(win_params.title, title, WIN_PARAMS_TITLE_SIZE - 1);
+
+    return syscall(19, (uint64_t)&win_params, 0, 0);
 }
 
 /* ======= STRING, MEMORY FUNCTIONS =======*/

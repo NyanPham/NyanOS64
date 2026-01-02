@@ -45,3 +45,6 @@ Thumbs.db
 
 # Limine specific
 limine/
+
+# Todo list
+todo.md

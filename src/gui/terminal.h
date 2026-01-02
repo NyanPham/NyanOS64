@@ -36,7 +36,7 @@ typedef struct Terminal
     int waiting_pid;
 } Terminal;  
 
-Terminal* term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max_rows);
+Terminal* term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max_rows, const char* title);
 void term_refresh(Terminal* term);
 void term_put_char(Terminal* term, char c);
 size_t term_read(Terminal* term, char* buf, size_t count);
