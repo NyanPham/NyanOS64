@@ -205,30 +205,6 @@ static void video_putc_internal(char c)
     ansi_write_char(&g_ansi_ctx, c, &g_video_driver, NULL);
 }
 
-void video_scroll(int delta)
-{
-    int64_t new_scroll = (int64_t)g_scroll_y + delta;
-
-    if (new_scroll < 0)
-    {
-        new_scroll = 0;
-    }
-
-    int64_t max_scroll = (int64_t)g_cursor_y - g_visible_rows + 1;
-    if (max_scroll < 0)
-    {
-        max_scroll = 0;
-    }
-
-    if (new_scroll > max_scroll)
-    {
-        new_scroll = max_scroll;
-    }
-
-    g_scroll_y = (uint64_t)new_scroll;
-    video_refresh();
-}
-
 void video_write(const char *str, uint32_t color)
 {
     while (*str)
@@ -349,19 +325,4 @@ void draw_rect(int rect_x, int rect_y, int width, int height, GBA_Color color)
             put_pixel(r, c, color);
         }
     }
-}
-
-bool mouse_ack()
-{
-    if (mouse_moved)
-    {
-        mouse_moved = false;
-        return true;
-    }
-    return false;
-}
-
-void mouse_set()
-{
-    mouse_moved = true;
 }

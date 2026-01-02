@@ -136,8 +136,6 @@ static void mouse_handler(void *regs)
 
         if (mouse.y >= (int64_t)video_get_height() - CURSOR_H)
             mouse.y = video_get_height() - CURSOR_H;
-
-        mouse_set();
     }
 }
 

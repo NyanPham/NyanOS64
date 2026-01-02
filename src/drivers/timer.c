@@ -13,13 +13,6 @@ static void timer_handler(void *regs)
     (void)regs;
     g_ticks++;
 
-    // window_update();
-
-    // if (mouse_ack())
-    // {
-    //     video_refresh();
-    // }
-
     lapic_send_eoi();
     schedule();
 }

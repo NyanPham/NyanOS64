@@ -1,7 +1,7 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
-#include "drivers/video.h"
+#include "kern_defs.h"
 #include "ansi.h"
 
 #include <stdint.h>

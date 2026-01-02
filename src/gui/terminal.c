@@ -6,6 +6,8 @@
 #include "../string.h"
 #include "kern_defs.h"
 
+#define SCROLL_INTERVAL 3
+
 /* START: ANSI DRIVER IMPLEMENTATION FOR TERMINAL */
 static void term_driver_put_char(void *ctx, char c)
 {
@@ -207,7 +209,43 @@ size_t term_read(Terminal *term, char *buf, size_t count)
     while (n < count)
     {
         char c = keyboard_get_char();
-        if (c != 0)
+        
+        // upon receiving the event of the firest ansi key within a sequence, starting with '\033' for example
+        // the keyboard has already pushed the whole sequence.
+        if (c == '\033') // ESC?
+        {
+            char seq[3] = {0};
+            seq[0] = keyboard_get_char();
+            seq[1] = keyboard_get_char();
+            seq[2] = keyboard_get_char();
+            // if it's either [5~ or [6~?
+            if (
+                seq[0] == '[' && 
+                (seq[1] == '5' || seq[1] == '6') && 
+                seq[2] == '~')
+            {
+                int delta = (seq[1] == '5') ? -SCROLL_INTERVAL : SCROLL_INTERVAL;
+                term_scroll(term, delta);
+                continue;
+            }
+            else 
+            {
+                buf[n++] = c;
+
+                for (uint8_t i = 0; i < 3; i++)
+                {
+                    if (n < count && seq[i] != 0)
+                    {
+                        buf[n++] = seq[i];
+                    }
+                }
+                if (n > 0 && buf[n-1] == '\n')
+                {
+                    break;
+                }
+            }
+        }
+        else if (c != 0)
         {
             // store to buf
             buf[n++] = c;
@@ -238,4 +276,31 @@ size_t term_read(Terminal *term, char *buf, size_t count)
         }
     }
     return n;
+}
+
+void term_scroll(Terminal *term, int32_t delta)
+{
+    int64_t new_idx = (int64_t)term->scroll_idx + delta;
+    uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_H) / CHAR_H;
+
+    // Clamping
+    if (new_idx < 0)
+    {
+        new_idx = 0;
+    }
+    uint64_t max_idx = 0;
+    if (term->n_rows > win_rows)
+    {
+        max_idx = term->n_rows - win_rows;
+    }
+    if (new_idx > max_idx)
+    {
+        new_idx = max_idx;
+    }
+
+    if (new_idx != term->scroll_idx)
+    {
+        term->scroll_idx = new_idx;
+        term_refresh(term);
+    }
 }

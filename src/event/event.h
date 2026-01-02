@@ -16,6 +16,9 @@ typedef struct Event
 {
     EventType type;
 
+    // TODO: Right now, the data below is not
+    // used :/ Let's find a way to modernize 
+    // things
     union
     {
         char key;

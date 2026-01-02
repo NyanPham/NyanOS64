@@ -1,6 +1,8 @@
 #ifndef KERN_DEFS_H
 #define KERN_DEFS_H
 
+#include <stdint.h>
+
 #define USER_STACK_TOP 0x1000000
 #define PAGE_SIZE 4096
 #define KERN_BASE 0xFFFFFFFF80000000
@@ -24,10 +26,15 @@ typedef enum
 #define CHAR_W 8 // based on the font.h
 #define CHAR_H 8
 
-typedef struct
+typedef struct TermCell
 {
     char glyph;
     GBA_Color color;
 } TermCell;
+
+typedef struct Pixel
+{
+    uint32_t color;
+} Pixel;
 
 #endif

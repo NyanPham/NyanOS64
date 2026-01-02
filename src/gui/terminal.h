@@ -28,7 +28,10 @@ typedef struct Terminal
 
     AnsiContext ansi_ctx;
 
-    // INPUT BUFFER
+    // TODO: use input_buf store the pressed keys from keyboard 
+    // when see KEY_PRESSED event, instead of 
+    // reading from keyboard buf directly
+    // INPUT BUFFER 
     RingBuf input_buf;
     int waiting_pid;
 } Terminal;  
@@ -37,5 +40,6 @@ Terminal* term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
 void term_refresh(Terminal* term);
 void term_put_char(Terminal* term, char c);
 size_t term_read(Terminal* term, char* buf, size_t count);
+void term_scroll(Terminal* term, int32_t delta);
 
 #endif

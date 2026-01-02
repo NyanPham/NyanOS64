@@ -1,5 +1,6 @@
 #include "ansi.h"
 
+
 uint32_t g_ansi_palette[]=
     {
         Black,   // 30

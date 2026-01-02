@@ -34,6 +34,35 @@ char kbd_tbl[KBD_TBL_SIZE] = {
     0,  ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 
+/**
+ * @brief Sends ansi sequence
+ * Stores the whole sequence to the keyboard buffer
+ * Fires only one key pressed event, with key being
+ * the first character of the sequence.
+ */
+static void send_ansi_sequence(const char* seq)
+{
+    Event e = {
+        .type = EMPTY,
+        .key = 0,
+    };
+
+    if (*seq)
+    {
+        e.type = EVENT_KEY_PRESSED;
+        e.key = *seq;
+    }
+
+    while (*seq)
+    {
+        char c = *seq;
+        rb_push(&kbd_buf.buf, c);
+        seq++;
+    }
+
+    event_queue_push(&g_event_queue, e);
+}
+
 static void keyboard_handler(void *regs)
 {
     (void)regs;
@@ -49,13 +78,15 @@ static void keyboard_handler(void *regs)
     {
         if (scancode == PAGE_UP_CODE)
         {
-            video_scroll(-1);
+            // send ESC[5~
+            send_ansi_sequence("\033[5~");
             return;
         }
 
         if (scancode == PAGE_DOWN_CODE)
         {
-            video_scroll(1);
+            // send ESC[6~
+            send_ansi_sequence("\033[6~");    
             return;
         }
 

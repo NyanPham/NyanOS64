@@ -212,7 +212,7 @@ void kmain(void)
     kprint("Loading Shell...\n");
 
     Task* shell_task = sched_new_task();
-    Terminal* console = term_create(100, 100, 600, 400, 100);
+    Terminal* console = term_create(100, 100, 300, 200, 300);
     shell_task->term = console;
     console->win->owner_pid = shell_task->pid;
 
