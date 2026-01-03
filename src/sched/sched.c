@@ -380,6 +380,7 @@ void sched_exit(int code)
     task_to_exit->state = TASK_ZOMBIE;
     task_to_exit->ret_val = code;
     sched_wake_pid(task_to_exit->parent->pid);
+    sched_clean_gui(task_to_exit);
 
     kprint("Task exited. Switching to next...");
     switch_to_task(NULL, next_tsk->kern_stk_rsp);

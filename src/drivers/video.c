@@ -185,7 +185,7 @@ static inline void put_pixel(int64_t x, int64_t y, uint32_t color)
 static void draw_char_at(uint64_t x, uint64_t y, char c, uint32_t color)
 {
     uint8_t *glyph = (uint8_t *)font8x8_basic[(int)c];
-    uint32_t *screen_ptr = g_back_buf + (y * 8 * g_pitch32) + (x * 8);
+    uint32_t *screen_ptr = g_back_buf + (y * g_pitch32) + x;
 
     for (int gy = 0; gy < 8; gy++)
     {
@@ -194,6 +194,20 @@ static void draw_char_at(uint64_t x, uint64_t y, char c, uint32_t color)
             screen_ptr[gx] = (glyph[gy] >> gx) & 1 ? color : Black;
         }
         screen_ptr += g_pitch32;
+    }
+}
+
+void video_draw_string(uint64_t x, uint64_t y, const char* str, uint32_t color)
+{
+    int curr_x = x;
+    while (*str)
+    {
+        if (*str != '\n')
+        {
+            draw_char_at(curr_x, y, *str, color);
+            curr_x += 8;
+        }
+        str++;
     }
 }
 
@@ -242,7 +256,7 @@ void video_refresh()
             TermCell cell = buf[idx];
             char c = (cell.glyph == 0) ? ' ' : cell.glyph;
             uint32_t color = (cell.glyph == 0) ? Black : cell.color;
-            draw_char_at(x, y, c, color);
+            draw_char_at(x * 8, y * 8, c, color);
         }
     }
 

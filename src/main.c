@@ -93,6 +93,51 @@ extern uint64_t kern_stk_ptr;
 extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
 extern EventBuf g_event_queue;
 
+static inline void spawn_shell()
+{
+    kprint("Loading Shell...\n");
+
+    Task* shell_task = sched_new_task();
+    Terminal* console = term_create(100, 100, 370, 270, 700, "Shell");
+    shell_task->term = console;
+    console->win->owner_pid = shell_task->pid;
+
+    uint64_t curr_pml4 = read_cr3(); // this could be kern_pml4, but nah, let's make thing variable :))
+
+    write_cr3(shell_task->pml4);
+
+    uint64_t shell_entry = elf_load("shell.elf");
+
+    if (shell_entry != 0)
+    {
+        kprint("Loading User Task...\n");
+
+        uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
+        uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
+        
+        vmm_map_page(
+            (uint64_t*)(shell_task->pml4 + hhdm_offset),
+            virt_usr_stk_base,
+            phys_usr_stk,
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
+        );
+        // no args, so argc = 0, no need space for argv
+        uint64_t* kern_view_stk = (uint64_t*)(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t) + hhdm_offset);
+        *kern_view_stk = 0;
+
+        uint64_t shell_rsp = USER_STACK_TOP - sizeof(uint64_t);
+        
+        write_cr3(curr_pml4);
+        sched_load_task(shell_task, shell_entry, shell_rsp);
+    }
+    else 
+    {
+        write_cr3(curr_pml4);
+        kprint("Failed to load Shell!\n");
+        sched_destroy_task(shell_task);
+    }
+}
+
 void kmain(void)
 {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false)
@@ -125,34 +170,6 @@ void kmain(void)
     syscall_init();
     dev_init_stdio();
     sched_init();
-
-    /*=========== Kmalloc test ===========*/
-    // {
-    //     void* test_ptr1 = kmalloc(32);
-    //     if (test_ptr1 != NULL)
-    //     {
-    //         volatile uint32_t* kmalloc_test = (uint32_t*)test_ptr1;
-    //         *kmalloc_test = 0xCAFEBABE;
-
-    //         if (*kmalloc_test != 0xCAFEBABE) {
-    //             hcf();
-    //         }
-            
-    //         kfree(test_ptr1);
-            
-    //         void* test_ptr2 = kmalloc(32);
-    //         if (test_ptr1 != test_ptr2) {
-    //             hcf();
-    //         }
-            
-    //         kfree(test_ptr2);
-    //     }
-    //     else 
-    //     {
-    //         hcf();
-    //     }
-    // }
-
     
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 
@@ -209,49 +226,6 @@ void kmain(void)
         kprint("Warning: ROOTFS.TAR not found.\n");
     }
 
-    kprint("Loading Shell...\n");
-
-    Task* shell_task = sched_new_task();
-    Terminal* console = term_create(100, 100, 300, 200, 300, "Shell");
-    shell_task->term = console;
-    console->win->owner_pid = shell_task->pid;
-
-    uint64_t curr_pml4 = read_cr3(); // this could be kern_pml4, but nah, let's make thing variable :))
-
-    write_cr3(shell_task->pml4);
-
-    uint64_t shell_entry = elf_load("shell.elf");
-
-    if (shell_entry != 0)
-    {
-        kprint("Loading User Task...\n");
-
-        uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
-        uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
-        
-        vmm_map_page(
-            (uint64_t*)(shell_task->pml4 + hhdm_offset),
-            virt_usr_stk_base,
-            phys_usr_stk,
-            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
-        );
-        // no args, so argc = 0, no need space for argv
-        uint64_t* kern_view_stk = (uint64_t*)(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t) + hhdm_offset);
-        *kern_view_stk = 0;
-
-        uint64_t shell_rsp = USER_STACK_TOP - sizeof(uint64_t);
-        
-        write_cr3(curr_pml4);
-        sched_load_task(shell_task, shell_entry, shell_rsp);
-    }
-    else 
-    {
-        write_cr3(curr_pml4);
-        kprint("Failed to load Shell!\n");
-        sched_destroy_task(shell_task);
-        hcf();
-    }
-
     // test kprint  
     // if we reach here, at least the inits above,
     // if not working, don't crash our OS :)))
@@ -269,10 +243,21 @@ void kmain(void)
             {
             case EVENT_KEY_PRESSED:
             {
-                Window* top_win = win_get_active();
-                if (top_win != NULL && top_win->owner_pid != -1)
+                bool is_ctrl = e.modifiers & MOD_CTRL;
+                bool is_alt = e.modifiers & MOD_ALT;
+
+                if (e.key == 't' && is_ctrl && is_alt)
                 {
-                    sched_wake_pid(top_win->owner_pid);
+                    kprint("Hotkey detected to spawn a shell\n");
+                    spawn_shell();
+                }
+                else
+                {
+                    Window* top_win = win_get_active();
+                    if (top_win != NULL && top_win->owner_pid != -1)
+                    {
+                        sched_wake_pid(top_win->owner_pid);
+                    }
                 }
                 break;
             }
@@ -286,8 +271,9 @@ void kmain(void)
         window_update();
         
         video_clear();
-        video_write("Welcome to NyanOS kernel!\n", 0x00FF00);    
-
+        video_draw_string(10, 10, "Welcome to NyanOS kernel!", White);
+        video_draw_string(10, 20, "Press `Ctrl + Alt + T` to run a Terminal!", White);
+        
         window_paint();
         draw_mouse();
         video_swap();

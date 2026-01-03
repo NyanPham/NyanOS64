@@ -114,7 +114,7 @@ int main()
         /* --- EXIT --- */
         else if (strncmp(argv[0], "exit", 4) == 0)
         {
-            print("Goodbye!\n");
+            exit(0);
             break;
         }
 

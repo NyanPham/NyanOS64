@@ -16,5 +16,6 @@ uint32_t video_get_pixel(int64_t x, int64_t y);
 void video_swap(void);
 void draw_rect(int rect_x, int rect_y, int width, int height, GBA_Color color);
 void video_refresh(void);
+void video_draw_string(uint64_t x, uint64_t y, const char* str, uint32_t color);
 
 #endif
