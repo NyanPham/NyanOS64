@@ -19,7 +19,7 @@ typedef struct VmFreeRegion
 {
     uint64_t addr;
     size_t size;
-    struct VmFreeRegion* next;
+    struct VmFreeRegion *next;
 } VmFreeRegion;
 
 /**
@@ -33,7 +33,7 @@ uint64_t vmm_new_pml4(void);
  */
 void vmm_ret_pml4(uint64_t pml4_phys);
 
-void vmm_free_table(uint64_t* table, int level);
+void vmm_free_table(uint64_t *table, int level);
 
 /**
  * @brief Set the physical address into the page table entry.
@@ -50,13 +50,13 @@ uint64_t pte_get_addr(uint64_t page_tab_entry);
 /**
  * @brief Get the physical address from the
  */
-uint64_t vmm_virt2phys(uint64_t* pml4, uint64_t virt_addr);
+uint64_t vmm_virt2phys(uint64_t *pml4, uint64_t virt_addr);
 
 /**
  * @brief Maps a physical page to a virtual page.
  * This is a high-level function that uses vmm_walk_to_pte to find the correct entry and sets it.
  */
-void vmm_map_page(uint64_t* pml4, uint64_t virt_addr, uint64_t phys_addr, uint64_t flags);
+void vmm_map_page(uint64_t *pml4, uint64_t virt_addr, uint64_t phys_addr, uint64_t flags);
 
 /**
  * @brief Unmaps a virtual page.
@@ -64,7 +64,7 @@ void vmm_map_page(uint64_t* pml4, uint64_t virt_addr, uint64_t phys_addr, uint64
  * no longer accessible. It also invalidates the TLB entry for that address to ensure
  * the change takes effect immediately.
  */
-void vmm_unmap_page(uint64_t* pml4, uint64_t virt_addr);
+void vmm_unmap_page(uint64_t *pml4, uint64_t virt_addr);
 
 /**
  * @brief Finds a virtual address
@@ -76,12 +76,17 @@ uint64_t find_free_addr(size_t size);
 /**
  * @brief Allocates space in VM
  */
-void* vmm_alloc(size_t size);
+void *vmm_alloc(size_t size);
 
 /**
  * @brief Free space in VM
  */
-void vmm_free(void* ptr, size_t size);
+void vmm_free(void *ptr, size_t size);
+
+/**
+ * @brief Reallocates space
+ */
+void* vmm_realloc(void *ptr, size_t curr_size, size_t new_size);
 
 /**
  * @brief Initializes the Virtual Memory Manager.

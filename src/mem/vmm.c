@@ -416,6 +416,24 @@ void vmm_free(void* ptr, size_t size)
     vmm_add_free_region(virt_start_addr, size);
 }
 
+void* vmm_realloc(void *ptr, size_t curr_size, size_t new_size)
+{
+    if (ptr == NULL || curr_size == 0 || new_size == 0)
+    {
+        return NULL;
+    }
+    void* new_ptr = vmm_alloc(new_size);
+    if (new_ptr == NULL)
+    {
+        kprint("VMM_REALLOC failed: out of memory!\n");
+        return NULL;
+    }
+    memcpy(new_ptr, ptr, (curr_size < new_size) ? curr_size : new_size);
+    vmm_free(ptr, curr_size);
+
+    return new_ptr;
+}
+
 void vmm_init()
 {
     uint64_t pml4_phys = read_cr3();
