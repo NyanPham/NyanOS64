@@ -572,7 +572,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 return -1;
             }
             
-            create_win(win_params->x, win_params->y, win_params->width, win_params->height, w_title);
+            create_win(win_params->x, win_params->y, win_params->width, win_params->height, w_title, win_params->flags);
             return 0;
         }
         case 18:
@@ -603,7 +603,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             strncpy(w_title, win_params->title, 256);
             w_title[255] = 0;
 
-            Terminal* new_term = term_create(win_params->x, win_params->y, win_params->width, win_params->height, win_params->height*3, w_title);
+            Terminal* new_term = term_create(win_params->x, win_params->y, win_params->width, win_params->height, win_params->height*3, w_title, win_params->flags);
             if (new_term == NULL)
             {
                 kprint("Failed to create term in SYSCALL 19\n");

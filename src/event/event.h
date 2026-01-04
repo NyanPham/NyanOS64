@@ -5,8 +5,8 @@
 
 #define EVENT_QUEUE_SIZE 0x100 // 256
 
-#define MOD_CTRL (1 << 0) // 0001
-#define MOD_ALT (1 << 1) // 0010
+#define MOD_CTRL (1 << 0)  // 0001
+#define MOD_ALT (1 << 1)   // 0010
 #define MOD_SHIFT (1 << 2) // 0100
 
 typedef enum
@@ -14,6 +14,7 @@ typedef enum
     EMPTY,
     EVENT_KEY_PRESSED,
     MOUSE_CLICK,
+    EVENT_WIN_RESIZE,
 } EventType;
 
 typedef struct Event
@@ -22,7 +23,7 @@ typedef struct Event
     uint8_t modifiers;
 
     // TODO: Right now, the data below is not
-    // used :/ Let's find a way to modernize 
+    // used :/ Let's find a way to modernize
     // things
     union
     {
@@ -32,6 +33,10 @@ typedef struct Event
             int x, y;
             uint8_t buttons;
         } mouse;
+        struct
+        {
+            int64_t win_owner_pid;
+        } resize_event;
     };
 } Event;
 
