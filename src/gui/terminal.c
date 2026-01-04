@@ -8,6 +8,20 @@
 
 #define SCROLL_INTERVAL 3
 
+static inline void term_scroll_data(Terminal *term)
+{
+    TermCell *dst = term->text_buf;
+    TermCell *src = term->text_buf + term->n_cols;
+    uint64_t count = (term->n_rows - 1) * term->n_cols * sizeof(TermCell);
+
+    memcpy(dst, src, count);
+
+    TermCell *last_row = term->text_buf + (term->n_rows - 1) * term->n_cols;
+    memset(last_row, 0, term->n_cols * sizeof(TermCell));
+
+    term->cur_row = term->n_rows - 1;
+}
+
 /* START: ANSI DRIVER IMPLEMENTATION FOR TERMINAL */
 static void term_driver_put_char(void *ctx, char c)
 {
@@ -48,16 +62,7 @@ static void term_driver_put_char(void *ctx, char c)
     // Handle the scroll the data
     if (term->cur_row >= term->n_rows)
     {
-        TermCell *dst = term->text_buf;
-        TermCell *src = term->text_buf + term->n_cols;
-        uint64_t count = (term->n_rows - 1) * term->n_cols * sizeof(TermCell);
-
-        memcpy(dst, src, count);
-
-        TermCell *last_row = term->text_buf + (term->n_rows - 1) * term->n_cols;
-        memset(last_row, 0, term->n_cols * sizeof(TermCell));
-
-        term->cur_row = term->n_rows - 1;
+        term_scroll_data(term);
     }
 
     // handle the scroll in the view
@@ -220,6 +225,28 @@ void term_refresh(Terminal *term)
             uint32_t color = (cell.color == 0) ? Black : cell.color;
 
             win_draw_char_at(term->win, ch, px + WIN_BORDER_SIZE, py + WIN_TITLE_BAR_H, color, Slate);
+        }
+    }
+
+    int64_t visual_row = term->cur_row - term->scroll_idx;
+
+    if (visual_row >= 0 && visual_row < win_rows)
+    {
+        int64_t px = term->cur_col * CHAR_W + WIN_BORDER_SIZE;
+        int64_t py = visual_row * CHAR_H + WIN_TITLE_BAR_H;
+
+        for (int y = 0; y < CHAR_H; y++)
+        {
+            for (int x = 0; x < CHAR_W; x++)
+            {
+                int64_t pix_idx = (py + y) * term->win->width + (px + x);
+
+                if (pix_idx < term->win->pixels_size / sizeof(Pixel))
+                {
+                    uint32_t curr_color = term->win->pixels[pix_idx].color;
+                    term->win->pixels[pix_idx].color = curr_color == Slate ? White : Black;
+                }
+            }
         }
     }
 }
@@ -414,16 +441,20 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
     term->text_buf = new_text_buf;
     term->text_buf_siz = new_buf_size;
 
+    term->cur_col = new_c;
+    term->cur_row = new_r;
+
     if (term->cur_col >= term->n_cols)
     {
-        term->cur_col = term->n_cols - 1;
+        term->cur_row++;
+        term->cur_col = 0;
     }
 
     if (term->cur_row >= term->n_rows)
     {
-        term->cur_row = term->n_rows - 1;
+        term_scroll_data(term);
     }
-    
+
     term_refresh(term);
     return term;
 }

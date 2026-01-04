@@ -10,6 +10,7 @@
 #include "event/event.h"
 #include "drivers/serial.h" // debugging
 #include "kern_defs.h"
+#include "cursor.h"
 
 #include <stddef.h>
 
@@ -372,6 +373,8 @@ void window_update(void)
     int64_t mx = mouse_get_x();
     int64_t my = mouse_get_y();
 
+    CursorType nxt_cursor_typ = CURSOR_ARROW;
+
     bool is_left_btn = (mstat & 0x01);
     if (is_left_btn)
     {
@@ -394,6 +397,7 @@ void window_update(void)
                         new_x = mx;
                         changed = 1;
                     }
+                    nxt_cursor_typ = CURSOR_RESIZE_H;
                 }
                 else if (drag_ctx.resize_dir & RES_RIGHT)
                 {
@@ -403,6 +407,7 @@ void window_update(void)
                         new_w = tmp_w;
                         changed = 1;
                     }
+                    nxt_cursor_typ = CURSOR_RESIZE_H;
                 }
 
                 if (drag_ctx.resize_dir & RES_TOP)
@@ -414,6 +419,7 @@ void window_update(void)
                         new_y = my;
                         changed = 1;
                     }
+                    nxt_cursor_typ = CURSOR_RESIZE_V;
                 }
                 else if (drag_ctx.resize_dir & RES_BOTTOM)
                 {
@@ -423,6 +429,7 @@ void window_update(void)
                         new_h = tmp_h;
                         changed = 1;
                     }
+                    nxt_cursor_typ = CURSOR_RESIZE_V;
                 }
 
                 if (changed)
@@ -448,6 +455,7 @@ void window_update(void)
             {
                 drag_ctx.target->x = mx - drag_ctx.off_x;
                 drag_ctx.target->y = my - drag_ctx.off_y;
+                nxt_cursor_typ = CURSOR_MOVE;
             }
         }
         else
@@ -458,14 +466,23 @@ void window_update(void)
                 focus_win(curr_win);
                 int64_t off_mx = mx - curr_win->x;
                 int64_t off_my = my - curr_win->y;
-                uint32_t res_size = get_resize_dir(curr_win, mx, my);
+                uint32_t res_dir = get_resize_dir(curr_win, mx, my);
 
-                if (res_size != RES_NONE || check_window_drag(curr_win, mx, my))
+                if (res_dir != RES_NONE || check_window_drag(curr_win, mx, my))
                 {
                     drag_ctx.target = curr_win;
                     drag_ctx.off_x = off_mx;
                     drag_ctx.off_y = off_my;
-                    drag_ctx.resize_dir = res_size;
+                    drag_ctx.resize_dir = res_dir;
+                }
+
+                if (res_dir & (RES_LEFT | RES_RIGHT))
+                {
+                    nxt_cursor_typ = CURSOR_RESIZE_H;
+                }
+                else if (res_dir & (RES_TOP | RES_BOTTOM))
+                {
+                    nxt_cursor_typ = CURSOR_RESIZE_V;
                 }
 
                 int64_t btn_size = WIN_TITLE_BAR_H;
@@ -493,7 +510,22 @@ void window_update(void)
             init_win_pixels(drag_ctx.target);
         }
         drag_ctx.target = NULL;
+        Window* hover_win = get_win_at(mx, my);
+        if (hover_win != NULL)
+        {
+            uint32_t res_dir = get_resize_dir(hover_win, mx, my);
+            if (res_dir & (RES_LEFT | RES_RIGHT))
+            {
+                nxt_cursor_typ = CURSOR_RESIZE_H;
+            }
+            else if (res_dir & (RES_TOP | RES_BOTTOM))
+            {
+                nxt_cursor_typ = CURSOR_RESIZE_V;
+            }
+        }
     }
+
+    cursor_set_shape(nxt_cursor_typ);
 }
 
 Window *win_get_active()

@@ -237,6 +237,7 @@ void kmain(void)
 
     sti();
 
+    cursor_init();
     while (true)
     {
         // Event Loop
