@@ -128,11 +128,11 @@ static const AnsiDriver g_term_driver = {
  * First, crates the View (window)
  * Then initializes the Data Model like n_rows, n_cols
  */
-Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max_rows, const char* title)
+Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max_rows, const char *title, uint32_t win_flags)
 {
     // View
     Terminal *term = (Terminal *)kmalloc(sizeof(Terminal));
-    term->win = create_win(x, y, w, h, title);
+    term->win = create_win(x, y, w, h, title, win_flags);
 
     // Data Model
     term->n_rows = max_rows;
@@ -168,7 +168,7 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
 /**
  * @brief
  */
-void term_destroy(Terminal* term)
+void term_destroy(Terminal *term)
 {
     if (term == NULL)
     {
@@ -181,7 +181,7 @@ void term_destroy(Terminal* term)
         term->text_buf = NULL;
         term->text_buf_siz = 0;
     }
-    
+
     if (term->win != NULL)
     {
         close_win(term->win);
@@ -235,7 +235,7 @@ size_t term_read(Terminal *term, char *buf, size_t count)
     while (n < count)
     {
         char c = keyboard_get_char();
-        
+
         // upon receiving the event of the firest ansi key within a sequence, starting with '\033' for example
         // the keyboard has already pushed the whole sequence.
         if (c == '\033') // ESC?
@@ -246,15 +246,15 @@ size_t term_read(Terminal *term, char *buf, size_t count)
             seq[2] = keyboard_get_char();
             // if it's either [5~ or [6~?
             if (
-                seq[0] == '[' && 
-                (seq[1] == '5' || seq[1] == '6') && 
+                seq[0] == '[' &&
+                (seq[1] == '5' || seq[1] == '6') &&
                 seq[2] == '~')
             {
                 int delta = (seq[1] == '5') ? -SCROLL_INTERVAL : SCROLL_INTERVAL;
                 term_scroll(term, delta);
                 continue;
             }
-            else 
+            else
             {
                 buf[n++] = c;
 
@@ -265,7 +265,7 @@ size_t term_read(Terminal *term, char *buf, size_t count)
                         buf[n++] = seq[i];
                     }
                 }
-                if (n > 0 && buf[n-1] == '\n')
+                if (n > 0 && buf[n - 1] == '\n')
                 {
                     break;
                 }
@@ -329,4 +329,101 @@ void term_scroll(Terminal *term, int32_t delta)
         term->scroll_idx = new_idx;
         term_refresh(term);
     }
+}
+
+Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
+{
+    // View (window) has been updated, we can either based
+    // on the term->win fields, or the passed arguments.
+
+    // Safety check
+    if (w < WIN_MIN_W)
+    {
+        w = WIN_MIN_W;
+    }
+
+    // Update Data Model
+    // 1. Test if we create the new buf successfully
+    uint64_t new_n_rows = term->n_rows;
+    uint64_t new_n_cols = term->n_cols;
+
+    if (new_n_rows <= (2 * h / CHAR_H))
+    {
+        new_n_rows = 3 * h / CHAR_H;
+    }
+    new_n_cols = w / CHAR_W;
+
+    uint64_t new_buf_size = new_n_rows * new_n_cols * sizeof(TermCell);
+    TermCell *new_text_buf = (TermCell *)vmm_alloc(new_buf_size);
+    if (new_text_buf == NULL)
+    {
+        // PANIC
+        kprint("Panic: term_resize cannot vmm_alloc for new_text_buf\n");
+        return term;
+    }
+    memset(new_text_buf, 0, new_buf_size);
+
+    // 2. Copy from the old buf to the new one with wrap logic
+    uint64_t new_r = 0;
+    uint64_t new_c = 0;
+
+    for (uint64_t r = 0; r < term->n_rows; r++)
+    {
+        uint64_t last_c = 0;
+        for (uint64_t c = 0; c < term->n_cols; c++)
+        {
+            if (term->text_buf[r * term->n_cols + c].glyph != ' ')
+            {
+                last_c = c + 1;
+            }
+        }
+
+        for (uint64_t c = 0; c < last_c; c++)
+        {
+            if (new_r >= new_n_rows)
+            {
+                break;
+            }
+
+            new_text_buf[new_r * new_n_cols + new_c] = term->text_buf[r * term->n_cols + c];
+            new_c++;
+
+            if (new_c >= new_n_cols)
+            {
+                new_c = 0;
+                new_r++;
+            }
+        }
+        if (new_c != 0 || last_c == 0)
+        {
+            new_c = 0;
+            new_r++;
+        }
+
+        if (new_r >= new_n_rows)
+        {
+            break;
+        }
+    }
+
+    // 3. swap the text bufs for the terminal
+    vmm_free(term->text_buf, term->text_buf_siz);
+
+    term->n_cols = new_n_cols;
+    term->n_rows = new_n_rows;
+    term->text_buf = new_text_buf;
+    term->text_buf_siz = new_buf_size;
+
+    if (term->cur_col >= term->n_cols)
+    {
+        term->cur_col = term->n_cols - 1;
+    }
+
+    if (term->cur_row >= term->n_rows)
+    {
+        term->cur_row = term->n_rows - 1;
+    }
+    
+    term_refresh(term);
+    return term;
 }

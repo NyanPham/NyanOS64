@@ -78,7 +78,7 @@ void game_over(const char *reason)
 int main(void)
 {
     // Create the game terminal
-    if (create_term(100, 100, WIDTH * 8 + 16, HEIGHT * 8 + 40, "Snyake") < 0)
+    if (create_term(100, 100, WIDTH * 8 + 16, HEIGHT * 8 + 40, "Snyake", WIN_MOVABLE | WIN_RESIZEABLE | WIN_MINIMIZABLE) < 0)
     {
         return -1;
     }

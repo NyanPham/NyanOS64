@@ -98,7 +98,11 @@ static inline void spawn_shell()
     kprint("Loading Shell...\n");
 
     Task* shell_task = sched_new_task();
-    Terminal* console = term_create(100, 100, 370, 270, 700, "Shell");
+    Terminal* console = term_create(
+        100, 100, 
+        370, 270, 
+        700, "Shell", 
+        WIN_MOVABLE | WIN_RESIZEABLE | WIN_MINIMIZABLE);
     shell_task->term = console;
     console->win->owner_pid = shell_task->pid;
 
@@ -260,6 +264,15 @@ void kmain(void)
                     }
                 }
                 break;
+            }
+            case EVENT_WIN_RESIZE:
+            {
+                int pid = e.resize_event.win_owner_pid;
+                Task *tsk = sched_find_task(pid);
+                if (tsk != NULL && tsk->term != NULL)
+                {
+                    term_resize(tsk->term, tsk->term->win->width, tsk->term->win->height);
+                }
             }
             default:
             {

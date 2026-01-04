@@ -7,6 +7,7 @@
 #include "sched/sched.h"
 #include "../string.h"
 #include "ansi.h"
+#include "event/event.h"
 #include "drivers/serial.h" // debugging
 #include "kern_defs.h"
 
@@ -14,6 +15,7 @@
 
 // From font.h
 extern char font8x8_basic[128][8];
+extern EventBuf g_event_queue;
 
 static Window *g_win_list = NULL; // Bottom / Head of lis
 static Window *g_win_top = NULL;  // Top / Tail of List to focus
@@ -112,7 +114,38 @@ static void init_win_pixels(Window *win)
     }
 }
 
-Window *create_win(int64_t x, int64_t y, uint64_t width, uint64_t height, const char *title)
+static uint32_t get_resize_dir(Window *win, int64_t mx, int64_t my)
+{
+    int64_t r_left = win->x;
+    int64_t r_right = win->x + win->width;
+    int64_t r_top = win->y;
+    int64_t r_bottom = win->y + win->height;
+
+    uint32_t dir = RES_NONE;
+    if (mx <= r_left + WIN_RESIZE_MARGIN && mx >= r_left - WIN_RESIZE_MARGIN)
+    {
+        dir |= RES_LEFT;
+    }
+
+    if (mx <= r_right + WIN_RESIZE_MARGIN && mx >= r_right - WIN_RESIZE_MARGIN)
+    {
+        dir |= RES_RIGHT;
+    }
+
+    if (my <= r_top + WIN_RESIZE_MARGIN && my >= r_top - WIN_RESIZE_MARGIN)
+    {
+        dir |= RES_TOP;
+    }
+
+    if (my <= r_bottom + WIN_RESIZE_MARGIN && my >= r_bottom - WIN_RESIZE_MARGIN)
+    {
+        dir |= RES_BOTTOM;
+    }
+
+    return dir;
+}
+
+Window *create_win(int64_t x, int64_t y, uint64_t width, uint64_t height, const char *title, uint32_t flags)
 {
     Window *win = (Window *)kmalloc(sizeof(Window));
     win->x = x;
@@ -120,7 +153,7 @@ Window *create_win(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     win->width = width;
     win->height = height;
     win->title = title;
-    win->is_dragging = false;
+    win->flags = flags;
     win->cursor_x = 0;
     win->cursor_y = 0;
 
@@ -137,6 +170,7 @@ Window *create_win(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
 
     memset(pixel_buf, 0, pixel_buf_size);
     win->pixels = pixel_buf;
+    win->pixels_size = pixel_buf_size;
     init_win_pixels(win);
 
     // link it to the list
@@ -167,7 +201,7 @@ Window *create_win(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
         tsk->win = win;
         tsk->win->owner_pid = tsk->pid;
     }
-    
+
     return win;
 }
 
@@ -176,29 +210,9 @@ void init_window_manager(void)
     kprint("Window manager inited!\n");
 }
 
-void update_window_drag(Window *win, int16_t dx, int16_t dy)
-{
-    if (win->is_dragging)
-    {
-        win->x += dx;
-        win->y -= dy;
-    }
-}
-
 bool check_window_drag(Window *win, int64_t mouse_x, int64_t mouse_y)
 {
-    if (mouse_x >= win->x && mouse_x < win->x + WIN_W && mouse_y >= win->y && mouse_y < win->y + WIN_TITLE_BAR_H)
-    {
-        win->is_dragging = true;
-        return true;
-    }
-
-    return false;
-}
-
-void stop_window_drag(Window *win)
-{
-    win->is_dragging = false;
+    return (win->flags & WIN_MOVABLE) && is_point_in_rect(mouse_x, mouse_y, win->x, win->y, win->width, WIN_TITLE_BAR_H);
 }
 
 void window_paint()
@@ -313,12 +327,12 @@ void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color fg_
         for (uint8_t dx = 0; dx < CHAR_W; dx++)
         {
             uint64_t idx = (y + dy) * win->width + (x + dx);
-            
+
             if ((glyph[dy] >> dx) & 1)
             {
                 win->pixels[idx].color = (uint32_t)fg_color;
             }
-            else 
+            else
             {
                 win->pixels[idx].color = (uint32_t)bg_color;
             }
@@ -363,8 +377,78 @@ void window_update(void)
     {
         if (drag_ctx.target != NULL)
         {
-            drag_ctx.target->x = mx - drag_ctx.off_x;
-            drag_ctx.target->y = my - drag_ctx.off_y;
+            if (drag_ctx.resize_dir != RES_NONE)
+            {
+                int64_t new_x = drag_ctx.target->x;
+                int64_t new_y = drag_ctx.target->y;
+                int64_t new_w = drag_ctx.target->width;
+                int64_t new_h = drag_ctx.target->height;
+                uint8_t changed = 0;
+
+                if (drag_ctx.resize_dir & RES_LEFT)
+                {
+                    int64_t tmp_w = drag_ctx.target->x + drag_ctx.target->width - mx;
+                    if (tmp_w >= WIN_MIN_W && tmp_w != new_w)
+                    {
+                        new_w = tmp_w;
+                        new_x = mx;
+                        changed = 1;
+                    }
+                }
+                else if (drag_ctx.resize_dir & RES_RIGHT)
+                {
+                    int64_t tmp_w = mx - drag_ctx.target->x;
+                    if (tmp_w >= WIN_MIN_W && tmp_w != new_w)
+                    {
+                        new_w = tmp_w;
+                        changed = 1;
+                    }
+                }
+
+                if (drag_ctx.resize_dir & RES_TOP)
+                {
+                    int64_t tmp_h = drag_ctx.target->y + drag_ctx.target->height - my;
+                    if (tmp_h >= WIN_MIN_H && tmp_h != new_h)
+                    {
+                        new_h = tmp_h;
+                        new_y = my;
+                        changed = 1;
+                    }
+                }
+                else if (drag_ctx.resize_dir & RES_BOTTOM)
+                {
+                    int64_t tmp_h = my - drag_ctx.target->y;
+                    if (tmp_h >= WIN_MIN_H && tmp_h != new_h)
+                    {
+                        new_h = tmp_h;
+                        changed = 1;
+                    }
+                }
+
+                if (changed)
+                {
+                    int64_t new_pixels_size = new_h * new_w * sizeof(Pixel);
+                    Pixel *new_pixels = (Pixel *)vmm_realloc(
+                        drag_ctx.target->pixels,
+                        drag_ctx.target->pixels_size,
+                        new_pixels_size);
+
+                    if (new_pixels != NULL)
+                    {
+                        drag_ctx.target->pixels = new_pixels;
+                        drag_ctx.target->pixels_size = new_pixels_size;
+                        drag_ctx.target->x = new_x;
+                        drag_ctx.target->y = new_y;
+                        drag_ctx.target->width = new_w;
+                        drag_ctx.target->height = new_h;
+                    }
+                }
+            }
+            else
+            {
+                drag_ctx.target->x = mx - drag_ctx.off_x;
+                drag_ctx.target->y = my - drag_ctx.off_y;
+            }
         }
         else
         {
@@ -374,11 +458,14 @@ void window_update(void)
                 focus_win(curr_win);
                 int64_t off_mx = mx - curr_win->x;
                 int64_t off_my = my - curr_win->y;
-                if (check_window_drag(curr_win, mx, my))
+                uint32_t res_size = get_resize_dir(curr_win, mx, my);
+
+                if (res_size != RES_NONE || check_window_drag(curr_win, mx, my))
                 {
                     drag_ctx.target = curr_win;
                     drag_ctx.off_x = off_mx;
                     drag_ctx.off_y = off_my;
+                    drag_ctx.resize_dir = res_size;
                 }
 
                 int64_t btn_size = WIN_TITLE_BAR_H;
@@ -394,11 +481,22 @@ void window_update(void)
     }
     else
     {
+        if (drag_ctx.target != NULL && drag_ctx.resize_dir != RES_NONE)
+        {
+            Event e = {
+                .type = EVENT_WIN_RESIZE,
+                .resize_event = {
+                    .win_owner_pid = drag_ctx.target->owner_pid,
+                },
+            };
+            event_queue_push(&g_event_queue, e);
+            init_win_pixels(drag_ctx.target);
+        }
         drag_ctx.target = NULL;
     }
 }
 
-Window* win_get_active()
+Window *win_get_active()
 {
     return g_win_top;
 }
@@ -407,6 +505,5 @@ bool is_point_in_rect(int64_t px, int64_t py, int64_t rx, int64_t ry, int64_t rw
 {
     return (
         px >= rx && px < rx + rw &&
-        py >= ry && py < ry + rh
-    );
+        py >= ry && py < ry + rh);
 }
