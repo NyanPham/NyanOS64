@@ -218,14 +218,14 @@ bool check_window_drag(Window *win, int64_t mouse_x, int64_t mouse_y)
 
 void window_paint()
 {
-    asm volatile ("cli");
+    asm volatile("cli");
     Window *curr = g_win_list;
     while (curr != NULL)
     {
         draw_window(curr);
         curr = curr->next;
     }
-    asm volatile ("sti");
+    asm volatile("sti");
 }
 
 Window *get_win_at(int64_t mx, int64_t my)
@@ -295,7 +295,7 @@ void close_win(Window *win)
         g_win_top = NULL;
         if (win->pixels != NULL)
         {
-            vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+            vmm_free(win->pixels);
         }
         kfree(win);
         return;
@@ -307,7 +307,7 @@ void close_win(Window *win)
         g_win_list = g_win_list->next;
         if (win->pixels != NULL)
         {
-            vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+            vmm_free(win->pixels);
         }
         kfree(win);
         return;
@@ -319,7 +319,7 @@ void close_win(Window *win)
         g_win_top = g_win_top->prev;
         if (win->pixels != NULL)
         {
-            vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+            vmm_free(win->pixels);
         }
         kfree(win);
         return;
@@ -329,7 +329,7 @@ void close_win(Window *win)
     win->next->prev = win->prev;
     if (win->pixels != NULL)
     {
-        vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+        vmm_free(win->pixels);
     }
     kfree(win);
 }
@@ -459,10 +459,7 @@ void window_update(void)
                 if (changed)
                 {
                     int64_t new_pixels_size = new_h * new_w * sizeof(Pixel);
-                    Pixel *new_pixels = (Pixel *)vmm_realloc(
-                        drag_ctx.target->pixels,
-                        drag_ctx.target->pixels_size,
-                        new_pixels_size);
+                    Pixel *new_pixels = (Pixel *)vmm_realloc(drag_ctx.target->pixels, new_pixels_size);
 
                     if (new_pixels != NULL)
                     {

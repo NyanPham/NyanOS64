@@ -15,6 +15,14 @@
 #define PD_INDEX 0x15
 #define PT_INDEX 0xc
 
+typedef struct VmAllocatedList
+{
+    uint64_t addr;
+    size_t size;
+    uint32_t flags;
+    struct VmAllocatedList *next;
+} VmAllocatedList;
+
 typedef struct VmFreeRegion
 {
     uint64_t addr;
@@ -81,12 +89,12 @@ void *vmm_alloc(size_t size);
 /**
  * @brief Free space in VM
  */
-void vmm_free(void *ptr, size_t size);
+void vmm_free(void *ptr);
 
 /**
  * @brief Reallocates space
  */
-void* vmm_realloc(void *ptr, size_t curr_size, size_t new_size);
+void *vmm_realloc(void *ptr, size_t new_size);
 
 /**
  * @brief Initializes the Virtual Memory Manager.

@@ -189,7 +189,7 @@ void term_destroy(Terminal *term)
 
     if (term->text_buf != NULL)
     {
-        vmm_free(term->text_buf, term->text_buf_siz);
+        vmm_free(term->text_buf);
         term->text_buf = NULL;
         term->text_buf_siz = 0;
     }
@@ -436,7 +436,7 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
     {
         last_valid_row = term->n_rows - 1;
     }
-    
+
     // 2. Copy from the old buf to the new one with wrap logic
     uint64_t new_r = 0;
     uint64_t new_c = 0;
@@ -481,7 +481,7 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
     }
 
     // 3. swap the text bufs for the terminal
-    vmm_free(term->text_buf, term->text_buf_siz);
+    vmm_free(term->text_buf);
 
     term->n_cols = new_n_cols;
     term->n_rows = new_n_rows;
