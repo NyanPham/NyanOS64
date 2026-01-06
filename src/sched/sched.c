@@ -364,6 +364,16 @@ void sched_exit(int code)
     Task* task_to_exit = g_curr_tsk;
     Task* next_tsk = task_to_exit->next;
     
+    while (next_tsk->state != TASK_READY)
+    {
+        next_tsk = next_tsk->next;
+        if (next_tsk == task_to_exit)
+        {
+            kprint("PANIC: NO valid task to switch to!\n");
+            for (;;);
+        }
+    }
+
     if (g_head_tsk == task_to_exit)
     {
         g_head_tsk = next_tsk;
@@ -453,6 +463,7 @@ int64_t get_curr_task_pid()
 
 static void inline sched_clean_gui(Task *tsk)
 {
+    asm volatile ("cli");
     // Handle GUI vs CLI
     if (tsk->term != NULL)
     {

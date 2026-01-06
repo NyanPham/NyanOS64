@@ -254,6 +254,7 @@ void kmain(void)
                 if (e.key == 't' && is_ctrl && is_alt)
                 {
                     kprint("Hotkey detected to spawn a shell\n");
+                    keyboard_get_char();
                     spawn_shell();
                 }
                 else

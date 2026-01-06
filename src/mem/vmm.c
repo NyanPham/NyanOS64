@@ -15,6 +15,11 @@ static VmFreeRegion* g_vm_free_head;
 
 static void vmm_add_free_region(uint64_t addr, size_t size);
 
+static inline size_t get_aligned_size(size_t size)
+{
+    return (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+}
+
 uint64_t vmm_new_pml4()
 {
     void* pml4_virt = pmm_alloc_frame();
@@ -271,7 +276,7 @@ uint64_t find_free_addr(size_t size)
 
 void* vmm_alloc(size_t size)
 {
-    size_t aligned_size = (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    size_t aligned_size = get_aligned_size(size);
 
     uint64_t virt_start_addr = find_free_addr(aligned_size);
     if (virt_start_addr == 0)
@@ -396,7 +401,9 @@ void vmm_free(void* ptr, size_t size)
         return;
     }
 
-    uint64_t npages = ((size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)) / PAGE_SIZE;
+    size_t aligned_size = get_aligned_size(size);
+
+    uint64_t npages = aligned_size / PAGE_SIZE;
     uint64_t* pml4 = (uint64_t*)(read_cr3() + hhdm_offset);
     uint64_t virt_start_addr = (uint64_t)ptr;
 
@@ -413,7 +420,7 @@ void vmm_free(void* ptr, size_t size)
     }
 
     // Virtual Allocator Free
-    vmm_add_free_region(virt_start_addr, size);
+    vmm_add_free_region(virt_start_addr, aligned_size);
 }
 
 void* vmm_realloc(void *ptr, size_t curr_size, size_t new_size)

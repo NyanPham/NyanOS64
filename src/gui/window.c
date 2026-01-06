@@ -218,12 +218,14 @@ bool check_window_drag(Window *win, int64_t mouse_x, int64_t mouse_y)
 
 void window_paint()
 {
+    asm volatile ("cli");
     Window *curr = g_win_list;
     while (curr != NULL)
     {
         draw_window(curr);
         curr = curr->next;
     }
+    asm volatile ("sti");
 }
 
 Window *get_win_at(int64_t mx, int64_t my)
@@ -291,7 +293,10 @@ void close_win(Window *win)
     {
         g_win_list = NULL;
         g_win_top = NULL;
-        vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+        if (win->pixels != NULL)
+        {
+            vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+        }
         kfree(win);
         return;
     }
@@ -300,7 +305,10 @@ void close_win(Window *win)
     {
         g_win_list->next->prev = NULL;
         g_win_list = g_win_list->next;
-        vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+        if (win->pixels != NULL)
+        {
+            vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+        }
         kfree(win);
         return;
     }
@@ -309,34 +317,50 @@ void close_win(Window *win)
     {
         g_win_top->prev->next = NULL;
         g_win_top = g_win_top->prev;
-        vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+        if (win->pixels != NULL)
+        {
+            vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+        }
         kfree(win);
         return;
     }
 
     win->prev->next = win->next;
     win->next->prev = win->prev;
-    vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+    if (win->pixels != NULL)
+    {
+        vmm_free(win->pixels, win->height * win->width * sizeof(Pixel));
+    }
     kfree(win);
 }
 
 void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color fg_color, GBA_Color bg_color)
 {
+    if (x >= win->width || y >= win->height)
+    {
+        return;
+    }
+
     char *glyph = font8x8_basic[(int)c];
     for (uint8_t dy = 0; dy < CHAR_H; dy++)
     {
         for (uint8_t dx = 0; dx < CHAR_W; dx++)
         {
+            if (x + dx >= win->width)
+            {
+                break;
+            }
+
             uint64_t idx = (y + dy) * win->width + (x + dx);
 
-            if ((glyph[dy] >> dx) & 1)
+            if (idx >= win->pixels_size / sizeof(Pixel))
             {
-                win->pixels[idx].color = (uint32_t)fg_color;
+                continue;
             }
-            else
-            {
-                win->pixels[idx].color = (uint32_t)bg_color;
-            }
+
+            win->pixels[idx].color = (glyph[dy] >> dx) & 1
+                                         ? (uint32_t)fg_color
+                                         : (uint32_t)bg_color;
         }
     }
 }
@@ -510,7 +534,7 @@ void window_update(void)
             init_win_pixels(drag_ctx.target);
         }
         drag_ctx.target = NULL;
-        Window* hover_win = get_win_at(mx, my);
+        Window *hover_win = get_win_at(mx, my);
         if (hover_win != NULL)
         {
             uint32_t res_dir = get_resize_dir(hover_win, mx, my);

@@ -141,7 +141,14 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
 
     // Data Model
     term->n_rows = max_rows;
-    term->n_cols = w / CHAR_W; // cols num is based on the width of the window
+    if (w > 2 * WIN_BORDER_SIZE)
+    {
+        term->n_cols = (w - (2 * WIN_BORDER_SIZE)) / CHAR_W;
+    }
+    else
+    {
+        term->n_cols = 1;
+    }
 
     uint64_t buf_size = term->n_rows * term->n_cols * sizeof(TermCell);
     term->text_buf = (TermCell *)vmm_alloc(buf_size);
@@ -202,8 +209,13 @@ void term_destroy(Terminal *term)
 void term_refresh(Terminal *term)
 {
     // viewport is identified with scroll_idx
+    uint64_t content_h = 0;
+    if (term->win->height > (WIN_TITLE_BAR_H + WIN_BORDER_SIZE))
+    {
+        content_h = term->win->height - WIN_TITLE_BAR_H - WIN_BORDER_SIZE;
+    }
 
-    uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_H) / CHAR_H;
+    uint64_t win_rows = content_h / CHAR_H;
 
     for (uint64_t r = 0; r < win_rows; r++)
     {
@@ -372,13 +384,18 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
     // Update Data Model
     // 1. Test if we create the new buf successfully
     uint64_t new_n_rows = term->n_rows;
-    uint64_t new_n_cols = term->n_cols;
+    uint64_t content_w = (w > 2 * WIN_BORDER_SIZE) ? (w - 2 * WIN_BORDER_SIZE) : 0;
+    uint64_t new_n_cols = content_w / CHAR_W;
+
+    if (new_n_cols == 0)
+    {
+        new_n_cols = 1;
+    }
 
     if (new_n_rows <= (2 * h / CHAR_H))
     {
         new_n_rows = 3 * h / CHAR_H;
     }
-    new_n_cols = w / CHAR_W;
 
     uint64_t new_buf_size = new_n_rows * new_n_cols * sizeof(TermCell);
     TermCell *new_text_buf = (TermCell *)vmm_alloc(new_buf_size);
@@ -390,11 +407,41 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
     }
     memset(new_text_buf, 0, new_buf_size);
 
+    uint64_t last_valid_row = 0;
+    bool found_cntnt = false;
+    for (int64_t r = term->n_rows - 1; r >= 0; r--)
+    {
+        for (uint64_t c = 0; c < term->n_cols; c++)
+        {
+            TermCell cell = term->text_buf[r * term->n_cols + c];
+            if (cell.glyph != 0 && cell.glyph != ' ')
+            {
+                last_valid_row = r;
+                found_cntnt = true;
+                break;
+            }
+        }
+        if (found_cntnt)
+        {
+            break;
+        }
+    }
+
+    if (term->cur_row > last_valid_row)
+    {
+        last_valid_row = term->cur_row;
+    }
+
+    if (last_valid_row >= term->n_rows)
+    {
+        last_valid_row = term->n_rows - 1;
+    }
+    
     // 2. Copy from the old buf to the new one with wrap logic
     uint64_t new_r = 0;
     uint64_t new_c = 0;
 
-    for (uint64_t r = 0; r < term->n_rows; r++)
+    for (uint64_t r = 0; r <= last_valid_row; r++)
     {
         uint64_t last_c = 0;
         for (uint64_t c = 0; c < term->n_cols; c++)
@@ -421,7 +468,7 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
                 new_r++;
             }
         }
-        if (new_c != 0 || last_c == 0)
+        if (last_c == 0 || (new_c != 0 && r < last_valid_row))
         {
             new_c = 0;
             new_r++;
