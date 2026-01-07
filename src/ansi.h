@@ -31,6 +31,7 @@ typedef struct
     void (*set_cursor)(void *data, int x, int y);
     void (*clear_screen)(void *data, int mode);
     void (*scroll)(void *data);
+    void (*set_mode)(void *data, int mode, uint8_t enabled);
 } AnsiDriver;
 
 int ansi_atoi(const char *s);

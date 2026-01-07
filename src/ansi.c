@@ -1,7 +1,6 @@
 #include "ansi.h"
 
-
-uint32_t g_ansi_palette[]=
+uint32_t g_ansi_palette[] =
     {
         Black,   // 30
         Red,     // 31
@@ -17,6 +16,11 @@ int ansi_atoi(const char *s)
 {
     int res = 0;
 
+    while (*s && (*s < '0' || *s > '9'))
+    {
+        s++;
+    }
+
     while (*s >= '0' && *s <= '9')
     {
         res = res * 10 + (*s - '0');
@@ -26,7 +30,7 @@ int ansi_atoi(const char *s)
     return res;
 }
 
-static void parse_ansi_params(char* buf, int* out_params, int* out_cnt)
+static void parse_ansi_params(char *buf, int *out_params, int *out_cnt)
 {
     *out_cnt = 0;
     for (uint8_t i = 0; i < 4; i++)
@@ -35,7 +39,7 @@ static void parse_ansi_params(char* buf, int* out_params, int* out_cnt)
     }
 
     char *ptr = buf;
-    char* start = ptr;
+    char *start = ptr;
 
     while (*ptr)
     {
@@ -85,7 +89,7 @@ void ansi_write_char(AnsiContext *ctx, char c, const AnsiDriver *driver, void *d
                 ctx->buf[i] = 0;
             }
         }
-        else 
+        else
         {
             // unknown ESC command ? return to normal
             ctx->state = ANSI_NORMAL;
@@ -94,14 +98,14 @@ void ansi_write_char(AnsiContext *ctx, char c, const AnsiDriver *driver, void *d
     // Round 3: Just do it
     else if (ctx->state == ANSI_CSI)
     {
-        if ((c >= '0' && c <= '9') || c == ';')
+        if ((c >= '0' && c <= '9') || c == ';' || c == '?')
         {
             if (ctx->idx < ANSI_BUF_SIZE - 1)
             {
                 ctx->buf[ctx->idx++] = c;
             }
         }
-        else 
+        else
         {
             // exec the commands
             int params[4] = {0};
@@ -154,6 +158,22 @@ void ansi_write_char(AnsiContext *ctx, char c, const AnsiDriver *driver, void *d
                             driver->set_color(driver_data, White);
                         }
                     }
+                }
+                break;
+            }
+            case 'h':
+            {
+                if (driver->set_mode && params[0])
+                {
+                    driver->set_mode(driver_data, params[0], 1);
+                }
+                break;
+            }
+            case 'l':
+            {
+                if (driver->set_mode && params[0])
+                {
+                    driver->set_mode(driver_data, params[0], 0);
                 }
                 break;
             }

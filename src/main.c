@@ -288,7 +288,8 @@ void kmain(void)
         video_clear();
         video_draw_string(10, 10, "Welcome to NyanOS kernel!", White);
         video_draw_string(10, 20, "Press `Ctrl + Alt + T` to run a Terminal!", White);
-        
+
+        term_blink_active();
         window_paint();
         draw_mouse();
         video_swap();

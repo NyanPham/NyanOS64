@@ -8,6 +8,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define CURSOR_ENABLED (1 << 0)
+#define CURSOR_STATE (1 << 1)
+
 typedef struct Terminal
 {
     // VIEW
@@ -35,6 +38,8 @@ typedef struct Terminal
     // INPUT BUFFER
     RingBuf input_buf;
     int waiting_pid;
+
+    uint8_t flags;
 } Terminal;
 
 Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max_rows, const char *title, uint32_t win_flags);
@@ -44,5 +49,6 @@ void term_put_char(Terminal *term, char c);
 size_t term_read(Terminal *term, char *buf, size_t count);
 void term_scroll(Terminal *term, int32_t delta);
 Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h);
+void term_blink_active(void);
 
 #endif

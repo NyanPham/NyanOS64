@@ -117,12 +117,30 @@ static void term_driver_clear(void *ctx, int mode)
     }
 }
 
+static void term_driver_set_mode(void *ctx, int mode, uint8_t enabled)
+{
+    if (mode == 25)
+    {
+        Terminal *term = (Terminal *)ctx;
+        if (enabled)
+        {
+            term->flags |= CURSOR_ENABLED;
+        }
+        else
+        {
+            term->flags &= ~CURSOR_ENABLED;
+        }
+        term_refresh(term);
+    }
+}
+
 static const AnsiDriver g_term_driver = {
     .put_char = term_driver_put_char,
     .set_color = term_driver_set_color,
     .set_cursor = term_driver_set_cursor,
     .clear_screen = term_driver_clear,
     .scroll = NULL,
+    .set_mode = term_driver_set_mode,
 };
 /* END: ANSI DRIVER IMPLEMENTATION FOR TERMINAL */
 
@@ -173,6 +191,7 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
     term->ansi_ctx.state = ANSI_NORMAL;
     term->ansi_ctx.idx = 0;
     memset(term->ansi_ctx.buf, 0, ANSI_BUF_SIZE);
+    term->flags = CURSOR_ENABLED | ~CURSOR_STATE;
 
     return term;
 }
@@ -201,6 +220,33 @@ void term_destroy(Terminal *term)
     }
 
     kfree(term);
+}
+
+static void draw_text_cursor(Terminal *term, uint64_t win_rows)
+{
+    if ((term->flags & (CURSOR_ENABLED | CURSOR_STATE)) != (CURSOR_ENABLED | CURSOR_STATE))
+    {
+        return;
+    }
+
+    int64_t visual_row = term->cur_row - term->scroll_idx;
+    if (visual_row >= 0 && visual_row < win_rows)
+    {
+        int64_t px = term->cur_col * CHAR_W + WIN_BORDER_SIZE;
+        int64_t py = visual_row * CHAR_H + WIN_TITLE_BAR_H;
+        for (int y = 0; y < CHAR_H; y++)
+        {
+            for (int x = 0; x < CHAR_W; x++)
+            {
+                int64_t pix_idx = (py + y) * term->win->width + (px + x);
+                if (pix_idx < term->win->pixels_size / sizeof(Pixel))
+                {
+                    uint32_t curr_color = term->win->pixels[pix_idx].color;
+                    term->win->pixels[pix_idx].color = curr_color == Slate ? White : Black;
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -240,27 +286,7 @@ void term_refresh(Terminal *term)
         }
     }
 
-    int64_t visual_row = term->cur_row - term->scroll_idx;
-
-    if (visual_row >= 0 && visual_row < win_rows)
-    {
-        int64_t px = term->cur_col * CHAR_W + WIN_BORDER_SIZE;
-        int64_t py = visual_row * CHAR_H + WIN_TITLE_BAR_H;
-
-        for (int y = 0; y < CHAR_H; y++)
-        {
-            for (int x = 0; x < CHAR_W; x++)
-            {
-                int64_t pix_idx = (py + y) * term->win->width + (px + x);
-
-                if (pix_idx < term->win->pixels_size / sizeof(Pixel))
-                {
-                    uint32_t curr_color = term->win->pixels[pix_idx].color;
-                    term->win->pixels[pix_idx].color = curr_color == Slate ? White : Black;
-                }
-            }
-        }
-    }
+    draw_text_cursor(term, win_rows);
 }
 
 void term_put_char(Terminal *term, char c)
@@ -504,4 +530,43 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
 
     term_refresh(term);
     return term;
+}
+
+/**
+ * @brief Blinks the text cursor
+ * Finds the active task (current running task)
+ * and check if terminal attached exists.
+ * If yes, check if it's time to turn on/off the
+ * display of text cursor on the terminal.
+ */
+void term_blink_active()
+{
+    Window *curr_win = win_get_active();
+    if (curr_win == NULL || curr_win->owner_pid <= 0)
+    {
+        return;
+    }
+
+    Task *curr_tsk = sched_find_task(curr_win->owner_pid);
+    if (curr_tsk == NULL || curr_tsk->term == NULL)
+    {
+        return;
+    }
+
+    uint8_t text_cursor_state = ((timer_get_ticks() / 30) & 1);
+    if ((curr_tsk->term->flags & CURSOR_STATE) == (text_cursor_state << 1))
+    {
+        return;
+    }
+
+    if (text_cursor_state)
+    {
+        curr_tsk->term->flags |= CURSOR_STATE;
+    }
+    else
+    {
+        curr_tsk->term->flags &= ~CURSOR_STATE;
+    }
+
+    term_refresh(curr_tsk->term);
 }
