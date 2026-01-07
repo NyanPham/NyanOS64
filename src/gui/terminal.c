@@ -5,27 +5,54 @@
 #include "drivers/keyboard.h"
 #include "../string.h"
 #include "kern_defs.h"
+#include "utils/math.h"
 
 #define SCROLL_INTERVAL 3
 
+/**
+ * @brief Computes the index
+ * Normally, we just do
+ * idx = row * cells_per_row + col.
+ * But with circular buffer, we do
+ * idx = ((start_line + row) % n_rows) + col.
+ */
+static inline uint64_t term_get_idx(Terminal *term, uint64_t row, uint64_t col)
+{
+    return ((term->start_line_idx + row) % term->n_rows) * term->n_cols + col;
+}
+
 static inline void term_scroll_data(Terminal *term)
 {
-    TermCell *dst = term->text_buf;
-    TermCell *src = term->text_buf + term->n_cols;
-    uint64_t count = (term->n_rows - 1) * term->n_cols * sizeof(TermCell);
-
-    memcpy(dst, src, count);
-
-    TermCell *last_row = term->text_buf + (term->n_rows - 1) * term->n_cols;
-    memset(last_row, 0, term->n_cols * sizeof(TermCell));
-
+    memset(&term->text_buf[term->start_line_idx * term->n_cols], 0, term->text_buf_siz / term->n_rows);
+    term->start_line_idx = (term->start_line_idx + 1) % term->n_rows;
     term->cur_row = term->n_rows - 1;
+}
+
+static inline void term_stain_row(Terminal *term, uint64_t row_idx)
+{
+    if (term->dirty_start_row_idx == -1)
+    {
+        term->dirty_start_row_idx = row_idx;
+        term->dirty_end_row_idx = row_idx;
+        return;
+    }
+
+    if ((int64_t)row_idx < term->dirty_start_row_idx)
+    {
+        term->dirty_start_row_idx = row_idx;
+    }
+    if ((int64_t)row_idx > term->dirty_end_row_idx)
+    {
+        term->dirty_end_row_idx = row_idx;
+    }
 }
 
 /* START: ANSI DRIVER IMPLEMENTATION FOR TERMINAL */
 static void term_driver_put_char(void *ctx, char c)
 {
     Terminal *term = (Terminal *)ctx;
+    term_stain_row(term, term->cur_row);
+
     if (c == '\n')
     {
         term->cur_col = 0;
@@ -36,7 +63,7 @@ static void term_driver_put_char(void *ctx, char c)
         if (term->cur_col > 0)
         {
             term->cur_col--;
-            uint64_t idx = term->cur_row * term->n_cols + term->cur_col;
+            uint64_t idx = term_get_idx(term, term->cur_row, term->cur_col);
             term->text_buf[idx].glyph = ' ';
             term->text_buf[idx].color = Slate;
         }
@@ -44,7 +71,7 @@ static void term_driver_put_char(void *ctx, char c)
     else
     {
         // record into the buffer
-        uint64_t idx = term->cur_row * term->n_cols + term->cur_col;
+        uint64_t idx = term_get_idx(term, term->cur_row, term->cur_col);
         if (idx < term->n_rows * term->n_cols)
         {
             term->text_buf[idx].glyph = c;
@@ -67,12 +94,25 @@ static void term_driver_put_char(void *ctx, char c)
 
     // handle the scroll in the view
     uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_H) / CHAR_H;
+    uint8_t view_changed = 0;
     if (term->cur_row >= term->scroll_idx + win_rows)
     {
         term->scroll_idx = term->cur_row - win_rows + 1;
+        view_changed = 1;
+    }
+    else if (term->cur_row < term->scroll_idx)
+    {
+        term->scroll_idx = term->cur_row;
+        view_changed = 1;
     }
 
-    term_refresh(term);
+    if (view_changed)
+    {
+        term_stain_row(term, term->scroll_idx);
+        term_stain_row(term, term->scroll_idx + win_rows);
+    }
+    term_stain_row(term, term->cur_row);
+    term->flags |= TERM_DIRTY;
 }
 
 static void term_driver_set_color(void *ctx, uint32_t color)
@@ -105,6 +145,8 @@ static void term_driver_clear(void *ctx, int mode)
         Terminal *term = (Terminal *)ctx;
         term->cur_row = 0;
         term->cur_col = 0;
+        term->start_line_idx = 0;
+        term->scroll_idx = 0;
         term->ansi_ctx.color = White;
         uint64_t n_cells = term->n_rows * term->n_cols;
         for (uint64_t i = 0; i < n_cells; i++)
@@ -113,7 +155,11 @@ static void term_driver_clear(void *ctx, int mode)
             term->text_buf[i].color = Slate;
         }
 
-        term_refresh(term);
+        term_stain_row(term, term->scroll_idx);
+        term_stain_row(term, uint64_min(
+                                 term->scroll_idx + (term->win->height - WIN_TITLE_BAR_H) / CHAR_H,
+                                 term->n_rows - 1));
+        term->flags |= TERM_DIRTY;
     }
 }
 
@@ -130,7 +176,7 @@ static void term_driver_set_mode(void *ctx, int mode, uint8_t enabled)
         {
             term->flags &= ~CURSOR_ENABLED;
         }
-        term_refresh(term);
+        term->flags |= TERM_DIRTY;
     }
 }
 
@@ -180,9 +226,12 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
     memset(term->text_buf, 0, buf_size);
 
     // State
+    term->start_line_idx = 0;
     term->scroll_idx = 0;
     term->cur_row = 0;
     term->cur_col = 0;
+    term->dirty_start_row_idx = -1;
+    term->dirty_end_row_idx = -1;
     term->child_pid = -1;
 
     rb_init(&term->input_buf);
@@ -191,7 +240,7 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
     term->ansi_ctx.state = ANSI_NORMAL;
     term->ansi_ctx.idx = 0;
     memset(term->ansi_ctx.buf, 0, ANSI_BUF_SIZE);
-    term->flags = CURSOR_ENABLED | ~CURSOR_STATE;
+    term->flags = CURSOR_ENABLED | TERM_DIRTY;
 
     return term;
 }
@@ -249,11 +298,60 @@ static void draw_text_cursor(Terminal *term, uint64_t win_rows)
     }
 }
 
+static void term_redraw_cursor_cell(Terminal *term)
+{
+    // is the cursor within the view?
+    uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_H) / CHAR_H;
+    int64_t visual_row = term->cur_row - term->scroll_idx;
+
+    if (visual_row < 0 || visual_row >= win_rows)
+    {
+        return;
+    }
+
+    // get the content at the cursor
+    uint64_t idx = term_get_idx(term, term->cur_row, term->cur_col);
+    TermCell cell = term->text_buf[idx];
+
+    // compute the cell coords in pixels
+    int64_t px = term->cur_col * CHAR_W + WIN_BORDER_SIZE;
+    int64_t py = visual_row * CHAR_H + WIN_TITLE_BAR_H;
+
+    // which color
+    char ch = (cell.glyph == 0) ? ' ' : cell.glyph;
+    uint32_t fg_color = (cell.color == 0) ? Black : cell.color;
+    uint32_t bg_color = Slate;
+
+    // paint the background at the cursor first
+    win_draw_char_at(term->win, ch, px, py, fg_color, bg_color);
+
+    // cursor is enabled and on, then paint the foreground
+    if ((term->flags & (CURSOR_ENABLED | CURSOR_STATE)) == (CURSOR_ENABLED | CURSOR_STATE))
+    {
+        for (int y = 0; y < CHAR_H; y++)
+        {
+            for (int x = 0; x < CHAR_W; x++)
+            {
+                int64_t pix_idx = (py + y) * term->win->width + (px + x);
+                if (pix_idx < term->win->pixels_size / sizeof(Pixel))
+                {
+                    term->win->pixels[pix_idx].color = White;
+                }
+            }
+        }
+    }
+}
+
 /**
  * @brief Renders by scanning the buffer and paint on window
  */
 void term_refresh(Terminal *term)
 {
+    if (term->dirty_start_row_idx < 0 || term->dirty_end_row_idx < 0)
+    {
+        return;
+    }
+
     // viewport is identified with scroll_idx
     uint64_t content_h = 0;
     if (term->win->height > (WIN_TITLE_BAR_H + WIN_BORDER_SIZE))
@@ -263,21 +361,21 @@ void term_refresh(Terminal *term)
 
     uint64_t win_rows = content_h / CHAR_H;
 
-    for (uint64_t r = 0; r < win_rows; r++)
+    for (uint64_t r = term->dirty_start_row_idx; r <= term->dirty_end_row_idx; r++)
     {
-        uint64_t buf_row = term->scroll_idx + r;
-
-        if (buf_row >= term->n_rows) // end of buffer
+        if (r < term->scroll_idx || r >= term->scroll_idx + win_rows)
         {
-            break;
+            continue;
         }
+
+        uint64_t buf_row = (term->start_line_idx + r) % term->n_rows;
 
         for (uint64_t c = 0; c < term->n_cols; c++)
         {
-            TermCell cell = term->text_buf[buf_row * term->n_cols + c];
+            TermCell cell = term->text_buf[term_get_idx(term, buf_row, c)];
 
             uint64_t px = c * CHAR_W; // convert to pixel x
-            uint64_t py = r * CHAR_H; // convert to pixel y
+            uint64_t py = (r - term->scroll_idx) * CHAR_H; // convert to pixel y
 
             char ch = (cell.glyph == 0) ? ' ' : cell.glyph;
             uint32_t color = (cell.color == 0) ? Black : cell.color;
@@ -286,6 +384,8 @@ void term_refresh(Terminal *term)
         }
     }
 
+    term->dirty_start_row_idx = -1;
+    term->dirty_end_row_idx = -1;
     draw_text_cursor(term, win_rows);
 }
 
@@ -392,7 +492,11 @@ void term_scroll(Terminal *term, int32_t delta)
     if (new_idx != term->scroll_idx)
     {
         term->scroll_idx = new_idx;
-        term_refresh(term);
+        term_stain_row(term, term->scroll_idx);
+        term_stain_row(term, uint64_min(
+                                 term->scroll_idx + (term->win->height - WIN_TITLE_BAR_H) / CHAR_H,
+                                 term->n_rows - 1));
+        term->flags |= TERM_DIRTY;
     }
 }
 
@@ -439,7 +543,7 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
     {
         for (uint64_t c = 0; c < term->n_cols; c++)
         {
-            TermCell cell = term->text_buf[r * term->n_cols + c];
+            TermCell cell = term->text_buf[term_get_idx(term, r, c)];
             if (cell.glyph != 0 && cell.glyph != ' ')
             {
                 last_valid_row = r;
@@ -472,7 +576,7 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
         uint64_t last_c = 0;
         for (uint64_t c = 0; c < term->n_cols; c++)
         {
-            if (term->text_buf[r * term->n_cols + c].glyph != ' ')
+            if (term->text_buf[term_get_idx(term, r, c)].glyph != ' ')
             {
                 last_c = c + 1;
             }
@@ -485,7 +589,7 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
                 break;
             }
 
-            new_text_buf[new_r * new_n_cols + new_c] = term->text_buf[r * term->n_cols + c];
+            new_text_buf[new_r * new_n_cols + new_c] = term->text_buf[term_get_idx(term, r, c)];
             new_c++;
 
             if (new_c >= new_n_cols)
@@ -513,6 +617,7 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
     term->n_rows = new_n_rows;
     term->text_buf = new_text_buf;
     term->text_buf_siz = new_buf_size;
+    term->start_line_idx = 0;
 
     term->cur_col = new_c;
     term->cur_row = new_r;
@@ -528,10 +633,31 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
         term_scroll_data(term);
     }
 
-    term_refresh(term);
+    term_stain_row(term, term->scroll_idx);
+    term_stain_row(term, uint64_min(
+                             term->scroll_idx + (term->win->height - WIN_TITLE_BAR_H) / CHAR_H,
+                             term->n_rows - 1));
+    term->flags |= TERM_DIRTY;
+
     return term;
 }
 
+static Terminal *get_curr_term()
+{
+    Window *curr_win = win_get_active();
+    if (curr_win == NULL || curr_win->owner_pid <= 0)
+    {
+        return NULL;
+    }
+
+    Task *curr_tsk = sched_find_task(curr_win->owner_pid);
+    if (curr_tsk == NULL || curr_tsk->term == NULL)
+    {
+        return NULL;
+    }
+
+    return curr_tsk->term;
+}
 /**
  * @brief Blinks the text cursor
  * Finds the active task (current running task)
@@ -541,32 +667,39 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
  */
 void term_blink_active()
 {
-    Window *curr_win = win_get_active();
-    if (curr_win == NULL || curr_win->owner_pid <= 0)
-    {
-        return;
-    }
+    Terminal *curr_term = get_curr_term();
 
-    Task *curr_tsk = sched_find_task(curr_win->owner_pid);
-    if (curr_tsk == NULL || curr_tsk->term == NULL)
+    if (curr_term == NULL)
     {
         return;
     }
 
     uint8_t text_cursor_state = ((timer_get_ticks() / 30) & 1);
-    if ((curr_tsk->term->flags & CURSOR_STATE) == (text_cursor_state << 1))
+    if ((curr_term->flags & CURSOR_STATE) == (text_cursor_state << 1))
     {
         return;
     }
 
     if (text_cursor_state)
     {
-        curr_tsk->term->flags |= CURSOR_STATE;
+        curr_term->flags |= CURSOR_STATE;
     }
     else
     {
-        curr_tsk->term->flags &= ~CURSOR_STATE;
+        curr_term->flags &= ~CURSOR_STATE;
     }
 
-    term_refresh(curr_tsk->term);
+    term_redraw_cursor_cell(curr_term);
+}
+
+void term_paint()
+{
+    Terminal *curr_term = get_curr_term();
+    if (curr_term == NULL || !(curr_term->flags & TERM_DIRTY))
+    {
+        return;
+    }
+
+    term_refresh(curr_term);
+    curr_term->flags &= ~TERM_DIRTY;
 }
