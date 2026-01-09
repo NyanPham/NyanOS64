@@ -28,17 +28,17 @@ static const uint8_t bitmap_arrow[CURSOR_H][CURSOR_W] = {
 
 static const uint8_t bitmap_resize_h[CURSOR_H][CURSOR_W] = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0},
-    {0, 0, 1, 2, 2, 2, 1, 0, 0, 0, 0, 0},
-    {0, 1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0},
-    {1, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0},
-    {0, 1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0},
-    {0, 0, 1, 2, 2, 2, 1, 0, 0, 0, 0, 0},
-    {0, 0, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0},
+    {0, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 0},
+    {1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1},
+    {0, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 0},
+    {0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -88,6 +88,9 @@ static const uint8_t bitmap_move[CURSOR_H][CURSOR_W] = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
 
+static int64_t prev_mx = 0;
+static int64_t prev_my = 0;
+
 void cursor_init()
 {
     curr_cursor_type = CURSOR_ARROW;
@@ -104,27 +107,26 @@ void draw_mouse()
     int64_t my = mouse_get_y();
 
     const uint8_t (*curr_bitmap)[CURSOR_W];
-    
+
     switch (curr_cursor_type)
     {
     case CURSOR_RESIZE_H:
-        curr_bitmap = bitmap_resize_h; 
+        curr_bitmap = bitmap_resize_h;
         break;
     case CURSOR_RESIZE_V:
-        curr_bitmap = bitmap_resize_v; 
+        curr_bitmap = bitmap_resize_v;
         break;
     case CURSOR_MOVE:
-        curr_bitmap = bitmap_move; 
+        curr_bitmap = bitmap_move;
         break;
     default:
-        curr_bitmap = bitmap_arrow; 
+        curr_bitmap = bitmap_arrow;
         break;
     }
-
     for (int y = 0; y < CURSOR_H; y++)
     {
         for (int x = 0; x < CURSOR_W; x++)
-        {   
+        {
             uint8_t pix_typ = curr_bitmap[y][x];
             if (pix_typ == 0)
             {
@@ -134,4 +136,8 @@ void draw_mouse()
             video_plot_pixel(mx + x, my + y, color);
         }
     }
+    video_add_dirty_rect(prev_mx, prev_my, CURSOR_W, CURSOR_H);
+    video_add_dirty_rect(mx, my, CURSOR_W, CURSOR_H);
+    prev_mx = mx;
+    prev_my = my;
 }

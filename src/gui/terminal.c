@@ -201,7 +201,7 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
 {
     // View
     Terminal *term = (Terminal *)kmalloc(sizeof(Terminal));
-    term->win = create_win(x, y, w, h, title, win_flags);
+    term->win = win_create(x, y, w, h, title, win_flags);
 
     // Data Model
     term->n_rows = max_rows;
@@ -264,7 +264,7 @@ void term_destroy(Terminal *term)
 
     if (term->win != NULL)
     {
-        close_win(term->win);
+        win_close(term->win);
         term->win = NULL;
     }
 
@@ -374,7 +374,7 @@ void term_refresh(Terminal *term)
         {
             TermCell cell = term->text_buf[term_get_idx(term, buf_row, c)];
 
-            uint64_t px = c * CHAR_W; // convert to pixel x
+            uint64_t px = c * CHAR_W;                      // convert to pixel x
             uint64_t py = (r - term->scroll_idx) * CHAR_H; // convert to pixel y
 
             char ch = (cell.glyph == 0) ? ' ' : cell.glyph;

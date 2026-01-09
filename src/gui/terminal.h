@@ -55,6 +55,6 @@ void term_scroll(Terminal *term, int32_t delta);
 Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h);
 void term_blink_active(void);
 void term_paint(void);
-static Terminal* get_curr_term(void);
+static Terminal *get_curr_term(void);
 
 #endif

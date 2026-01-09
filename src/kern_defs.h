@@ -37,4 +37,13 @@ typedef struct Pixel
     uint32_t color;
 } Pixel;
 
+typedef struct Rect
+{
+    int64_t x;
+    int64_t y;
+    uint64_t w;
+    uint64_t h;
+    struct Rect *next;
+} Rect;
+
 #endif

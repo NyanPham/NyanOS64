@@ -51,7 +51,7 @@ int waitpid(int pid, int *status);
 void move_cursor(int row, int col);
 int get_key(void);
 void sleep(uint64_t loop_cnt);
-int create_win(WinParams_t *win_params);
+int win_create(WinParams_t *win_params);
 int create_term(int x, int y, uint32_t w, uint32_t h, const char *title, uint32_t win_flags);
 
 #endif

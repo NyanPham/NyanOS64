@@ -490,7 +490,7 @@ static void inline sched_clean_gui(Task *tsk)
     {
         if (tsk->win->owner_pid == tsk->pid)
         {
-            close_win(tsk->win);
+            win_close(tsk->win);
         }
         tsk->win = NULL;
     }

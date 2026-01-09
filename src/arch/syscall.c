@@ -572,7 +572,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
                 return -1;
             }
             
-            create_win(win_params->x, win_params->y, win_params->width, win_params->height, w_title, win_params->flags);
+            win_create(win_params->x, win_params->y, win_params->width, win_params->height, w_title, win_params->flags);
             return 0;
         }
         case 18:

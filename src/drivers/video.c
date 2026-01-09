@@ -6,9 +6,6 @@
 #include "kern_defs.h"
 #include "../string.h"
 #include "drivers/serial.h" // debugging
-#include "gui/window.h"
-#include "gui/cursor.h"
-#include "drivers/mouse.h"
 #include "ansi.h"
 
 #include <stddef.h>
@@ -43,6 +40,11 @@ static volatile bool mouse_moved = false;
 static TermCell *buf = (TermCell *)BUF_VIRT_ENTRY;
 
 static AnsiContext g_ansi_ctx;
+
+#define MAX_DIRTY_RECTS 0x100
+static Rect g_rect_list[MAX_DIRTY_RECTS];
+static uint32_t g_rect_count = 0;
+static uint8_t g_force_full_refresh = 0;
 
 /* START: ANSI DRIVER IMPLEMENTATION FOR VIDEO */
 
@@ -124,8 +126,7 @@ static const AnsiDriver g_video_driver = {
 
 /* END: ANSI DRIVER IMPLEMENTATION FOR VIDEO */
 
-void
-video_init_buf()
+void video_init_buf()
 {
     for (size_t i = 0; i < 75; i++)
     {
@@ -197,9 +198,10 @@ static void draw_char_at(uint64_t x, uint64_t y, char c, uint32_t color)
     }
 }
 
-void video_draw_string(uint64_t x, uint64_t y, const char* str, uint32_t color)
+void video_draw_string(uint64_t x, uint64_t y, const char *str, uint32_t color)
 {
     int curr_x = x;
+    int start_x = x;
     while (*str)
     {
         if (*str != '\n')
@@ -209,6 +211,84 @@ void video_draw_string(uint64_t x, uint64_t y, const char* str, uint32_t color)
         }
         str++;
     }
+
+    video_add_dirty_rect(start_x, y, curr_x - start_x, FONT_H);
+}
+
+void video_draw_pixel_line(uint64_t x, uint64_t y, uint32_t *colors, uint64_t size)
+{
+    memcpy(&g_back_buf[y * g_pitch32 + x], colors, size);
+}
+
+void video_add_dirty_rect(int64_t x, int64_t y, int64_t w, int64_t h)
+{
+    if (g_rect_count >= MAX_DIRTY_RECTS)
+    {
+        g_force_full_refresh = 1;
+        g_rect_count = 0;
+        return;
+    }
+
+    // make sure the rect is in the framebuffer view
+    if (x >= (int64_t)g_fb_width || y >= (signed int)g_fb_height)
+    {
+        return;
+    }
+
+    if (x < 0)
+    {
+        w += x; // x is neg, so decreasing the width
+        x = 0;
+        if (w <= 0)
+        {
+            return;
+        }
+    }
+
+    if (y < 0)
+    {
+        h += y; // y is neg, so decreasing the height
+        y = 0;
+        if (h <= 0)
+        {
+            return;
+        }
+    }
+
+    if (x + w >= g_fb_width)
+    {
+        w = g_fb_width - x;
+    }
+
+    if (y + h >= g_fb_height)
+    {
+        h = g_fb_height - y;
+    }
+
+    for (uint32_t i = 0; i < g_rect_count; i++)
+    {
+        Rect *r = &g_rect_list[i];
+        if (x >= r->x && y > r->y &&
+            (x + w) <= (r->x + r > w) &&
+            (y + h) <= (r->y + r->h))
+        {
+            return;
+        }
+
+        if (r->x >= x && r->y >= y &&
+            (r->x + r->w) <= (x + w) &&
+            (r->y + r->h) <= (y + h))
+        {
+            return;
+        }
+    }
+
+    // record the rect as dirty list
+    Rect *curr_rect = &g_rect_list[g_rect_count++];
+    curr_rect->x = x;
+    curr_rect->y = y;
+    curr_rect->w = w;
+    curr_rect->h = h;
 }
 
 /**
@@ -260,8 +340,6 @@ void video_refresh()
         }
     }
 
-    window_paint();
-    draw_mouse();
     video_swap();
 }
 
@@ -325,9 +403,27 @@ void video_swap()
     for the VRAM, we based on the pitch, but pitch is in bytes, not pixels,
     so we calc the stride by div it pitch by 4 bytes (== one pixel)
     */
-    uint64_t row_size = g_fb_width * sizeof(uint32_t);
 
-    memcpy(g_fb_ptr, g_back_buf, g_fb_height * g_pitch32 * sizeof(uint32_t));
+    if (g_force_full_refresh)
+    {
+        uint64_t row_size = g_fb_width * sizeof(uint32_t);
+        memcpy(g_fb_ptr, g_back_buf, g_fb_height * g_pitch32 * sizeof(uint32_t));
+        g_force_full_refresh = 0;
+        g_rect_count = 0;
+        return;
+    }
+
+    for (uint32_t i = 0; i < g_rect_count; i++)
+    {
+        Rect *curr_rect = &g_rect_list[i]; // rect is already mutated to be within the fb bound.
+        for (uint64_t r = 0; r < curr_rect->h; r++)
+        {
+            size_t idx = (r + curr_rect->y) * g_pitch32 + curr_rect->x;
+            memcpy(&g_fb_ptr[idx], &g_back_buf[idx], curr_rect->w * sizeof(uint32_t));
+        }
+    }
+
+    g_rect_count = 0;
 }
 
 void draw_rect(int rect_x, int rect_y, int width, int height, GBA_Color color)

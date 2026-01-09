@@ -77,7 +77,7 @@ void reboot(void)
     syscall(4, 0, 0, 0);
 }
 
-int create_win(WinParams_t* win_params)
+int win_create(WinParams_t* win_params)
 {
     return syscall(17, (uint64_t)win_params, 0, 0);   
 }

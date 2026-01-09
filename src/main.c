@@ -169,7 +169,7 @@ void kmain(void)
     keyboard_init();
     mouse_init();
     timer_init();
-    init_window_manager();
+    init_win_manager();
 
     syscall_init();
     dev_init_stdio();
@@ -283,7 +283,7 @@ void kmain(void)
             }
         }
 
-        window_update();
+        win_update();
         
         video_clear();
         video_draw_string(10, 10, "Welcome to NyanOS kernel!", White);
@@ -291,7 +291,7 @@ void kmain(void)
 
         term_paint();
         term_blink_active();
-        window_paint();
+        win_paint();
         draw_mouse();
         video_swap();
         

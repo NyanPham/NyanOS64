@@ -18,6 +18,7 @@
 #define WIN_MOVABLE (1 << 0)
 #define WIN_RESIZEABLE (1 << 1)
 #define WIN_MINIMIZABLE (1 << 2)
+#define WIN_DIRTY (1U << 31)
 
 // resize directions
 #define RES_NONE 0
@@ -42,11 +43,13 @@ typedef struct Window
 
     // Doubly Linked List to handle bring to front
     // and back more easily
-    struct Window *prev; 
+    struct Window *prev;
     struct Window *next;
 
     int64_t owner_pid;
     uint32_t flags;
+
+    Rect *clip_list;
 } Window;
 
 typedef struct WinDragCtx
@@ -57,17 +60,22 @@ typedef struct WinDragCtx
     uint32_t resize_dir; // 0 is to move the window, otherwise to resize
 } WinDragCtx;
 
-void init_window_manager(void);
-bool check_window_drag(Window *win, int64_t mouse_x, int64_t mouse_y);
-void window_paint(void);
-void window_update(void);
-Window *create_win(int64_t x, int64_t y, uint64_t width, uint64_t height, const char *title, uint32_t flags);
+void init_win_manager(void);
+bool check_win_drag(Window *win, int64_t mouse_x, int64_t mouse_y);
+void win_paint(void);
+void win_update(void);
+Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const char *title, uint32_t flags);
 Window *get_win_at(int64_t mx, int64_t my);
-void focus_win(Window *win);
-void close_win(Window *win);
+void win_focus(Window *win);
+void win_close(Window *win);
 void win_put_char(Window *win, char c);
 void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color fg_color, GBA_Color bg_color);
+void win_move(Window *win, int64_t new_x, int64_t new_y);
+void win_resize(Window *win, int64_t new_x, int64_t new_y, int64_t new_w, int64_t new_h);
 Window *win_get_active(void);
 bool is_point_in_rect(int64_t px, int64_t py, int64_t rx, int64_t ry, int64_t rw, int64_t rh);
+uint8_t rect_intersect(Rect *r1, Rect *r2);
+Rect *clip_rect(Rect *r, Rect *clipper);
+void recalc_clip_list(Window *win);
 
 #endif
