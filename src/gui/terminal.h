@@ -12,6 +12,14 @@
 #define CURSOR_STATE (1 << 1)
 #define TERM_DIRTY (1U << 31)
 
+typedef enum
+{
+    TERM_INPUT_NORMAL,
+    TERM_INPUT_ESC,
+    TERM_INPUT_CSI,
+    TERM_INPUT_PARAM,
+} TermInputState;
+
 typedef struct Terminal
 {
     // VIEW
@@ -41,6 +49,10 @@ typedef struct Terminal
     // reading from keyboard buf directly
     // INPUT BUFFER
     RingBuf input_buf;
+    TermInputState input_state;
+    char input_queue[8]; // For ansi string like ESC[5~
+    int8_t input_queue_idx;
+
     int waiting_pid;
 
     uint32_t flags;
@@ -56,5 +68,6 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h);
 void term_blink_active(void);
 void term_paint(void);
 static Terminal *get_curr_term(void);
+void term_process_input(Terminal *term, char c);
 
 #endif

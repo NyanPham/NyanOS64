@@ -394,59 +394,117 @@ void term_put_char(Terminal *term, char c)
     ansi_write_char(&term->ansi_ctx, c, &g_term_driver, term);
 }
 
+static void flush_input_queue(Terminal *term)
+{
+    for (int8_t i = 0; i < term->input_queue_idx; i++)
+    {
+        rb_push(&term->input_buf, term->input_queue[i]);
+    }
+    term->input_queue_idx = 0;
+    term->input_state = TERM_INPUT_NORMAL;
+}
+
+void term_process_input(Terminal *term, char c)
+{
+    switch (term->input_state)
+    {
+    case TERM_INPUT_NORMAL:
+    {
+        if (c == '\033')
+        {
+            term->input_state = TERM_INPUT_ESC;
+            term->input_queue[term->input_queue_idx++] = c;
+        }
+        else
+        {
+            rb_push(&term->input_buf, c);
+        }
+        break;
+    }
+    case TERM_INPUT_ESC:
+    {
+        if (c == '[')
+        {
+            term->input_state = TERM_INPUT_CSI;
+            term->input_queue[term->input_queue_idx++] = c;
+        }
+        else
+        {
+            term->input_queue[term->input_queue_idx++] = c;
+            flush_input_queue(term);
+        }
+        break;
+    }
+    case TERM_INPUT_CSI:
+    {
+        term->input_queue[term->input_queue_idx++] = c;
+
+        if (c >= '0' && c <= '9')
+        {
+            term->input_state = TERM_INPUT_PARAM;
+        }
+        else if (c >= '@' && c <= '~')
+        {
+            flush_input_queue(term);
+        }
+        else
+        {
+            flush_input_queue(term);
+        }
+        break;
+    }
+    case TERM_INPUT_PARAM:
+    {
+        term->input_queue[term->input_queue_idx++] = c;
+
+        if (c == '~')
+        {
+            if (term->input_queue_idx >= 4)
+            {
+                char param = term->input_queue[term->input_queue_idx - 2];
+                if (param == '5')
+                {
+                    term_scroll(term, -SCROLL_INTERVAL);
+                    term->input_queue_idx = 0;
+                    term->input_state = TERM_INPUT_NORMAL;
+                    return;
+                }
+                else if (param == '6')
+                {
+                    term_scroll(term, SCROLL_INTERVAL);
+                    term->input_queue_idx = 0;
+                    term->input_state = TERM_INPUT_NORMAL;
+                    return;
+                }
+            }
+            flush_input_queue(term);
+        }
+        else if (c >= '0' && c <= '9')
+        {
+            if (term->input_queue_idx >= 8)
+            {
+                flush_input_queue(term);
+            }
+        }
+        else
+        {
+            flush_input_queue(term);
+        }
+        break;
+    }
+    }
+}
+
 size_t term_read(Terminal *term, char *buf, size_t count)
 {
     size_t n = 0;
     while (n < count)
     {
-        char c = keyboard_get_char();
+        char c;
 
-        // upon receiving the event of the firest ansi key within a sequence, starting with '\033' for example
-        // the keyboard has already pushed the whole sequence.
-        if (c == '\033') // ESC?
+        if (rb_pop(&term->input_buf, &c))
         {
-            char seq[3] = {0};
-            seq[0] = keyboard_get_char();
-            seq[1] = keyboard_get_char();
-            seq[2] = keyboard_get_char();
-            // if it's either [5~ or [6~?
-            if (
-                seq[0] == '[' &&
-                (seq[1] == '5' || seq[1] == '6') &&
-                seq[2] == '~')
-            {
-                int delta = (seq[1] == '5') ? -SCROLL_INTERVAL : SCROLL_INTERVAL;
-                term_scroll(term, delta);
-                continue;
-            }
-            else
-            {
-                buf[n++] = c;
-
-                for (uint8_t i = 0; i < 3; i++)
-                {
-                    if (n < count && seq[i] != 0)
-                    {
-                        buf[n++] = seq[i];
-                    }
-                }
-                if (n > 0 && buf[n - 1] == '\n')
-                {
-                    break;
-                }
-            }
-        }
-        else if (c != 0)
-        {
-            // store to buf
             buf[n++] = c;
-
-            // could be echoed to the screen
-            // BUT, we'll let the task that owns
-            // the terminal to decide what to print
-            // instead :))
-            // term_put_char(term, c);
-
             if (c == '\n')
             {
                 break;
@@ -454,15 +512,10 @@ size_t term_read(Terminal *term, char *buf, size_t count)
         }
         else
         {
-            // the input_buf now is empty. there are 2 cases
-
-            // case 1: we've read something already
             if (n > 0)
             {
                 break;
             }
-
-            // case 2: nothing was read -> go to sleep!
             sched_block();
         }
     }

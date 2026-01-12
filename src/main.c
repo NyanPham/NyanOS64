@@ -254,7 +254,7 @@ void kmain(void)
                 if (e.key == 't' && is_ctrl && is_alt)
                 {
                     kprint("Hotkey detected to spawn a shell\n");
-                    keyboard_get_char();
+                    keyboard_get_char(); // consume the pressed "t"
                     spawn_shell();
                 }
                 else
@@ -262,6 +262,11 @@ void kmain(void)
                     Window* top_win = win_get_active();
                     if (top_win != NULL && top_win->owner_pid != -1)
                     {
+                        Task *tsk = sched_find_task(top_win->owner_pid);
+                        if (tsk && tsk->term)
+                        {
+                            term_process_input(tsk->term, e.key);
+                        }
                         sched_wake_pid(top_win->owner_pid);
                     }
                 }

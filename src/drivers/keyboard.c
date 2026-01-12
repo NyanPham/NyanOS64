@@ -41,6 +41,8 @@ static volatile KeyboardDevice kbd_dev;
 #define KEY_RSHIFT_PRESSED  0x36
 #define KEY_RSHIFT_RELEASED 0xB6
 #define KEY_CAPSLOCK_PRESSED 0x3A
+#define KEY_UP 0x48
+#define KEY_DOWN 0x50
 
 // Scancode -> ASCII
 char kbd_tbl[KBD_TBL_SIZE] = {
@@ -67,25 +69,18 @@ char kbd_tbl_shift[KBD_TBL_SIZE] = {
  */
 static void send_ansi_sequence(const char *seq)
 {
-    Event e = {
-        .type = EMPTY,
-        .key = 0,
-    };
-
-    if (*seq)
-    {
-        e.type = EVENT_KEY_PRESSED;
-        e.key = *seq;
-    }
-
     while (*seq)
     {
         char c = *seq;
+        Event e = {
+            .type = EVENT_KEY_PRESSED,
+            .key = c,
+        };
+
         rb_push(&kbd_dev.buf, c);
         seq++;
+        event_queue_push(&g_event_queue, e);
     }
-
-    event_queue_push(&g_event_queue, e);
 }
 
 static void keyboard_handler(void *regs)
@@ -150,6 +145,19 @@ static void keyboard_handler(void *regs)
         {
             // send ESC[6~
             send_ansi_sequence("\033[6~");
+            return;
+        }
+
+        if (scancode == KEY_UP)
+        {
+            // send ESC[A
+            send_ansi_sequence("\033[A");
+            return;
+        }
+        if (scancode == KEY_DOWN)
+        {
+            // send ESC[B
+            send_ansi_sequence("\033[B");
             return;
         }
 

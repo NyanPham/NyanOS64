@@ -1,6 +1,21 @@
 #include "libc/libc.h"
 #include "syscall_args.h"
 
+#define HIST_MAX 10
+#define CMD_MAX_LEN 128
+
+char history[HIST_MAX][CMD_MAX_LEN];
+int hist_count = 0;
+int hist_curr = 0;
+
+void clear_curr_line(int len)
+{
+    for (int k = 0; k < len; k++)
+    {
+        print("\b \b");
+    }
+}
+
 int parse_cmd(char *line, char **argv)
 {
     int argc = 0;
@@ -52,6 +67,7 @@ int main()
 
         // use blocking i/o to get the input
         int i = 0;
+        hist_curr = hist_count;
         while (1)
         {
             char c;
@@ -62,6 +78,15 @@ int main()
                 if (c == '\n')
                 {
                     print("\n");
+
+                    // save to history
+                    line[i] = 0;
+                    if (i > 0)
+                    {
+                        int nxt_slot = hist_count % HIST_MAX;
+                        strcpy(history[nxt_slot], line);
+                        hist_count++;
+                    }
                     break;
                 }
 
@@ -71,6 +96,55 @@ int main()
                     {
                         i--;
                         print("\b");
+                    }
+                    continue;
+                }
+
+                if (c == '\033')
+                {
+                    char seq[2];
+                    if (read(0, &seq[0], 1) > 0 && read(0, &seq[1], 1) > 0)
+                    {
+                        if (seq[0] == '[')
+                        {
+                            if (seq[1] == 'A') // is KEY_UP
+                            {
+                                if (hist_count > 0)
+                                {
+                                    int min_idx = (hist_count >= HIST_MAX) ? (hist_count - HIST_MAX) : 0;
+                                    if (hist_curr > min_idx)
+                                    {
+                                        hist_curr--;
+                                        clear_curr_line(i);
+                                        int real_idx = hist_curr % HIST_MAX;
+                                        strcpy(line, history[real_idx]);
+                                        i = strlen(line);
+                                        print(line);
+                                    }
+                                }
+                            }
+                            else if (seq[1] == 'B') // is KEY_DOWN
+                            {
+                                if (hist_curr < hist_count)
+                                {
+                                    hist_curr++;
+                                    clear_curr_line(i);
+
+                                    if (hist_curr == hist_count)
+                                    {
+                                        i = 0;
+                                        line[0] = 0;
+                                    }
+                                    else
+                                    {
+                                        int real_idx = hist_curr % HIST_MAX;
+                                        strcpy(line, history[real_idx]);
+                                        i = strlen(line);
+                                        print(line);
+                                    }
+                                }
+                            }
+                        }
                     }
                     continue;
                 }
@@ -127,9 +201,9 @@ int main()
         /* --- LS --- */
         else if (strncmp(argv[0], "ls", 2) == 0)
         {
-            char* list = (char*) malloc(512);
+            char *list = (char *)malloc(512);
             list_files(list, 512);
-            
+
             while (*list != 0)
             {
                 print(list);
