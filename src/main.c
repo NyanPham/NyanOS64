@@ -29,66 +29,56 @@
 #include "gui/terminal.h"
 #include "event/event.h"
 #include "kern_defs.h"
+#include "include/signal.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
 
-__attribute__((used, section(".limine_requests")))
-static volatile uint64_t limine_base_revision[3] = LIMINE_BASE_REVISION(4);
+__attribute__((used, section(".limine_requests"))) static volatile uint64_t limine_base_revision[3] = LIMINE_BASE_REVISION(4);
 
-__attribute__((used, section(".limine_requests")))
-static volatile struct limine_framebuffer_request framebuffer_request = 
-{
-    .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
-    .revision = 0
-};
+__attribute__((used, section(".limine_requests"))) static volatile struct limine_framebuffer_request framebuffer_request =
+    {
+        .id = LIMINE_FRAMEBUFFER_REQUEST_ID,
+        .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-static volatile struct limine_memmap_request memmap_request = 
-{
-    .id = LIMINE_MEMMAP_REQUEST_ID,
-    .revision = 0
-};
+__attribute__((used, section(".limine_requests"))) static volatile struct limine_memmap_request memmap_request =
+    {
+        .id = LIMINE_MEMMAP_REQUEST_ID,
+        .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-static volatile struct limine_hhdm_request hhdm_request =
-{
-    .id = LIMINE_HHDM_REQUEST_ID,
-    .revision = 0
-};
+__attribute__((used, section(".limine_requests"))) static volatile struct limine_hhdm_request hhdm_request =
+    {
+        .id = LIMINE_HHDM_REQUEST_ID,
+        .revision = 0};
 
-__attribute__((used, section(".limine_requests")))
-static volatile struct limine_module_request module_request =
-{
-    .id = LIMINE_MODULE_REQUEST_ID,
-    .revision = 0
-};
+__attribute__((used, section(".limine_requests"))) static volatile struct limine_module_request module_request =
+    {
+        .id = LIMINE_MODULE_REQUEST_ID,
+        .revision = 0};
 
-__attribute__((used, section(".limine_requests_start")))
-static volatile uint64_t limine_requests_start_marker[4] = LIMINE_REQUESTS_START_MARKER;
+__attribute__((used, section(".limine_requests_start"))) static volatile uint64_t limine_requests_start_marker[4] = LIMINE_REQUESTS_START_MARKER;
 
-__attribute__((used, section(".limine_requests_end")))
-static volatile uint64_t limine_requests_end_marker[2] = LIMINE_REQUESTS_END_MARKER;
+__attribute__((used, section(".limine_requests_end"))) static volatile uint64_t limine_requests_end_marker[2] = LIMINE_REQUESTS_END_MARKER;
 
 static void hcf(void)
 {
     for (;;)
     {
-        asm ("hlt");
+        asm("hlt");
     }
 }
 
 static void sti(void)
 {
-    asm volatile ("sti");
+    asm volatile("sti");
 }
 
 static void hlt(void)
 {
-    asm volatile ("hlt");
+    asm volatile("hlt");
 }
 
 extern uint64_t hhdm_offset;
-extern uint64_t* kern_pml4;
+extern uint64_t *kern_pml4;
 extern uint64_t kern_stk_ptr;
 extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
 extern EventBuf g_event_queue;
@@ -97,11 +87,11 @@ static inline void spawn_shell()
 {
     kprint("Loading Shell...\n");
 
-    Task* shell_task = sched_new_task();
-    Terminal* console = term_create(
-        100, 100, 
-        370, 270, 
-        700, "Shell", 
+    Task *shell_task = sched_new_task();
+    Terminal *console = term_create(
+        100, 100,
+        370, 270,
+        700, "Shell",
         WIN_MOVABLE | WIN_RESIZEABLE | WIN_MINIMIZABLE);
     shell_task->term = console;
     console->win->owner_pid = shell_task->pid;
@@ -118,23 +108,22 @@ static inline void spawn_shell()
 
         uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
         uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
-        
+
         vmm_map_page(
-            (uint64_t*)(shell_task->pml4 + hhdm_offset),
+            (uint64_t *)(shell_task->pml4 + hhdm_offset),
             virt_usr_stk_base,
             phys_usr_stk,
-            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
-        );
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
         // no args, so argc = 0, no need space for argv
-        uint64_t* kern_view_stk = (uint64_t*)(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t) + hhdm_offset);
+        uint64_t *kern_view_stk = (uint64_t *)(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t) + hhdm_offset);
         *kern_view_stk = 0;
 
         uint64_t shell_rsp = USER_STACK_TOP - sizeof(uint64_t);
-        
+
         write_cr3(curr_pml4);
         sched_load_task(shell_task, shell_entry, shell_rsp);
     }
-    else 
+    else
     {
         write_cr3(curr_pml4);
         kprint("Failed to load Shell!\n");
@@ -157,7 +146,7 @@ void kmain(void)
     {
         hcf();
     }
-    
+
     pmm_init(memmap_request.response, hhdm_request.response);
     vmm_init();
 
@@ -174,9 +163,9 @@ void kmain(void)
     syscall_init();
     dev_init_stdio();
     sched_init();
-    
+
     // check if we have the framebuffer to render on screen
-    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) 
+    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1)
     {
         hcf();
     }
@@ -186,35 +175,34 @@ void kmain(void)
     // int rect_x = 0;
     // int rect_y = 200;
 
-
     /*=========== Test the initramfs ===========*/
     if (module_request.response == NULL || module_request.response->module_count < 1)
     {
         kprint("Error: no module found (initramfs)\n");
         hcf();
-    } 
+    }
 
     if (module_request.response->module_count >= 2)
     {
-        struct limine_file* tar_file = module_request.response->modules[1];
+        struct limine_file *tar_file = module_request.response->modules[1];
         kprint("Initializing VFS...\n");
         vfs_init();
 
-        vfs_node_t* tar_root = tar_fs_init(tar_file->address);
+        vfs_node_t *tar_root = tar_fs_init(tar_file->address);
         vfs_mount("/", tar_root);
-        
+
         // test VFS
         kprint("VFS Test: Opening hello.txt...\n");
-        file_handle_t* f = vfs_open("hello.txt", 0);
+        file_handle_t *f = vfs_open("hello.txt", 0);
         if (f)
         {
             kprint("VFS TEST: Success! Found hello.txt\n");
-            
+
             // read some bytes
             char buf[32];
-            uint64_t bytes_read = vfs_read(f, 13, (uint8_t*)buf);
+            uint64_t bytes_read = vfs_read(f, 13, (uint8_t *)buf);
             buf[bytes_read] = 0;
-            kprint("Content: "); 
+            kprint("Content: ");
             kprint(buf);
             kprint("\n");
 
@@ -230,7 +218,7 @@ void kmain(void)
         kprint("Warning: ROOTFS.TAR not found.\n");
     }
 
-    // test kprint  
+    // test kprint
     // if we reach here, at least the inits above,
     // if not working, don't crash our OS :)))
     kprint("Hello from the kernel side!\n");
@@ -257,9 +245,24 @@ void kmain(void)
                     keyboard_get_char(); // consume the pressed "t"
                     spawn_shell();
                 }
+                else if (e.key == 'c' && is_ctrl)
+                {
+                    kprint("Hotkey detected to kill a process\n");
+                    keyboard_get_char(); // consume the pressed "c"
+                    Window *top_win = win_get_active();
+                    if (top_win != NULL && top_win->owner_pid != -1)
+                    {
+                        sched_send_signal(top_win->owner_pid, SIGINT);
+                        sched_wake_pid(top_win->owner_pid);
+                    }
+                    else
+                    {
+                        kprint("No active process to kill.\n");
+                    }
+                }
                 else
                 {
-                    Window* top_win = win_get_active();
+                    Window *top_win = win_get_active();
                     if (top_win != NULL && top_win->owner_pid != -1)
                     {
                         Task *tsk = sched_find_task(top_win->owner_pid);
@@ -289,7 +292,7 @@ void kmain(void)
         }
 
         win_update();
-        
+
         video_clear();
         video_draw_string(10, 10, "Welcome to NyanOS kernel!", White);
         video_draw_string(10, 20, "Press `Ctrl + Alt + T` to run a Terminal!", White);
@@ -299,7 +302,7 @@ void kmain(void)
         win_paint();
         draw_mouse();
         video_swap();
-        
+
         hlt();
     }
 }
