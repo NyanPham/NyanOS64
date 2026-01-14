@@ -91,6 +91,11 @@ uint64_t pte_get_addr(uint64_t page_tab_entry)
     return page_tab_entry & (uint64_t)(~0xFFF);
 }
 
+uint64_t pte_get_flags(uint64_t page_tab_entry)
+{
+    return page_tab_entry & (uint64_t)(0xFFF);
+}
+
 static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, bool create_if_missing)
 {
     size_t pml4_idx = (virt_addr >> PML4_INDEX) & 0x1FF; // PML4
@@ -575,6 +580,55 @@ static void vmm_remove_allocated_mem(VmAllocatedList *prev, VmAllocatedList *cur
         prev->next = curr->next;
         curr->next = NULL;
     }
+}
+
+uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
+{
+    uint64_t *child_tbl_virt = (uint64_t *)pmm_alloc_frame();
+    memset(child_tbl_virt, 0, PAGE_SIZE);
+    uint64_t child_tbl_phys = (uint64_t)child_tbl_virt - hhdm_offset;
+
+    if (level > 1)
+    {
+        // pml4, pdpt, pd
+        for (int16_t i = 0; i < 512; i++)
+        {
+            uint64_t entry = parent_tbl_virt[i];
+            if ((entry & VMM_FLAG_PRESENT) == 0)
+            {
+                continue;
+            }
+
+            uint64_t parent_phys = pte_get_addr(entry);
+            uint64_t *virt_addr = (uint64_t *)(parent_phys + hhdm_offset);
+            uint64_t child_phys = vmm_copy_hierarchy(virt_addr, level - 1);
+            child_tbl_virt[i] = child_phys | pte_get_flags(entry);
+        }
+    }
+    else
+    {
+        // pt
+        for (int16_t i = 0; i < 512; i++)
+        {
+            uint64_t entry = parent_tbl_virt[i];
+            if ((entry & VMM_FLAG_PRESENT) == 0)
+            {
+                continue;
+            }
+
+            void *child_virt_hhdm = pmm_alloc_frame();
+            memset(child_virt_hhdm, 0, PAGE_SIZE);
+
+            uint64_t parent_phys = pte_get_addr(entry);
+            void *parent_virt_hhdm = (void *)(parent_phys + hhdm_offset);
+
+            memcpy(child_virt_hhdm, parent_virt_hhdm, 512 * sizeof(uint64_t));
+            uint64_t child_phys = (uint64_t)child_virt_hhdm - hhdm_offset;
+            child_tbl_virt[i] = child_phys | pte_get_flags(entry);
+        }
+    }
+
+    return child_tbl_phys;
 }
 
 /*

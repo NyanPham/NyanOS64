@@ -56,6 +56,12 @@ uint64_t pte_set_addr(uint64_t page_tab_entry, uint64_t phys_addr);
 uint64_t pte_get_addr(uint64_t page_tab_entry);
 
 /**
+ * @brief Get flags from page table entry.
+ * It retains only the least sigificant 12 bits.
+ */
+uint64_t pte_get_flags(uint64_t page_tab_entry);
+
+/**
  * @brief Get the physical address from the
  */
 uint64_t vmm_virt2phys(uint64_t *pml4, uint64_t virt_addr);
@@ -95,6 +101,15 @@ void vmm_free(void *ptr);
  * @brief Reallocates space
  */
 void *vmm_realloc(void *ptr, size_t new_size);
+
+/**
+ * @brief Recursively deep-copies a paging hierarchy and mapped physical memory.
+ * Traverses the page tables starting from the given level, then allocates
+ * new physical frames for the page tables and duplicates the data
+ * 
+ * @return The physical address of the newly allocated page table.
+ */
+uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level);
 
 /**
  * @brief Initializes the Virtual Memory Manager.
