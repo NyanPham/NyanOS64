@@ -19,6 +19,8 @@ section .text
 ;       rdx - arg3
 ;       rcx - ret_addr (set by CPU)
 ;       r11 - rflags (set by CPU)
+;   out: 
+;       rax - ret_val
 ;===========================
 syscall_entry:
     ;   swap the user stack with the kernel stack manually
@@ -35,6 +37,7 @@ syscall_entry:
     push r11
 
     ; and caller-saved regs
+    push rax
     push rbp
     push rbx
     push r8
@@ -51,6 +54,7 @@ syscall_entry:
     mov rsi, rdi
     mov rdi, rax
     call syscall_handler
+    mov [rsp + 72], rax ; sizeof(uint64_t) * 9 registers to the push rax above
 
     ; restore the context
     pop r15
@@ -62,6 +66,7 @@ syscall_entry:
     pop r8
     pop rbx 
     pop rbp
+    pop rax
 
     pop r11
     pop rcx

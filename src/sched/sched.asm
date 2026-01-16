@@ -50,7 +50,6 @@ task_start_stub:
     pop rdx
     pop rcx
     pop rbx
-    pop rax
 
     mov ax, 0x2B
     mov ds, ax
@@ -58,4 +57,6 @@ task_start_stub:
     mov fs, ax
     mov gs, ax
     
+    pop rax
+
     iretq

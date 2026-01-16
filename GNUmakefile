@@ -163,6 +163,7 @@ clean:
 	@rm -f shell.o shell.elf
 	@rm -f hello.o hello.elf
 	@rm -f snake.o snake.elf
+	@rm -f test_fork.o test_fork.elf
 	@rm -f rootfs.tar
 
 USER_CFLAGS := -Wall -Wextra -std=gnu11 -ffreestanding \
@@ -183,11 +184,12 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf
+rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf
 	@echo "Creating rootfs.tar..."
 	cp shell.elf rootfs/
 	cp hello.elf rootfs/
 	cp snake.elf rootfs/
+	cp test_fork.elf rootfs/
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
 obj/src/libc/crt0.o: src/libc/crt0.asm
@@ -217,6 +219,18 @@ snake.elf: progs/snake.c $(USER_OBJS)
 		obj/progs/snake.c.o \
 		obj/src/libc/libc.c.o \
 		-o snake.elf
+
+test_fork.elf: progs/test_fork.c $(USER_OBJS)
+	@echo "Building Fork Test..."
+	mkdir -p obj/progs
+	
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/test_fork.c -o obj/progs/test_fork.c.o
+
+	$(LD) -nostdlib -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/test_fork.c.o \
+		obj/src/libc/libc.c.o \
+		-o test_fork.elf
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
 	mkdir -p "$(dir $@)"

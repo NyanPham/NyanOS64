@@ -588,10 +588,12 @@ uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
     memset(child_tbl_virt, 0, PAGE_SIZE);
     uint64_t child_tbl_phys = (uint64_t)child_tbl_virt - hhdm_offset;
 
+    int limit = level == 4 ? 256: 512;
+
     if (level > 1)
     {
         // pml4, pdpt, pd
-        for (int16_t i = 0; i < 512; i++)
+        for (int16_t i = 0; i < limit; i++)
         {
             uint64_t entry = parent_tbl_virt[i];
             if ((entry & VMM_FLAG_PRESENT) == 0)
@@ -603,6 +605,14 @@ uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
             uint64_t *virt_addr = (uint64_t *)(parent_phys + hhdm_offset);
             uint64_t child_phys = vmm_copy_hierarchy(virt_addr, level - 1);
             child_tbl_virt[i] = child_phys | pte_get_flags(entry);
+        }
+
+        if (level == 4)
+        {
+            for (int16_t i = 256; i < 512; i++)
+            {
+                child_tbl_virt[i] = parent_tbl_virt[i];
+            }
         }
     }
     else

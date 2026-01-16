@@ -78,10 +78,10 @@ Task *sched_new_task(void)
  * Allocs user stack for the program to run
  * Makes fake task scene
  */
-void sched_load_task(Task *tsk, uint64_t entry, uint64_t rsp)
+void task_context_setup(Task *tsk, uint64_t entry, uint64_t rsp)
 {
-    uint64_t curr_pml4 = read_cr3();
-    write_cr3(tsk->pml4);
+    // uint64_t curr_pml4 = read_cr3();
+    // write_cr3(tsk->pml4);
 
     // alloc a page for within the Kernel Stack
     // Note: kern_stk is virt hhdm addr.
@@ -112,22 +112,7 @@ void sched_load_task(Task *tsk, uint64_t entry, uint64_t rsp)
 
     // now the top of the Kernel Stack is to store the whole state of the task
     tsk->kern_stk_rsp = (uint64_t)sp;
-
-    // add to the linked list of Tasks
-    if (g_head_tsk == NULL)
-    {
-        g_head_tsk = tsk;
-        tsk->next = tsk; // (loop)
-        g_curr_tsk = tsk;
-    }
-    else
-    {
-        tsk->next = g_head_tsk->next;
-        g_head_tsk->next = tsk;
-    }
-
-    tsk->state = TASK_READY;
-    write_cr3(curr_pml4);
+    // write_cr3(curr_pml4);
 }
 
 /*
@@ -412,6 +397,131 @@ void sched_send_signal(int pid, uint32_t sig_code)
     }
 
     tsk->pending_signals |= 1 << (sig_code - 1);
+}
+
+/**
+ * @brief Registers a task to the linked list of tasks
+ */
+void sched_register_task(Task *tsk)
+{
+    if (g_head_tsk == NULL)
+    {
+        g_head_tsk = tsk;
+        tsk->next = tsk; // (loop)
+        g_curr_tsk = tsk;
+    }
+    else
+    {
+        tsk->next = g_head_tsk->next;
+        g_head_tsk->next = tsk;
+    }
+
+    tsk->state = TASK_READY;
+}
+
+/**
+ * @brief Creates a task
+ * Allocs a new task, and fills the stack
+ * and fake scene to kickstart using iretq.
+ */
+Task *task_factory_create(uint64_t entry, uint64_t rsp)
+{
+    Task *tsk = sched_new_task();
+    if (tsk == NULL)
+    {
+        return NULL;
+    }
+
+    task_context_setup(tsk, entry, rsp);
+    return tsk;
+}
+
+/**
+ * @brief Forks a child task from a parent task
+ * Creates a new task a child.
+ * Deep-copies from the parent task.
+ * Sets up correct trapframe,
+ * especially rax of parent is the child's pid
+ * but rax of child is 0.
+ */
+Task *task_factory_fork(Task *parent_tsk)
+{
+    Task *child_tsk = sched_new_task();
+    if (child_tsk == NULL)
+    {
+        return NULL;
+    }
+
+    // copy the memory space
+    uint64_t new_pml4 = vmm_copy_hierarchy((uint64_t *)(parent_tsk->pml4 + hhdm_offset), 4);
+    child_tsk->pml4 = new_pml4;
+
+    // alloc kernel stack for the child
+    void *kern_stk = pmm_alloc_frame();
+    if (kern_stk == NULL)
+    {
+        kfree(child_tsk);
+        return NULL;
+    }
+    child_tsk->kern_stk_top = (uint64_t)kern_stk + PAGE_SIZE;
+
+    // copy environment
+    memcpy(child_tsk->fd_tbl, parent_tsk->fd_tbl, MAX_OPEN_FILES * sizeof(file_handle_t *));
+    memcpy(child_tsk->cwd, parent_tsk->cwd, MAX_CWD_LEN);
+    child_tsk->heap_end = parent_tsk->heap_end;
+    child_tsk->parent = parent_tsk;
+    child_tsk->state = TASK_READY;
+    child_tsk->win = parent_tsk->win;
+    child_tsk->term = parent_tsk->term;
+
+    // convert the parent's syscall stack to the child's iretq stack
+    uint64_t *parent_sp = (uint64_t *)parent_tsk->kern_stk_top - 13; // right rsp is at R15, totally 8 pushes to the sp
+    uint64_t *child_sp = (uint64_t *)child_tsk->kern_stk_top;
+
+    // SS User data
+    *(--child_sp) = NEW_TASK_SS;
+
+    // User RSP in syscall_entry
+    uint64_t parent_user_rsp = *(parent_sp + 12);
+    *(--child_sp) = parent_user_rsp;
+
+    // R11 (RFLAGS) in syscall_entry
+    *(--child_sp) = (uint64_t)*(parent_sp + 10) | 0x200; // turn the interrupt on
+
+    // CS usercode
+    *(--child_sp) = NEW_TASK_CS;
+
+    // RCX (RIP) in syscall_entry
+    *(--child_sp) = (uint64_t)*(parent_sp + 11);
+
+    // copy GPRs for task_start_stub POP
+    *(--child_sp) = 0;                           // pid, rax = 0;
+    *(--child_sp) = (uint64_t)*(parent_sp + 7);  // rbx
+    *(--child_sp) = (uint64_t)*(parent_sp + 11); // rcx
+    *(--child_sp) = 0;                           // rdx
+    *(--child_sp) = 0;                           // rsi
+    *(--child_sp) = 0;                           // rdi
+    *(--child_sp) = (uint64_t)*(parent_sp + 8);  // rbp
+    *(--child_sp) = (uint64_t)*(parent_sp + 6);  // r8
+    *(--child_sp) = (uint64_t)*(parent_sp + 5);  // r9
+    *(--child_sp) = (uint64_t)*(parent_sp + 4);  // r10
+    *(--child_sp) = (uint64_t)*(parent_sp + 10); // r11
+    *(--child_sp) = (uint64_t)*(parent_sp + 3);  // r12
+    *(--child_sp) = (uint64_t)*(parent_sp + 2);  // r13
+    *(--child_sp) = (uint64_t)*(parent_sp + 1);  // r14
+    *(--child_sp) = (uint64_t)*(parent_sp + 0);  // r15
+
+    *(--child_sp) = (uint64_t)task_start_stub;
+
+    // init callee-saved regs for switch_to_task pop
+    for (int i = 0; i < 6; i++)
+    {
+        *(--child_sp) = 0;
+    }
+
+    child_tsk->kern_stk_rsp = (uint64_t)child_sp;
+
+    return child_tsk;
 }
 
 static void inline sched_clean_gui(Task *tsk)

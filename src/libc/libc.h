@@ -18,6 +18,8 @@ int open(const char *pathname, uint32_t flags);
 int close(int fd);
 int read(int fd, void *buf, uint64_t count);
 void reboot(void);
+int fork(void);
+int getpid(void);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);

@@ -121,7 +121,9 @@ static inline void spawn_shell()
         uint64_t shell_rsp = USER_STACK_TOP - sizeof(uint64_t);
 
         write_cr3(curr_pml4);
-        sched_load_task(shell_task, shell_entry, shell_rsp);
+        
+        task_context_setup(shell_task, shell_entry, shell_rsp);
+        sched_register_task(shell_task);
     }
     else
     {

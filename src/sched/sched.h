@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #define MAX_OPEN_FILES 0x10 // each task has at most 16 files open
+#define MAX_CWD_LEN 0x100
 
 // Forward declartion, not include window.h to avoid circular dependency
 struct Window;
@@ -27,7 +28,7 @@ typedef struct Task
     struct Task *parent;
     int ret_val; // exit code
     uint64_t heap_end;
-    char cwd[256];
+    char cwd[MAX_CWD_LEN];
 
     // GUI & CLI
     struct Window *win;    // For GUI app
@@ -38,7 +39,7 @@ typedef struct Task
 } Task;
 
 Task *sched_new_task(void);
-void sched_load_task(Task *task, uint64_t entr, uint64_t rsp);
+void task_context_setup(Task *task, uint64_t entr, uint64_t rsp);
 void sched_destroy_task(Task *task);
 void sched_unlink_task(Task *task);
 void sched_init(void);
@@ -52,6 +53,10 @@ Task *get_curr_task(void);
 Task *sched_find_task(int pid);
 int64_t get_curr_task_pid();
 void sched_send_signal(int pid, uint32_t sig_code);
+
+void sched_register_task(Task *task);
+Task *task_factory_create(uint64_t entry, uint64_t rsp);
+Task *task_factory_fork(Task* parent);
 
 static void inline sched_clean_gui(Task *tsk);
 

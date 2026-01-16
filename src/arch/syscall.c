@@ -20,17 +20,17 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#define IA32_EFER 0xC0000080    // a register that allows enabling the SYSCALL/SYSRET instruction (Extended Feature Enable Register)
-#define IA32_STAR 0xC0000081    // a register that stores segment selectors for fast system calls, mostly for SYSCALL
-#define IA32_LSTAR 0xC0000082   // a register to hold the 64-bit virt_addr of the syscall handler
-#define IA32_FMASK 0xC0000084   // a register that masks (clears) specific flags in RFLAGS during a syscall
-#define EFER_SCE 1              
-#define INT_FLAGS 0x200 
+#define IA32_EFER 0xC0000080  // a register that allows enabling the SYSCALL/SYSRET instruction (Extended Feature Enable Register)
+#define IA32_STAR 0xC0000081  // a register that stores segment selectors for fast system calls, mostly for SYSCALL
+#define IA32_LSTAR 0xC0000082 // a register to hold the 64-bit virt_addr of the syscall handler
+#define IA32_FMASK 0xC0000084 // a register that masks (clears) specific flags in RFLAGS during a syscall
+#define EFER_SCE 1
+#define INT_FLAGS 0x200
 #define REBOOT_PORT 0x64
 
 extern uint64_t hhdm_offset;
 extern void syscall_entry(void);
-int8_t find_free_fd(Task* task);
+int8_t find_free_fd(Task *task);
 
 static bool verify_usr_access(uint64_t ptr, uint64_t size)
 {
@@ -50,12 +50,12 @@ void syscall_init(void)
 
     // entering syscall, we disable all interrupts
     wrmsr(IA32_FMASK, INT_FLAGS);
-    
+
     /*
     Notes:
-    User data must preceed user code. 
+    User data must preceed user code.
     Our user data is at offset 0x28, and user code
-    is at 0x30. However, sysret auto-cals the user code offset 
+    is at 0x30. However, sysret auto-cals the user code offset
     by user_data_off + 0x10. That means, sysret thinks
     the user code starts at off 0x38. Oops, we have 8 bytes
     of mismatch. We deliberately tells sysret the user data base
@@ -65,7 +65,7 @@ void syscall_init(void)
     uint64_t usr_base = GDT_OFFSET_USER_DATA - 0x8;
     uint64_t star_val = (usr_base << 0x30) | (kern_sel << 0x20);
     wrmsr(IA32_STAR, star_val);
-    
+
     kprint("Syscall MSRs configured.\n");
 }
 
@@ -80,7 +80,7 @@ void syscall_init(void)
  * | 3         | sys_clear        | Clears the video screen.                   |
  * | 4         | sys_reboot       | Reboots the system.                        |
  * | 5         | sys_list_files   | Lists files in the root directory (TAR).   |
- * | 6         | sys_read_file    | Reads a file content (Legacy/Deprecated).  |
+ * | 6         | sys_fork         |   |
  * | 7         | sys_exec         | Executes a new program (ELF).              |
  * | 8         | sys_exit         | Terminates the current process.            |
  * | 9         | sys_waitpid      | Waits for a child process to exit.         |
@@ -97,542 +97,535 @@ void syscall_init(void)
  */
 uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
 {
-    (void)arg4; (void)arg5;
+    (void)arg4;
+    (void)arg5;
     switch (sys_num)
     {
-        case 0:
+    case 0:
+    {
+        /*
+        sys_read(fd, buf, count)
+        */
+        int8_t fd = (int8_t)arg1;
+        char *buf = (char *)arg2;
+        uint64_t count = arg3;
+
+        // validate fd
+        if (fd < 0 || fd >= MAX_OPEN_FILES)
         {
-            /*
-            sys_read(fd, buf, count)
-            */
-            int8_t fd = (int8_t)arg1;
-            char* buf = (char*)arg2;
-            uint64_t count = arg3;
-
-            // validate fd
-            if (fd < 0 || fd >= MAX_OPEN_FILES)
-            {
-                return -1;
-            }
-
-            Task* curr_tsk = get_curr_task(); 
-            if (curr_tsk->fd_tbl[fd] == NULL)
-            {
-                return -1;
-            }
-
-            // validate user access
-            if (!verify_usr_access((uint64_t)buf, count))
-            {
-                kprint("SYS_READ: invalid buffer\n");
-                return -1;
-            }
-
-            if (fd == 0 && curr_tsk && curr_tsk->term)
-            {
-                return term_read(curr_tsk->term, (uint8_t*)buf, count);
-            }
-
-            // call vfs (if fd > 2, we read the stdin_read)
-            return vfs_read(curr_tsk->fd_tbl[fd], count, (uint8_t*)buf);
+            return -1;
         }
-        case 1:
+
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk->fd_tbl[fd] == NULL)
         {
-            // sys_write(fd, buf, count)
-
-            int8_t fd = (int8_t)arg1;
-            char* buf = (char*)arg2;
-            uint64_t count = arg3;
-
-            // validate fd
-            if (fd < 0 || fd >= MAX_OPEN_FILES)
-            {
-                return -1;
-            }
-
-            Task* curr_tsk = get_curr_task();
-            if (curr_tsk->fd_tbl[fd] == NULL)
-            {
-                return -1;
-            }
-
-            // validate user access
-            if (!verify_usr_access((uint64_t)buf, count))
-            {
-                kprint("SYS_WRITE: invalid buffer\n");
-                return -1;
-            }
-
-            if (curr_tsk->term != NULL && (fd == 1 || fd == 2))
-            {
-                for (uint64_t i = 0; i < count; i++)
-                {
-                    term_put_char(curr_tsk->term, buf[i]);
-                }
-
-                return count;
-            } else if (curr_tsk->win != NULL && (fd == 1 || fd == 2))
-            {
-                for (uint64_t i = 0; i < count; i++)
-                {
-                    win_put_char(curr_tsk->win, buf[i]);
-                }
-
-                return count; 
-            }
-            else 
-            {
-                // call vfs (if fd == 1, it calls the stdout_write)
-                return vfs_write(curr_tsk->fd_tbl[fd], count, (uint8_t*)buf);
-            }
+            return -1;
         }
-        case 2:
+
+        // validate user access
+        if (!verify_usr_access((uint64_t)buf, count))
         {
-            kprint("SYSCALL 2: RESERVED");
-            return 0;
+            kprint("SYS_READ: invalid buffer\n");
+            return -1;
         }
-        case 3:
+
+        if (fd == 0 && curr_tsk && curr_tsk->term)
         {
-            // Sys_clear
-            video_clear();
-            return 0;
+            return term_read(curr_tsk->term, (uint8_t *)buf, count);
         }
-        case 4:
+
+        // call vfs (if fd > 2, we read the stdin_read)
+        return vfs_read(curr_tsk->fd_tbl[fd], count, (uint8_t *)buf);
+    }
+    case 1:
+    {
+        // sys_write(fd, buf, count)
+
+        int8_t fd = (int8_t)arg1;
+        char *buf = (char *)arg2;
+        uint64_t count = arg3;
+
+        // validate fd
+        if (fd < 0 || fd >= MAX_OPEN_FILES)
         {
-            outb(REBOOT_PORT, 0xFE);
-            return 0;
+            return -1;
         }
-        case 5:
+
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk->fd_tbl[fd] == NULL)
         {
-            //  Sys_list_files
-            tar_list((char* )arg1, arg2);
-            return 0;
+            return -1;
         }
-        case 6:
+
+        // validate user access
+        if (!verify_usr_access((uint64_t)buf, count))
         {
-            /* DEPRECATED */
-            // We have case 12 to read a file with VFS instead, 
-            // this is kept for legacy for now, and reserved
-            // for future use 
-
-            // Sys_read_file(fname, buf)
-            char* content = tar_read_file((const char*)arg1);
-            if (content == NULL)
-            {
-                kprint("DEBUG_CAT: tar_read_file returned NULL!\n"); // Debug fail
-                return -1;
-            }
-            char* dest = (char*)arg2;
-
-            if (!verify_usr_access(dest, strlen(content) + 1))
-            {
-                kprint("Invalid user access memory\n");
-                return -1;   
-            }
-
-            strcpy(dest, content);
-            return 0;
+            kprint("SYS_WRITE: invalid buffer\n");
+            return -1;
         }
-        case 7:
+
+        if (curr_tsk->term != NULL && (fd == 1 || fd == 2))
         {
-            // sys_exec(char* path, char** argv)
-            char* raw_path = (char*)arg1;
-            char** argv = (char**)arg2;
-            
-            int argc = 0;
-            size_t argv_size = 0;
-            while (argv[argc] != NULL)
+            for (uint64_t i = 0; i < count; i++)
             {
-                argv_size += strlen(argv[argc]) + 1;
-                argc++;
+                term_put_char(curr_tsk->term, buf[i]);
             }
 
-            size_t argv_ptr_size = (argc + 1) * sizeof(uint64_t) ;
-            
-            char* argv_buf = kmalloc(argv_size);
-
-            int cpy_off = 0;
-            for (int i = 0; i < argc; i++)
+            return count;
+        }
+        else if (curr_tsk->win != NULL && (fd == 1 || fd == 2))
+        {
+            for (uint64_t i = 0; i < count; i++)
             {
-                size_t len = strlen(argv[i]) + 1;
-                memcpy(&argv_buf[cpy_off], argv[i], len);
-                cpy_off += len;
+                win_put_char(curr_tsk->win, buf[i]);
             }
 
-            uint64_t start_usr_addr = USER_STACK_TOP - argv_size; // address to store the argv content in the new stack
-            uint64_t* argv_list = (uint64_t*)kmalloc(argv_ptr_size);
+            return count;
+        }
+        else
+        {
+            // call vfs (if fd == 1, it calls the stdout_write)
+            return vfs_write(curr_tsk->fd_tbl[fd], count, (uint8_t *)buf);
+        }
+    }
+    case 2:
+    {
+        kprint("SYSCALL 2: RESERVED");
+        return 0;
+    }
+    case 3:
+    {
+        // Sys_clear
+        video_clear();
+        return 0;
+    }
+    case 4:
+    {
+        outb(REBOOT_PORT, 0xFE);
+        return 0;
+    }
+    case 5:
+    {
+        //  Sys_list_files
+        tar_list((char *)arg1, arg2);
+        return 0;
+    }
+    case 6:
+    {
+        // sys_fork()
 
-            size_t curr_off = 0;
-            for (int i = 0; i < argc; i++)
-            {
-                argv_list[i] = start_usr_addr + curr_off;
-                curr_off += strlen(argv[i]) + 1; 
-            }
+        Task *parent_tsk = get_curr_task();
+        if (parent_tsk == NULL || parent_tsk->pml4 == 0)
+        {
+            return -1;
+        }
+        Task *child_tsk = task_factory_fork(parent_tsk);
+        sched_register_task(child_tsk);
+        return child_tsk->pid; // for parent, it fork returns child's pid
+    }
+    case 7:
+    {
+        // sys_exec(char* path, char** argv)
+        char *raw_path = (char *)arg1;
+        char **argv = (char **)arg2;
 
-            argv_list[argc] = 0;
+        int argc = 0;
+        size_t argv_size = 0;
+        while (argv[argc] != NULL)
+        {
+            argv_size += strlen(argv[argc]) + 1;
+            argc++;
+        }
 
-            // handle the path
-            Task* curr_tsk = get_curr_task();
-            char full_path[256];
-            resolve_path(curr_tsk->cwd, raw_path, full_path);
+        size_t argv_ptr_size = (argc + 1) * sizeof(uint64_t);
 
-            char* elf_fname = kmalloc(strlen(full_path) + 1);
-            strcpy(elf_fname, full_path);
+        char *argv_buf = kmalloc(argv_size);
 
-            uint64_t old_pml4 = read_cr3();
+        int cpy_off = 0;
+        for (int i = 0; i < argc; i++)
+        {
+            size_t len = strlen(argv[i]) + 1;
+            memcpy(&argv_buf[cpy_off], argv[i], len);
+            cpy_off += len;
+        }
 
-            Task* task = sched_new_task();
-            task->heap_end = USER_HEAP_START;
-            write_cr3(task->pml4);
+        uint64_t start_usr_addr = (USER_STACK_TOP - argv_size) & ~0xF; // address to store the argv content in the new stack
+        uint64_t *argv_list = (uint64_t *)kmalloc(argv_ptr_size);
 
-            uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
-            uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
+        size_t curr_off = 0;
+        for (int i = 0; i < argc; i++)
+        {
+            argv_list[i] = start_usr_addr + curr_off;
+            curr_off += strlen(argv[i]) + 1;
+        }
 
-            vmm_map_page(
-                (uint64_t*)(task->pml4 + hhdm_offset),
-                virt_usr_stk_base,
-                phys_usr_stk,
-                VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
-            );
+        argv_list[argc] = 0;
 
-            // copy the argv_buf
-            uint64_t offset_buf = start_usr_addr & 0xFFF;
-            void* dest_buf = (void*)(phys_usr_stk + offset_buf + hhdm_offset);
-            memcpy(dest_buf, argv_buf, argv_size);
+        // handle the path
+        Task *curr_tsk = get_curr_task();
+        char full_path[256];
+        resolve_path(curr_tsk->cwd, raw_path, full_path);
 
-            // copy the argv_list
-            uint64_t start_list_addr = start_usr_addr - argv_ptr_size; 
-            uint64_t offset_list = start_list_addr & 0xFFF;
-            void* dest_list = (void*)(phys_usr_stk + offset_list + hhdm_offset);
-            memcpy(dest_list, argv_list, argv_ptr_size);
+        char *elf_fname = kmalloc(strlen(full_path) + 1);
+        strcpy(elf_fname, full_path);
 
-            // write argc into the rsp top
-            // virt_rsp = start_list_addr - 8
-            uint64_t rsp_virt_addr = start_list_addr - sizeof(uint64_t);
-            uint64_t offset_rsp = rsp_virt_addr & 0xFFF;
-            uint64_t* dest_rsp = (uint64_t*)(phys_usr_stk + offset_rsp + hhdm_offset);
-            *dest_rsp = argc;
+        uint64_t old_pml4 = read_cr3();
 
-            kfree(argv_buf);
-            kfree(argv_list);
+        Task *task = sched_new_task();
+        task->heap_end = USER_HEAP_START;
+        write_cr3(task->pml4);
 
-            uint64_t entry = elf_load(elf_fname);
+        uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
+        uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
 
-            if (entry == 0)
-            {
-                write_cr3(old_pml4);
-                kfree(elf_fname);
-                sched_destroy_task(task);
-                return -1;
-            }
+        vmm_map_page(
+            (uint64_t *)(task->pml4 + hhdm_offset),
+            virt_usr_stk_base,
+            phys_usr_stk,
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
 
+        // copy the argv_buf
+        uint64_t offset_buf = start_usr_addr & 0xFFF;
+        void *dest_buf = (void *)(phys_usr_stk + offset_buf + hhdm_offset);
+        memcpy(dest_buf, argv_buf, argv_size);
+
+        // copy the argv_list
+        uint64_t start_list_addr = start_usr_addr - argv_ptr_size;
+        uint64_t offset_list = start_list_addr & 0xFFF;
+        void *dest_list = (void *)(phys_usr_stk + offset_list + hhdm_offset);
+        memcpy(dest_list, argv_list, argv_ptr_size);
+
+        // write argc into the rsp top
+        // virt_rsp = start_list_addr - 8
+        uint64_t rsp_virt_addr = ((start_list_addr - sizeof(uint64_t)) & ~0xF) - 8;
+        uint64_t offset_rsp = rsp_virt_addr & 0xFFF;
+        uint64_t *dest_rsp = (uint64_t *)(phys_usr_stk + offset_rsp + hhdm_offset);
+        *dest_rsp = argc;
+
+        kfree(argv_buf);
+        kfree(argv_list);
+
+        uint64_t entry = elf_load(elf_fname);
+
+        if (entry == 0)
+        {
             write_cr3(old_pml4);
             kfree(elf_fname);
-
-            sched_load_task(task, entry, rsp_virt_addr);
-
-            if (task->term != NULL)
-            {
-                task->term->child_pid = task->pid;
-            }
-            
-            return task->pid;
+            sched_destroy_task(task);
+            return -1;
         }
-        case 8:
+
+        write_cr3(old_pml4);
+        kfree(elf_fname);
+
+        task_context_setup(task, entry, rsp_virt_addr);
+        sched_register_task(task);
+
+        if (task->term != NULL)
         {
-            // sys_exit
-            sched_exit((int)(arg1));
-            return 0;
+            task->term->child_pid = task->pid;
         }
-        case 9:
+
+        return task->pid;
+    }
+    case 8:
+    {
+        // sys_exit
+        sched_exit((int)(arg1));
+        return 0;
+    }
+    case 9:
+    {
+        // sys_waitpid(pid, stat)
+        int pid = (int)arg1;
+        int *stat = (int *)arg2;
+
+        Task *child = sched_find_task(pid);
+        if (child == NULL)
         {
-            // sys_waitpid(pid, stat)
-            int pid = (int)arg1;
-            int* stat = (int*)arg2;
+            return -1;
+        }
 
-            Task* child = sched_find_task(pid);
-            if (child == NULL)
+        while (1)
+        {
+            if (child->state == TASK_ZOMBIE)
             {
-                return -1;
-            }
-
-            while (1)
-            {
-                if (child->state == TASK_ZOMBIE)
+                if (stat != NULL)
                 {
-                    if (stat != NULL)
+                    if (!verify_usr_access(stat, sizeof(int)))
                     {
-                        if (!verify_usr_access(stat, sizeof(int)))
-                        {
-                            kprint("SYS_WAITPID: Invalid user access memory\n");
-                            return -1;   
-                        }
-                        *stat = child->ret_val;
-                    }   
-                    sched_unlink_task(child);
-                    sched_destroy_task(child);
-                    return pid;
+                        kprint("SYS_WAITPID: Invalid user access memory\n");
+                        return -1;
+                    }
+                    *stat = child->ret_val;
                 }
-                else 
-                {
-                    sched_block();
-                }
+                sched_unlink_task(child);
+                sched_destroy_task(child);
+                return pid;
+            }
+            else
+            {
+                sched_block();
             }
         }
-        case 10:
+    }
+    case 10:
+    {
+        // sys_open
+        char *fname = (char *)arg1;
+        uint32_t mode = (uint32_t)arg2;
+
+        Task *curr_tsk = get_curr_task();
+
+        int8_t fd = find_free_fd(curr_tsk);
+        if (fd < 0)
         {
-            // sys_open
-            char* fname = (char*)arg1;
-            uint32_t mode = (uint32_t)arg2;
-
-            Task* curr_tsk = get_curr_task();
-
-            int8_t fd = find_free_fd(curr_tsk);
-            if (fd < 0)
-            {
-                return -1;
-            }
-
-            file_handle_t* f = vfs_open(fname, mode);
-            if (f == NULL)
-            {
-                return -1;
-            }
-
-            curr_tsk->fd_tbl[fd] = f;
-            return fd;
+            return -1;
         }
-        case 11:
+
+        file_handle_t *f = vfs_open(fname, mode);
+        if (f == NULL)
         {
-            // sys_close
-            int8_t fd = (int8_t)arg1;
-            if (fd < 0 || fd >= MAX_OPEN_FILES)
-            {
-                return -1;
-            }
-
-            Task* curr_tsk = get_curr_task();
-            if (curr_tsk->fd_tbl[fd] == NULL)
-            {
-                return -1;
-            }
-
-            vfs_close(curr_tsk->fd_tbl[fd]);
-            curr_tsk->fd_tbl[fd] = NULL;
-            return 0;
+            return -1;
         }
-        case 12:
+
+        curr_tsk->fd_tbl[fd] = f;
+        return fd;
+    }
+    case 11:
+    {
+        // sys_close
+        int8_t fd = (int8_t)arg1;
+        if (fd < 0 || fd >= MAX_OPEN_FILES)
         {
-            // sys_sbrk(int64_t incr_payload)
-            int64_t incr_payload = (int64_t)arg1;
-            Task* curr_tsk = get_curr_task();
+            return -1;
+        }
 
-            uint64_t prev_brk = curr_tsk->heap_end;
-            uint64_t next_brk = prev_brk + incr_payload; 
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk->fd_tbl[fd] == NULL)
+        {
+            return -1;
+        }
 
-            if (incr_payload == 0)
-            {
-                return prev_brk;
-            }
+        vfs_close(curr_tsk->fd_tbl[fd]);
+        curr_tsk->fd_tbl[fd] = NULL;
+        return 0;
+    }
+    case 12:
+    {
+        // sys_sbrk(int64_t incr_payload)
+        int64_t incr_payload = (int64_t)arg1;
+        Task *curr_tsk = get_curr_task();
 
-            // TODO: Support the shrink heap
-            if (incr_payload < 0)
-            {
-                return prev_brk;
-            }
+        uint64_t prev_brk = curr_tsk->heap_end;
+        uint64_t next_brk = prev_brk + incr_payload;
 
-            // old page: (prev_brk - 1) / PAGE_SIZE
-            // new page: (next_brk - 1) / PAGE_SIZE
-            // new page > old page, then map more
-            uint64_t start_page_addr = (prev_brk % PAGE_SIZE) == 0
-                                        ? prev_brk
-                                        : (prev_brk + 0xFFF) & ~0xFFF;
-            uint64_t end_page_addr = (next_brk + 0xFFF) & ~0xFFF;
-
-            for (uint64_t virt_addr = start_page_addr; virt_addr < end_page_addr; virt_addr += PAGE_SIZE)
-            {
-                void *phys_addr_hhdm = pmm_alloc_frame();
-                if (phys_addr_hhdm == NULL)
-                {
-                    kprint("SYS_BRK: out of memory!\n");
-                    return -1;
-                }
-                
-                memset(phys_addr_hhdm, 0, PAGE_SIZE); // Security: Clean the page
-
-                uint64_t phys_addr = (uint64_t)phys_addr_hhdm - hhdm_offset;
-                
-                vmm_map_page(
-                    (uint64_t*)(curr_tsk->pml4 + hhdm_offset),
-                    virt_addr,
-                    (uint64_t)phys_addr,
-                    VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER
-                );
-            }
-            curr_tsk->heap_end = next_brk;
+        if (incr_payload == 0)
+        {
             return prev_brk;
         }
-        case 13:
+
+        // TODO: Support the shrink heap
+        if (incr_payload < 0)
         {
-            // sys_kprint(char* s)
-            char* s = (char*)arg1;
-            if (!verify_usr_access((uint64_t)s, 1))
-            {
-                kprint("SYS_KPRINT: invalid buffer\n");
-                return -1;
-            }
-            if (!verify_usr_access((uint64_t)s, strlen(s) + 1))
-            {
-                kprint("SYS_KPRINT: invalid buffer\n");
-                return -1;
-            }
-            kprint(s);
-            return 0;
+            return prev_brk;
         }
-        case 14:
+
+        // old page: (prev_brk - 1) / PAGE_SIZE
+        // new page: (next_brk - 1) / PAGE_SIZE
+        // new page > old page, then map more
+        uint64_t start_page_addr = (prev_brk % PAGE_SIZE) == 0
+                                       ? prev_brk
+                                       : (prev_brk + 0xFFF) & ~0xFFF;
+        uint64_t end_page_addr = (next_brk + 0xFFF) & ~0xFFF;
+
+        for (uint64_t virt_addr = start_page_addr; virt_addr < end_page_addr; virt_addr += PAGE_SIZE)
         {
-            // sys_get_key()
-            return (uint64_t)keyboard_get_char();
+            void *phys_addr_hhdm = pmm_alloc_frame();
+            if (phys_addr_hhdm == NULL)
+            {
+                kprint("SYS_BRK: out of memory!\n");
+                return -1;
+            }
+
+            memset(phys_addr_hhdm, 0, PAGE_SIZE); // Security: Clean the page
+
+            uint64_t phys_addr = (uint64_t)phys_addr_hhdm - hhdm_offset;
+
+            vmm_map_page(
+                (uint64_t *)(curr_tsk->pml4 + hhdm_offset),
+                virt_addr,
+                (uint64_t)phys_addr,
+                VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
         }
-        case 15:
+        curr_tsk->heap_end = next_brk;
+        return prev_brk;
+    }
+    case 13:
+    {
+        // sys_kprint(char* s)
+        char *s = (char *)arg1;
+        if (!verify_usr_access((uint64_t)s, 1))
         {
-            // sys_chdir(path)
-            char* path = (char*) arg1;
-            if (!verify_usr_access((uint64_t)path, 1))
-            {
-                return -1;
-            }
-
-            Task* curr_tsk = get_curr_task();
-
-            char new_path[256];
-            resolve_path(curr_tsk->cwd, path, new_path);
-            // TODO: check if the directory exists with new vfs_is_dir(path)
-            // now just assumes we always have it
-
-            if (strlen(new_path) >= 255)
-            {
-                return -1;
-            }
-
-            strcpy(curr_tsk->cwd, new_path);
-            return 0;
+            kprint("SYS_KPRINT: invalid buffer\n");
+            return -1;
         }
-        case 16:
+        if (!verify_usr_access((uint64_t)s, strlen(s) + 1))
         {
-            // sys_getcwd(buf, size)
-            char* buf = (char*)arg1;
-            uint64_t size = arg2;
-
-            if (!verify_usr_access((uint64_t)buf, size))
-            {
-                return -1;
-            }
-
-            Task* curr_tsk = get_curr_task();
-            uint64_t len = strlen(curr_tsk->cwd);
-
-            if (size < len + 1)
-            {
-                return -1;
-            }
-
-            strcpy(buf, curr_tsk->cwd);
-            return 0;
+            kprint("SYS_KPRINT: invalid buffer\n");
+            return -1;
         }
-        case 17:
+        kprint(s);
+        return 0;
+    }
+    case 14:
+    {
+        // sys_get_key()
+        return (uint64_t)keyboard_get_char();
+    }
+    case 15:
+    {
+        // sys_chdir(path)
+        char *path = (char *)arg1;
+        if (!verify_usr_access((uint64_t)path, 1))
         {
-            // sys_create_win(win_params)
-
-            WinParams_t* win_params = (WinParams_t*)arg1;
-            
-            if (win_params == NULL)
-            {
-                kprint("Not having window params passed!\n");
-                return -1;
-            }
-
-            if (!verify_usr_access(win_params, sizeof(WinParams_t)))
-            {
-                kprint("Invalid WinParams space!\n");
-                return -1;
-            }
-
-            char w_title[256]; 
-            strncpy(w_title, win_params->title, 256);
-            w_title[255] = 0;
-
-            Task* tsk = get_curr_task();
-            if (tsk->win != NULL)
-            {
-                kprint("Task already has window, on attempt to create win: ");
-                kprint(w_title);
-                kprint("\n");
-
-                return -1;
-            }
-            
-            win_create(win_params->x, win_params->y, win_params->width, win_params->height, w_title, win_params->flags);
-            return 0;
+            return -1;
         }
-        case 18:
+
+        Task *curr_tsk = get_curr_task();
+
+        char new_path[256];
+        resolve_path(curr_tsk->cwd, path, new_path);
+        // TODO: check if the directory exists with new vfs_is_dir(path)
+        // now just assumes we always have it
+
+        if (strlen(new_path) >= 255)
         {
-            // kprint_int(int x )
-            int x = (int)arg1;
-            kprint_int(x);
-            return 0;
+            return -1;
         }
-        case 19: 
+
+        strcpy(curr_tsk->cwd, new_path);
+        return 0;
+    }
+    case 16:
+    {
+        // sys_getcwd(buf, size)
+        char *buf = (char *)arg1;
+        uint64_t size = arg2;
+
+        if (!verify_usr_access((uint64_t)buf, size))
         {
-            // sys_create_term(WinParams_t* win_params)
-            WinParams_t* win_params = (WinParams_t*)arg1;
-            
-            if (win_params == NULL)
-            {
-                kprint("Not having window params passed!\n");
-                return -1;
-            }
-            
-            if (!verify_usr_access(win_params, sizeof(WinParams_t)))
-            {
-                kprint("Invalid WinParams space!\n");
-                return -1;
-            }
-
-            char w_title[256]; 
-            strncpy(w_title, win_params->title, 256);
-            w_title[255] = 0;
-
-            Terminal* new_term = term_create(win_params->x, win_params->y, win_params->width, win_params->height, win_params->height*3, w_title, win_params->flags);
-            if (new_term == NULL)
-            {
-                kprint("Failed to create term in SYSCALL 19\n");
-                return -1;
-            }
-            
-            Task* tsk = get_curr_task();
-            if (tsk == NULL)
-            {
-                kprint("No running while trying to creating terms in SYSCALL 19\n");
-                return -1;
-            }
-            tsk->term = new_term;
-            tsk->win = tsk->term->win;
-            tsk->win->owner_pid = tsk->pid;
-
-            return 0;
+            return -1;
         }
-        default:
+
+        Task *curr_tsk = get_curr_task();
+        uint64_t len = strlen(curr_tsk->cwd);
+
+        if (size < len + 1)
         {
-            kprint("Kernel: unknown sys_num: ");
-            kprint_hex_64(sys_num);
+            return -1;
+        }
+
+        strcpy(buf, curr_tsk->cwd);
+        return 0;
+    }
+    case 17:
+    {
+        // sys_create_win(win_params)
+
+        WinParams_t *win_params = (WinParams_t *)arg1;
+
+        if (win_params == NULL)
+        {
+            kprint("Not having window params passed!\n");
+            return -1;
+        }
+
+        if (!verify_usr_access(win_params, sizeof(WinParams_t)))
+        {
+            kprint("Invalid WinParams space!\n");
+            return -1;
+        }
+
+        char w_title[256];
+        strncpy(w_title, win_params->title, 256);
+        w_title[255] = 0;
+
+        Task *tsk = get_curr_task();
+        if (tsk->win != NULL)
+        {
+            kprint("Task already has window, on attempt to create win: ");
+            kprint(w_title);
             kprint("\n");
-            return 0;
+
+            return -1;
         }
+
+        win_create(win_params->x, win_params->y, win_params->width, win_params->height, w_title, win_params->flags);
+        return 0;
+    }
+    case 18:
+    {
+        // kprint_int(int x )
+        int x = (int)arg1;
+        kprint_int(x);
+        return 0;
+    }
+    case 19:
+    {
+        // sys_create_term(WinParams_t* win_params)
+        WinParams_t *win_params = (WinParams_t *)arg1;
+
+        if (win_params == NULL)
+        {
+            kprint("Not having window params passed!\n");
+            return -1;
+        }
+
+        if (!verify_usr_access(win_params, sizeof(WinParams_t)))
+        {
+            kprint("Invalid WinParams space!\n");
+            return -1;
+        }
+
+        char w_title[256];
+        strncpy(w_title, win_params->title, 256);
+        w_title[255] = 0;
+
+        Terminal *new_term = term_create(win_params->x, win_params->y, win_params->width, win_params->height, win_params->height * 3, w_title, win_params->flags);
+        if (new_term == NULL)
+        {
+            kprint("Failed to create term in SYSCALL 19\n");
+            return -1;
+        }
+
+        Task *tsk = get_curr_task();
+        if (tsk == NULL)
+        {
+            kprint("No running while trying to creating terms in SYSCALL 19\n");
+            return -1;
+        }
+        tsk->term = new_term;
+        tsk->win = tsk->term->win;
+        tsk->win->owner_pid = tsk->pid;
+
+        return 0;
+    }
+    case 22: // sys_getpid()
+    {
+        return get_curr_task_pid();
+    }
+    default:
+    {
+        kprint("Kernel: unknown sys_num: ");
+        kprint_hex_64(sys_num);
+        kprint("\n");
+        return 0;
+    }
     }
 }
 
-int8_t find_free_fd(Task* task)
+int8_t find_free_fd(Task *task)
 {
     for (uint8_t i = 3; i < MAX_OPEN_FILES; i++)
     {
@@ -645,7 +638,7 @@ int8_t find_free_fd(Task* task)
     return -1;
 }
 
-void resolve_path(const char* cwd, const char* inp_path, char* out_buf)
+void resolve_path(const char *cwd, const char *inp_path, char *out_buf)
 {
     char tmp[256];
 
@@ -660,7 +653,7 @@ void resolve_path(const char* cwd, const char* inp_path, char* out_buf)
         // relative path -> cwd + "/" + inp_path
         strcpy(tmp, cwd);
         int len = strlen(tmp);
-        if (len > 1 && tmp[len-1] != '/')
+        if (len > 1 && tmp[len - 1] != '/')
         {
             strcat(tmp, "/");
         }
@@ -691,7 +684,8 @@ void resolve_path(const char* cwd, const char* inp_path, char* out_buf)
             {
                 if (strcmp(name_buf, "..") == 0)
                 {
-                    if (top > 0) top--;
+                    if (top > 0)
+                        top--;
                 }
                 else if (strcmp(name_buf, ".") == 0)
                 {
@@ -708,7 +702,7 @@ void resolve_path(const char* cwd, const char* inp_path, char* out_buf)
                 break;
             }
         }
-        else 
+        else
         {
             name_buf[n_idx++] = c;
         }
