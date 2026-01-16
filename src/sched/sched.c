@@ -115,6 +115,33 @@ void task_context_setup(Task *tsk, uint64_t entry, uint64_t rsp)
     // write_cr3(curr_pml4);
 }
 
+void task_context_reset(Task *tsk, uint64_t entry, uint64_t rsp)
+{
+    uint64_t *sp = (uint64_t *)tsk->kern_stk_top;
+
+    // rebuild the IRETQ frame
+    *(--sp) = NEW_TASK_SS;     // SS
+    *(--sp) = rsp;             // RSP
+    *(--sp) = NEW_TASK_RFLAGS; // RFLAGS
+    *(--sp) = NEW_TASK_CS;     // CS
+    *(--sp) = entry;           // RIP
+    
+    // Push GPRs (rax->r15)
+    for (int i = 0; i < 15; i++)
+    {
+        *(--sp) = 0;
+    }
+
+    *(--sp) = (uint64_t)task_start_stub;
+
+    for (int i = 0; i < 6; i++)
+    {
+        *(--sp) = 0;
+    }
+
+    tsk->kern_stk_rsp = (uint64_t)sp;
+}
+
 /*
  * Frees the kernel Stack to PMM
  * Returns the PML4 page (recursively) to the PMM

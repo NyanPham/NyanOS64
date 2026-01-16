@@ -39,7 +39,8 @@ typedef struct Task
 } Task;
 
 Task *sched_new_task(void);
-void task_context_setup(Task *task, uint64_t entr, uint64_t rsp);
+void task_context_setup(Task *task, uint64_t entry, uint64_t rsp);
+void task_context_reset(Task *task, uint64_t entry, uint64_t rsp);
 void sched_destroy_task(Task *task);
 void sched_unlink_task(Task *task);
 void sched_init(void);

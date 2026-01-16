@@ -294,12 +294,24 @@ int main()
         /* --- EXTERNAL PROGS --- */
         else
         {
-            int pid = exec(argv[0], argv);
-            if (pid < 0)
+            /*
+            In the past, we use the method of spawning the task, pretty much like Windows's CreateProcess.
+            For example: - Shell accepts "hello.elf" -> create a whole new task, that is separated from the shell.
+            Now, we changed it to POSIX way: Fork & Exec.
+            So Shell forks into 2 similar instance, with similar body, memory and soul.
+            The child is the one that actually calls "sys_exec".
+            The "sys_exec" is updated to "brainwash" the running task. In this case, the child is brainwashed.
+            Then "hello.elf" is loaded into the the child.
+            */
+            int pid = fork();
+
+            if (pid == 0)
             {
+                exec(argv[0], argv);
                 print("Command not found: ");
                 print(argv[0]);
                 print("\n");
+                exit(1);
             }
             else
             {

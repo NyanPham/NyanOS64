@@ -80,17 +80,25 @@ void syscall_init(void)
  * | 3         | sys_clear        | Clears the video screen.                   |
  * | 4         | sys_reboot       | Reboots the system.                        |
  * | 5         | sys_list_files   | Lists files in the root directory (TAR).   |
- * | 6         | sys_fork         |   |
+ * | 6         | sys_fork         | Forks the current task.                    |
  * | 7         | sys_exec         | Executes a new program (ELF).              |
  * | 8         | sys_exit         | Terminates the current process.            |
  * | 9         | sys_waitpid      | Waits for a child process to exit.         |
  * | 10        | sys_open         | Opens a file.                              |
  * | 11        | sys_close        | Closes a file descriptor.                  |
  * | 12        | sys_sbrk         | Change program break / allocate user heap  |
- * | 13        | sys_kprint       | Kernel debug print callable from userland |
- * | 14        | sys_get_key      | Reads a key from the keyboard buffer      |
- * | 15        | sys_chdir        | Change directory                          |
- * | 16        | sys_getcwd       | Get current working directory             |
+ * | 13        | sys_kprint       | Kernel debug print callable from userland  |
+ * | 14        | sys_get_key      | Reads a key from the keyboard buffer       |
+ * | 15        | sys_chdir        | Change directory                           |
+ * | 16        | sys_getcwd       | Get current working directory              |
+ * | 13        | sys_kprint       | Kernel debug print callable from userland  |
+ * | 14        | sys_get_key      | Reads a key from the keyboard buffer       |
+ * | 15        | sys_chdir        | Change directory                           |
+ * | 16        | sys_getcwd       | Get current working directory              |
+ * | 17        | sys_create_win   | Creates a GUI window                       |
+ * | 18        | sys_kprint_int   | Kernel debug print integer                 |
+ * | 19        | sys_create_term  | Creates a terminal window                  |
+ * | 22        | sys_getpid       | Gets the current process ID                |
  *
  * @param sys_num The system call number.
  * @return The return value of the system call (typically 0 or bytes processed on success, -1 on error).
@@ -271,15 +279,20 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         uint64_t old_pml4 = read_cr3();
 
-        Task *task = sched_new_task();
-        task->heap_end = USER_HEAP_START;
-        write_cr3(task->pml4);
+        uint64_t new_pml4 = vmm_new_pml4(); // copy kernel space, while the user space is empty
+        if (new_pml4 == 0)
+        {
+            kfree(argv_buf);
+            kfree(argv_list);
+            return -1;
+        }
+        write_cr3(new_pml4);
 
         uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
         uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
 
         vmm_map_page(
-            (uint64_t *)(task->pml4 + hhdm_offset),
+            (uint64_t *)(new_pml4 + hhdm_offset),
             virt_usr_stk_base,
             phys_usr_stk,
             VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
@@ -311,22 +324,27 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         {
             write_cr3(old_pml4);
             kfree(elf_fname);
-            sched_destroy_task(task);
+            vmm_ret_pml4(new_pml4);
             return -1;
         }
 
-        write_cr3(old_pml4);
         kfree(elf_fname);
 
-        task_context_setup(task, entry, rsp_virt_addr);
-        sched_register_task(task);
+        curr_tsk->pml4 = new_pml4;
+        curr_tsk->heap_end = USER_HEAP_START;
 
-        if (task->term != NULL)
+        vmm_free_table((uint64_t *)(old_pml4 + hhdm_offset), 4);
+
+        if (curr_tsk->term != NULL)
         {
-            task->term->child_pid = task->pid;
+            curr_tsk->term->child_pid = curr_tsk->pid;
         }
 
-        return task->pid;
+        task_context_reset(curr_tsk, entry, rsp_virt_addr);
+
+        switch_to_task(NULL, curr_tsk->kern_stk_rsp);
+
+        return 0;
     }
     case 8:
     {
