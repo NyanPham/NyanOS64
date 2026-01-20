@@ -7,15 +7,15 @@
 #include "sched/sched.h"
 #include "../io.h"
 #include "kern_defs.h"
+#include "utils/asm_instrs.h"
 
-
-static vfs_node_t* g_stdin_node = NULL;
-static vfs_node_t* g_stdout_node = NULL;
+static vfs_node_t *g_stdin_node = NULL;
+static vfs_node_t *g_stdout_node = NULL;
 
 /**
  * @brief Writes to the screen
  */
-uint64_t stdout_write(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* buf)
+uint64_t stdout_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
     // video_write can print a null-terminated string
     // here, we're never sure if the buf to print is null-terminated as we depend on size
@@ -40,7 +40,7 @@ uint64_t stdout_write(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t*
 /**
  * @brief Reads nothing
  */
-uint64_t stdout_read(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* buf)
+uint64_t stdout_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
     return 0;
 }
@@ -48,7 +48,7 @@ uint64_t stdout_read(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* 
 /**
  * @brief Reads from the keyboard
  */
-uint64_t stdin_read(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* buf)
+uint64_t stdin_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
     if (size == 0)
     {
@@ -63,14 +63,14 @@ uint64_t stdin_read(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* b
         while (1)
         {
             // clear interrupts to avoid race condition when keyboard fires signals while we're checking
-            asm volatile ("cli");
-            
+            cli();
+
             c = keyboard_get_char();
-            
-            // != 0? -> we have key pressed, exit out of the loop 
+
+            // != 0? -> we have key pressed, exit out of the loop
             if (c != 0)
             {
-                asm volatile ("sti");
+                sti();
                 break;
             }
 
@@ -79,11 +79,11 @@ uint64_t stdin_read(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* b
             if (pid != -1)
             {
                 keyboard_set_waiting(pid);
-            } 
+            }
 
-            asm volatile ("sti");
+            sti();
             sched_block();
-        }   
+        }
 
         buf[i] = c;
 
@@ -99,29 +99,26 @@ uint64_t stdin_read(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* b
 /**
  * @brief Writes nothing
  */
-uint64_t stdin_write(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* buffer)
+uint64_t stdin_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buffer)
 {
     return 0;
 }
 
 static vfs_fs_ops_t stdout_ops =
-{
-    .read = stdout_read,
-    .write = stdout_write,
-    .open = NULL,
-    .close = NULL,
-    .finddir = NULL
-};
+    {
+        .read = stdout_read,
+        .write = stdout_write,
+        .open = NULL,
+        .close = NULL,
+        .finddir = NULL};
 
 static vfs_fs_ops_t stdin_ops =
-{
-    .read = stdin_read,
-    .write = stdin_write,
-    .open = NULL,
-    .close = NULL,
-    .finddir = NULL
-};
-
+    {
+        .read = stdin_read,
+        .write = stdin_write,
+        .open = NULL,
+        .close = NULL,
+        .finddir = NULL};
 
 /**
  * @brief Inits stdio
@@ -141,7 +138,7 @@ void dev_init_stdio()
     g_stdout_node->ops = &stdout_ops;
 }
 
-void dev_attach_stdio(file_handle_t** fd_tbl)
+void dev_attach_stdio(file_handle_t **fd_tbl)
 {
     if (g_stdin_node == NULL || g_stdout_node == NULL)
     {
@@ -149,23 +146,26 @@ void dev_attach_stdio(file_handle_t** fd_tbl)
     }
 
     // FD 0: stdin
-    file_handle_t* h_in = kmalloc(sizeof(file_handle_t));
+    file_handle_t *h_in = kmalloc(sizeof(file_handle_t));
     h_in->node = g_stdin_node;
     h_in->offset = 0;
     h_in->mode = 1; // read mode
+    h_in->ref_count = 1;
     fd_tbl[0] = h_in;
 
     // FD 1: stdout
-    file_handle_t* h_out = kmalloc(sizeof(file_handle_t));
+    file_handle_t *h_out = kmalloc(sizeof(file_handle_t));
     h_out->node = g_stdout_node;
     h_out->offset = 0;
     h_out->mode = 2; // write mode
+    h_out->ref_count = 1;
     fd_tbl[1] = h_out;
 
     // FD 2: stderr (temporary shared with stdout :3 )
-    file_handle_t* h_err = kmalloc(sizeof(file_handle_t));
+    file_handle_t *h_err = kmalloc(sizeof(file_handle_t));
     h_err->node = g_stdout_node;
     h_err->offset = 0;
     h_err->mode = 2;
+    h_err->ref_count = 1;
     fd_tbl[2] = h_err;
 }

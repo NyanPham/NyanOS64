@@ -11,4 +11,12 @@ static inline void sti(void)
     asm volatile("sti");
 }
 
+static void hcf(void)
+{
+    for (;;)
+    {
+        asm("hlt");
+    }
+}
+
 #endif

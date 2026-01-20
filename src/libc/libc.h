@@ -20,6 +20,8 @@ int read(int fd, void *buf, uint64_t count);
 void reboot(void);
 int fork(void);
 int getpid(void);
+int pipe(int pipefd[2]);
+int dup2(int old_fd, int new_fd);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);
@@ -29,6 +31,7 @@ void *memset(void *s, int c, size_t n);
 void *memcpy(void *dest, const void *src, size_t n);
 void *memmove(void *dest, const void *src, size_t n);
 int memcmp(const void *s1, const void *s2, size_t n);
+char *strstr(const char *haystack, const char *needle);
 
 /* Heap manager */
 void *sbrk(int64_t incr_payload);

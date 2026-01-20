@@ -345,6 +345,7 @@ void sched_exit(int code)
     task_to_exit->ret_val = code;
     sched_wake_pid(task_to_exit->parent->pid);
     sched_clean_gui(task_to_exit);
+    sched_clean_fds(task_to_exit);
 
     kprint("Task exited. Switching to next...");
     switch_to_task(NULL, next_tsk->kern_stk_rsp);
@@ -479,6 +480,16 @@ Task *task_factory_fork(Task *parent_tsk)
         return NULL;
     }
 
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        if (child_tsk->fd_tbl[i] != NULL)
+        {
+            vfs_close(child_tsk->fd_tbl[i]);
+            child_tsk->fd_tbl[i] = NULL;
+        }
+    }
+
+
     // copy the memory space
     uint64_t new_pml4 = vmm_copy_hierarchy((uint64_t *)(parent_tsk->pml4 + hhdm_offset), 4);
     child_tsk->pml4 = new_pml4;
@@ -494,6 +505,15 @@ Task *task_factory_fork(Task *parent_tsk)
 
     // copy environment
     memcpy(child_tsk->fd_tbl, parent_tsk->fd_tbl, MAX_OPEN_FILES * sizeof(file_handle_t *));
+    
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        if (child_tsk->fd_tbl[i] == NULL)
+        {
+            continue;
+        }
+        vfs_retain(child_tsk->fd_tbl[i]);
+    }
     memcpy(child_tsk->cwd, parent_tsk->cwd, MAX_CWD_LEN);
     child_tsk->heap_end = parent_tsk->heap_end;
     child_tsk->parent = parent_tsk;
@@ -583,5 +603,17 @@ static void inline sched_clean_gui(Task *tsk)
             win_close(tsk->win);
         }
         tsk->win = NULL;
+    }
+}
+
+static void inline sched_clean_fds(Task *tsk)
+{
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        if (tsk->fd_tbl[i] != NULL)
+        {
+            vfs_close(tsk->fd_tbl[i]);
+            tsk->fd_tbl[i] = NULL;
+        }
     }
 }

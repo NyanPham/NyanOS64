@@ -6,7 +6,7 @@
 #include "drivers/serial.h" // debugging
 #include "../io.h"
 #include "fs/tar.h"
-#include "../string.h"
+#include "./string.h"
 #include "elf.h"
 #include "sched/sched.h"
 #include "mem/kmalloc.h"
@@ -16,6 +16,7 @@
 #include "gui/terminal.h"
 #include "kern_defs.h"
 #include "include/syscall_args.h"
+#include "fs/pipe.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -130,6 +131,12 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             return -1;
         }
 
+        file_handle_t *fh = curr_tsk->fd_tbl[fd];
+        if (fh == NULL)
+        {
+            return -1;
+        }
+
         // validate user access
         if (!verify_usr_access((uint64_t)buf, count))
         {
@@ -137,7 +144,9 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             return -1;
         }
 
-        if (fd == 0 && curr_tsk && curr_tsk->term)
+        bool is_real_stdin = (fh->node && strcmp(fh->node->name, "stdin") == 0);
+
+        if (fd == 0 && curr_tsk && curr_tsk->term && is_real_stdin)
         {
             return term_read(curr_tsk->term, (uint8_t *)buf, count);
         }
@@ -164,6 +173,11 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         {
             return -1;
         }
+        file_handle_t *fh = curr_tsk->fd_tbl[fd];
+        if (fd == NULL)
+        {
+            return -1;
+        }
 
         // validate user access
         if (!verify_usr_access((uint64_t)buf, count))
@@ -172,7 +186,10 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             return -1;
         }
 
-        if (curr_tsk->term != NULL && (fd == 1 || fd == 2))
+        bool is_real_stdout = (fh->node && strcmp(fh->node->name, "stdout") == 0);
+        bool is_real_stderr = (fh->node && strcmp(fh->node->name, "stderr") == 0);
+
+        if (curr_tsk->term != NULL && (is_real_stdout || is_real_stderr))
         {
             for (uint64_t i = 0; i < count; i++)
             {
@@ -181,7 +198,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
             return count;
         }
-        else if (curr_tsk->win != NULL && (fd == 1 || fd == 2))
+        else if (curr_tsk->win != NULL && (is_real_stdout || is_real_stderr))
         {
             for (uint64_t i = 0; i < count; i++)
             {
@@ -628,6 +645,162 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         tsk->win->owner_pid = tsk->pid;
 
         return 0;
+    }
+    case 20:
+    {
+        // SYS_PIPE(fd_ptr)
+        int *fd_ptr = (int *)arg1;
+
+        // Firstly, finds the 2 free spots in the fd_tbl
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk == NULL)
+        {
+            return -1;
+        }
+
+        int8_t read_fd = find_free_fd(curr_tsk);
+        if (read_fd < 0)
+        {
+            return -1;
+        }
+        file_handle_t *handle_read = (file_handle_t *)kmalloc(sizeof(file_handle_t));
+        if (handle_read == NULL)
+        {
+            kprint("SYS_PIPE failed: out of memory\n");
+            return -1;
+        }
+        curr_tsk->fd_tbl[read_fd] = handle_read;
+
+        int8_t write_fd = find_free_fd(curr_tsk);
+        if (write_fd < 0)
+        {
+            curr_tsk->fd_tbl[read_fd] = NULL;
+            kfree(handle_read);
+            return -1;
+        }
+
+        file_handle_t *handle_write = (file_handle_t *)kmalloc(sizeof(file_handle_t));
+        if (handle_write == NULL)
+        {
+            kprint("SYS_PIPE failed: out of memory\n");
+            curr_tsk->fd_tbl[read_fd] = NULL;
+            kfree(handle_read);
+            return -1;
+        }
+
+        curr_tsk->fd_tbl[write_fd] = handle_write;
+
+        Pipe *pipe = (Pipe *)kmalloc(sizeof(Pipe));
+
+        if (pipe == NULL)
+        {
+            // kfree already checks if the ptr is NULL, so it's consise to kfree 3
+            kprint("SYS_PIPE failed: out of memory\n");
+            kfree(handle_read);
+            kfree(handle_write);
+            curr_tsk->fd_tbl[read_fd] = NULL;
+            curr_tsk->fd_tbl[write_fd] = NULL;
+            return -1;
+        }
+
+        // Set up Pipe
+        rb_init(&pipe->buf);
+        pipe->reader_pid = -1;
+        pipe->writer_pid = -1;
+        pipe->flags = READ_OPEN | WRITE_OPEN;
+
+        vfs_node_t *node_read = (vfs_node_t *)kmalloc(sizeof(vfs_node_t));
+        if (node_read == NULL)
+        {
+            kprint("SYS_PIPE failed: out of memory\n");
+            kfree(pipe);
+            kfree(handle_read);
+            kfree(handle_write);
+            curr_tsk->fd_tbl[read_fd] = NULL;
+            curr_tsk->fd_tbl[write_fd] = NULL;
+            return -1;
+        }
+
+        vfs_node_t *node_write = (vfs_node_t *)kmalloc(sizeof(vfs_node_t));
+        if (node_write == NULL)
+        {
+            kprint("SYS_PIPE failed: out of memory\n");
+            kfree(pipe);
+            kfree(handle_read);
+            kfree(handle_write);
+            kfree(node_read);
+            curr_tsk->fd_tbl[read_fd] = NULL;
+            curr_tsk->fd_tbl[write_fd] = NULL;
+            return -1;
+        }
+
+        // Set up Read End
+        strcpy(node_read->name, "pipe_read_end");
+        node_read->flags = VFS_CHAR_DEVICE | VFS_NODE_AUTOFREE;
+        node_read->length = 0;
+        node_read->device_data = pipe;
+        node_read->ops = &pipe_read_ops;
+
+        // Set up Write End
+        strcpy(node_write->name, "pipe_write_end");
+        node_write->flags = VFS_CHAR_DEVICE | VFS_NODE_AUTOFREE;
+        node_write->length = 0;
+        node_write->device_data = pipe;
+        node_write->ops = &pipe_write_ops;
+
+        // Setup handles
+        handle_read->node = node_read;
+        handle_read->mode = 1; // any works
+        handle_read->offset = 0;
+        handle_read->ref_count = 1;
+
+        handle_write->node = node_write;
+        handle_write->mode = 2; // any works
+        handle_write->offset = 0;
+        handle_write->ref_count = 1;
+
+        fd_ptr[0] = read_fd;
+        fd_ptr[1] = write_fd;
+
+        return 0;
+    }
+    case 21:
+    {
+        // sys_dup2(old_fd, new_fd)
+        int old_fd = (int)arg1;
+        int new_fd = (int)arg2;
+
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk == NULL)
+        {
+            return -1;
+        }
+
+        if (old_fd < 0 || old_fd >= MAX_OPEN_FILES || new_fd < 0 || new_fd >= MAX_OPEN_FILES)
+        {
+            return -1;
+        }
+
+        if (curr_tsk->fd_tbl[old_fd] == NULL)
+        {
+            return -1;
+        }
+
+        if (old_fd == new_fd)
+        {
+            return new_fd;
+        }
+
+        if (curr_tsk->fd_tbl[new_fd] != NULL)
+        {
+            vfs_close(curr_tsk->fd_tbl[new_fd]);
+            curr_tsk->fd_tbl[new_fd] = NULL;
+        }
+
+        curr_tsk->fd_tbl[new_fd] = curr_tsk->fd_tbl[old_fd];
+        vfs_retain(curr_tsk->fd_tbl[new_fd]);
+
+        return new_fd;
     }
     case 22: // sys_getpid()
     {

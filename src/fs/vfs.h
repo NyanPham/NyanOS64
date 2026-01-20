@@ -8,6 +8,7 @@
 #define VFS_DIRECTORY 0x02
 #define VFS_CHAR_DEVICE 0x03
 #define VFS_BLOCK_DEVICE 0x04
+#define VFS_NODE_AUTOFREE 0x10
 
 struct vfs_node;
 
@@ -35,10 +36,12 @@ typedef struct file_handle
     vfs_node_t* node;
     uint64_t offset;
     uint32_t mode;
+    int ref_count;
 } file_handle_t;
 
 void vfs_init();
 int vfs_mount(const char* path, vfs_node_t* fs_root);
+void vfs_retain(file_handle_t *file);
 file_handle_t* vfs_open(const char* filename, uint32_t mode);
 void vfs_close(file_handle_t* file);
 uint64_t vfs_read(file_handle_t* file, uint64_t size, uint8_t* buffer);

@@ -1,7 +1,7 @@
 #include "vfs.h"
 #include "mem/kmalloc.h"
 #include "drivers/serial.h"
-#include "string.h"
+#include "../string.h"
 
 static vfs_node_t* g_fs_root = NULL;
 
@@ -14,6 +14,15 @@ int vfs_mount(const char* path, vfs_node_t* fs_root)
 {
     g_fs_root = fs_root;
     return 0;
+}
+
+void vfs_retain(file_handle_t *file)
+{
+    if (file == NULL)
+    {
+        return;
+    }
+    file->ref_count++;
 }
 
 file_handle_t* vfs_open(const char* filename, uint32_t mode)
@@ -52,6 +61,7 @@ file_handle_t* vfs_open(const char* filename, uint32_t mode)
     fhandle->node = node;
     fhandle->offset = 0;
     fhandle->mode = mode;
+    fhandle->ref_count = 1;
 
     return fhandle;
 }
@@ -100,12 +110,19 @@ void vfs_close(file_handle_t* file)
         return;
     }
 
+    file->ref_count--;
+
+    if (file->ref_count > 0)
+    {
+        return;
+    }
+
     if (file->node && file->node->ops && file->node->ops->close)
     {
         file->node->ops->close(file->node);
     }
 
-    if (file->node != g_fs_root) 
+    if (file->node && file->node != g_fs_root && (file->node->flags & VFS_NODE_AUTOFREE)) 
     {
         kfree((void*)file->node);
     }

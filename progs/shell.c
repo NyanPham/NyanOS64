@@ -1,5 +1,6 @@
 #include "libc/libc.h"
 #include "syscall_args.h"
+#include "string.h"
 
 #define HIST_MAX 10
 #define CMD_MAX_LEN 128
@@ -14,6 +15,337 @@ void clear_curr_line(int len)
     {
         print("\b \b");
     }
+}
+
+int cmd_hi()
+{
+    print("Hi! How are you doing?\n");
+}
+
+int cmd_reboot()
+{
+    print("Rebooting...\n");
+    reboot();
+}
+
+int cmd_exit()
+{
+    exit(0);
+}
+
+int cmd_clear()
+{
+    print("\033[2J\033[1;1H");
+}
+
+int cmd_ls()
+{
+    char *list = (char *)malloc(512);
+    list_files(list, 512);
+
+    char *curr_list = list;
+    while (*curr_list != 0)
+    {
+        print(curr_list);
+        print("\n");
+        curr_list += strlen(curr_list) + 1;
+    }
+
+    free(list);
+    return 0;
+}
+
+int cmd_pwd()
+{
+    char cwd[128];
+    if (getcwd(cwd, 128))
+    {
+        print(cwd);
+        print("\n");
+    }
+    else
+    {
+        print("Error: Cannot get current directory.\n");
+    }
+}
+
+int cmd_cd(int argc, char **argv)
+{
+    if (argc < 2)
+    {
+        print("Usage: cd <path>\n");
+    }
+    else
+    {
+        if (chdir(argv[1]) != 0)
+        {
+            print("cd: no such file or directory: ");
+            print(argv[1]);
+            print("\n");
+        }
+    }
+}
+
+int cmd_cat(int argc, char **argv)
+{
+    int fd = 0; // stdin is default
+
+    if (argc >= 2)
+    {
+        fd = open(argv[1], O_RDONLY);
+        if (fd < 0)
+        {
+            print("cat: cannot open file: ");
+            print(argv[1]);
+            print("\n");
+            return 1;
+        }
+    }
+
+    char buf[64];
+    int n;
+    while ((n = read(fd, buf, 63)) > 0)
+    {
+        buf[n] = 0;
+        print(buf);
+    }
+    if (argc >= 2)
+    {
+        close(fd);
+    }
+    return 0;
+}
+
+int cmd_help()
+{
+    print("NyanOS Shell Commands:\n");
+    print("  hi             Say hello\n");
+    print("  reboot         Reboot the system\n");
+    print("  exit           Exit the shell\n");
+    print("  clear          Clear screen\n");
+    print("  ls             List files (rootfs)\n");
+    print("  pwd            Print working directory\n");
+    print("  cd <path>      Change directory\n");
+    print("  cat <file>     Print file contents\n");
+    print("  help           Show this message\n");
+    print("  <program>      Run executable (e.g. snake.elf)\n");
+}
+
+int cmd_grep(int argc, char **argv)
+{
+    if (argc < 2)
+    {
+        print("Usage: grep <keyword>\n");
+        return 1;
+    }
+
+    char *keyword = argv[1];
+    char line_buf[256];
+    int line_idx = 0;
+    char c;
+    int n;
+
+    while ((n = read(0, &c, 1)) > 0)
+    {
+        if (c == '\n')
+        {
+            line_buf[line_idx] = 0;
+            if (strstr(line_buf, keyword) != NULL)
+            {
+                print(line_buf);
+                print("\n");
+            }
+            line_idx = 0;
+            continue;
+        }
+        if (line_idx < 255)
+        {
+            line_buf[line_idx++] = c;
+        }
+    }
+
+    if (line_idx > 0)
+    {
+        line_buf[line_idx] = 0;
+        if (strstr(line_buf, keyword) != NULL)
+        {
+            print(line_buf);
+            print("\n");
+        }
+    }
+
+    return 0;
+}
+
+int exec_cmd(int argc, char **argv)
+{
+    /* --- HI --- */
+    if (strncmp(argv[0], "hi", 3) == 0)
+    {
+        cmd_hi();
+        return 1;
+    }
+
+    /* --- REBOOT --- */
+    else if (strncmp(argv[0], "reboot", 7) == 0)
+    {
+        cmd_reboot();
+        return 1;
+    }
+
+    /* --- EXIT --- */
+    else if (strncmp(argv[0], "exit", 5) == 0)
+    {
+        cmd_exit();
+        return 1;
+    }
+
+    /* --- CLEAR --- */
+    else if (strncmp(argv[0], "clear", 6) == 0)
+    {
+        cmd_clear();
+        return 1;
+    }
+
+    /* --- LS --- */
+    else if (strncmp(argv[0], "ls", 3) == 0)
+    {
+        cmd_ls();
+        return 1;
+    }
+
+    /* --- PWD --- */
+    else if (strncmp(argv[0], "pwd", 4) == 0)
+    {
+        cmd_pwd();
+        return 1;
+    }
+
+    /* --- CD --- */
+    else if (strncmp(argv[0], "cd", 3) == 0)
+    {
+        cmd_cd(argc, argv);
+        return 1;
+    }
+
+    /* --- CAT --- */
+    else if (strncmp(argv[0], "cat", 4) == 0)
+    {
+        cmd_cat(argc, argv);
+        return 1;
+    }
+
+    /* --- HELP --- */
+    else if (strncmp(argv[0], "help", 5) == 0)
+    {
+        cmd_help();
+        return 1;
+    }
+
+    /* --- GREP --- */
+    else if (strncmp(argv[0], "grep", 5) == 0)
+    {
+        cmd_grep(argc, argv);
+        return 1;
+    }
+
+    return 0;
+}
+
+int find_pipe(char **argv)
+{
+    int i = 0;
+    while (1)
+    {
+        if (argv[i] == NULL)
+        {
+            return -1;
+        }
+        if (strncmp(argv[i], "|", 2) == 0)
+        {
+            return i;
+        }
+        i++;
+    }
+}
+
+void run_pipe(char **left_argv, char **right_argv)
+{
+    int pipe_fd[2]; // just to remind myself, 0 is read_end, 1 is write_end :/
+
+    if (pipe(pipe_fd) < 0)
+    {
+        print("Pipe failed\n");
+        return;
+    }
+
+    // first, we fork to handle the writer on the left
+    int pid1 = fork();
+    if (pid1 == 0)
+    {
+        // CHILD 1: Writer
+
+        close(pipe_fd[0]);   // close the reader, we don't need it for writing.
+        dup2(pipe_fd[1], 1); // connect writer to the stdout
+        close(pipe_fd[1]);   // safe to close the writer then, stdout now is the writer
+
+        int argc = 0;
+        while (left_argv[argc] != NULL)
+        {
+            argc++;
+        }
+
+        if (exec_cmd(argc, left_argv))
+        {
+            exit(0);
+        }
+        else
+        {
+            exec(left_argv[0], left_argv);
+            print("Command not found: ");
+            print(left_argv[0]);
+            print("\n");
+            exit(1);
+        }
+    }
+
+    // then, we fork to handle the reader on the right
+    int pid2 = fork();
+    if (pid2 == 0)
+    {
+        // CHILD 2: Reader
+
+        close(pipe_fd[1]);   // close the writer, we don't need it for reading.
+        dup2(pipe_fd[0], 0); // connect reader to the stdin
+        close(pipe_fd[0]);   // safe to close the reader then, stdin now is the reader
+
+        int argc = 0;
+        while (right_argv[argc] != NULL)
+        {
+            argc++;
+        }
+
+        if (exec_cmd(argc, right_argv))
+        {
+            exit(0);
+        }
+        else
+        {
+            exec(right_argv[0], right_argv);
+            print("Command not found: ");
+            print(right_argv[0]);
+            print("\n");
+            exit(1);
+        }
+    }
+
+    close(pipe_fd[0]);
+    close(pipe_fd[1]);
+
+    int stat1 = 0;
+    int stat2 = 0;
+    waitpid(pid1, &stat1);
+    waitpid(pid2, &stat2);
 }
 
 int parse_cmd(char *line, char **argv)
@@ -171,138 +503,18 @@ int main()
         }
 
         // process the cmd
-
-        /* --- HI --- */
-        if (strncmp(argv[0], "hi", 2) == 0)
+        int pipe_idx = find_pipe(argv);
+        if (pipe_idx >= 0)
         {
-            print("Hi! How are you doing?\n");
+            argv[pipe_idx] = NULL;
+            char **right_argv = &argv[pipe_idx + 1];
+            run_pipe(argv, right_argv);
+            continue;
         }
 
-        /* --- REBOOT --- */
-        else if (strncmp(argv[0], "reboot", 6) == 0)
+        if (!exec_cmd(argc, argv))
         {
-            print("Rebooting...\n");
-            reboot();
-        }
-
-        /* --- EXIT --- */
-        else if (strncmp(argv[0], "exit", 4) == 0)
-        {
-            exit(0);
-            break;
-        }
-
-        /* --- CLEAR --- */
-        else if (strncmp(argv[0], "clear", 5) == 0)
-        {
-            print("\033[2J\033[1;1H");
-        }
-
-        /* --- LS --- */
-        else if (strncmp(argv[0], "ls", 2) == 0)
-        {
-            char *list = (char *)malloc(512);
-            list_files(list, 512);
-
-            while (*list != 0)
-            {
-                print(list);
-                print("\n");
-                list += strlen(list) + 1;
-            }
-        }
-
-        /* --- PWD --- */
-        else if (strncmp(argv[0], "pwd", 3) == 0)
-        {
-            if (getcwd(cwd, 128))
-            {
-                print(cwd);
-                print("\n");
-            }
-            else
-            {
-                print("Error: Cannot get current directory.\n");
-            }
-        }
-
-        /* --- CD --- */
-        else if (strncmp(argv[0], "cd", 2) == 0)
-        {
-            if (argc < 2)
-            {
-                print("Usage: cd <path>\n");
-            }
-            else
-            {
-                if (chdir(argv[1]) != 0)
-                {
-                    print("cd: no such file or directory: ");
-                    print(argv[1]);
-                    print("\n");
-                }
-            }
-        }
-
-        /* --- CAT --- */
-        else if (strncmp(argv[0], "cat", 3) == 0)
-        {
-            if (argc < 2)
-            {
-                print("Usage: cat <filename>\n");
-            }
-            else
-            {
-                int fd = open(argv[1], O_RDONLY);
-                if (fd < 0)
-                {
-                    print("cat: cannot open file: ");
-                    print(argv[1]);
-                    print("\n");
-                }
-                else
-                {
-                    char buf[64];
-                    int n;
-                    while ((n = read(fd, buf, 63)) > 0)
-                    {
-                        buf[n] = 0;
-                        print(buf);
-                    }
-                    print("\n");
-                    close(fd);
-                }
-            }
-        }
-
-        /* --- HELP --- */
-        else if (strncmp(argv[0], "help", 4) == 0)
-        {
-            print("NyanOS Shell Commands:\n");
-            print("  hi             Say hello\n");
-            print("  reboot         Reboot the system\n");
-            print("  exit           Exit the shell\n");
-            print("  clear          Clear screen\n");
-            print("  ls             List files (rootfs)\n");
-            print("  pwd            Print working directory\n");
-            print("  cd <path>      Change directory\n");
-            print("  cat <file>     Print file contents\n");
-            print("  help           Show this message\n");
-            print("  <program>      Run executable (e.g. snake.elf)\n");
-        }
-
-        /* --- EXTERNAL PROGS --- */
-        else
-        {
-            /*
-            In the past, we use the method of spawning the task, pretty much like Windows's CreateProcess.
-            For example: - Shell accepts "hello.elf" -> create a whole new task, that is separated from the shell.
-            Now, we changed it to POSIX way: Fork & Exec.
-            So Shell forks into 2 similar instance, with similar body, memory and soul.
-            The child is the one that actually calls "sys_exec".
-            The "sys_exec" is updated to "brainwash" the running task. In this case, the child is brainwashed.
-            Then "hello.elf" is loaded into the the child.
-            */
+            /* --- EXTERNAL PROGS --- */
             int pid = fork();
 
             if (pid == 0)

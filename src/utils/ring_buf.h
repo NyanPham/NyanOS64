@@ -45,4 +45,9 @@ static inline int rb_pop(RingBuf *rb, char *c)
     return 1;
 }
 
+static inline int rb_is_full(RingBuf *rb)
+{
+    return ((rb->head + 1) % RING_BUF_SIZE) == rb->tail;
+}
+
 #endif

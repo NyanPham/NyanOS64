@@ -11,6 +11,7 @@
 #include "drivers/serial.h" // debugging
 #include "kern_defs.h"
 #include "cursor.h"
+#include "utils/asm_instrs.h"
 
 #include <stddef.h>
 
@@ -274,14 +275,14 @@ bool check_win_drag(Window *win, int64_t mouse_x, int64_t mouse_y)
 
 void win_paint()
 {
-    asm volatile("cli");
+    cli();
     Window *curr = g_win_list;
     while (curr != NULL)
     {
         win_draw(curr);
         curr = curr->next;
     }
-    asm volatile("sti");
+    sti();
 }
 
 Window *get_win_at(int64_t mx, int64_t my)

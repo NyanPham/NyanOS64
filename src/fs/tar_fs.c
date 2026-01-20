@@ -1,7 +1,7 @@
 #include "vfs.h"
 #include "tar.h"
 #include "mem/kmalloc.h"
-#include "string.h"
+#include "./string.h"
 #include "drivers/serial.h"
 
 uint64_t tar_vfs_read(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* buffer);

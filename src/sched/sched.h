@@ -60,5 +60,6 @@ Task *task_factory_create(uint64_t entry, uint64_t rsp);
 Task *task_factory_fork(Task* parent);
 
 static void inline sched_clean_gui(Task *tsk);
+static void inline sched_clean_fds(Task *tsk);
 
 #endif

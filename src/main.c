@@ -23,13 +23,14 @@
 #include "fs/vfs.h"
 #include "fs/tar_fs.h"
 #include "cpu.h"
-#include "string.h"
+#include "./string.h"
 #include "gui/window.h"
 #include "gui/cursor.h"
 #include "gui/terminal.h"
 #include "event/event.h"
 #include "kern_defs.h"
 #include "include/signal.h"
+#include "utils/asm_instrs.h"
 
 #define USER_STACK_VIRT_ADDR 0x500000
 
@@ -58,19 +59,6 @@ __attribute__((used, section(".limine_requests"))) static volatile struct limine
 __attribute__((used, section(".limine_requests_start"))) static volatile uint64_t limine_requests_start_marker[4] = LIMINE_REQUESTS_START_MARKER;
 
 __attribute__((used, section(".limine_requests_end"))) static volatile uint64_t limine_requests_end_marker[2] = LIMINE_REQUESTS_END_MARKER;
-
-static void hcf(void)
-{
-    for (;;)
-    {
-        asm("hlt");
-    }
-}
-
-static void sti(void)
-{
-    asm volatile("sti");
-}
 
 static void hlt(void)
 {
