@@ -61,10 +61,6 @@ __attribute__((used, section(".limine_requests_start"))) static volatile uint64_
 
 __attribute__((used, section(".limine_requests_end"))) static volatile uint64_t limine_requests_end_marker[2] = LIMINE_REQUESTS_END_MARKER;
 
-static void hlt(void)
-{
-    asm volatile("hlt");
-}
 
 extern uint64_t hhdm_offset;
 extern uint64_t *kern_pml4;
@@ -155,6 +151,7 @@ void kmain(void)
     dev_init_stdio();
     sched_init();
     ata_identify();
+    sti();
 
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1)
@@ -251,8 +248,6 @@ void kmain(void)
     // if we reach here, at least the inits above,
     // if not working, don't crash our OS :)))
     kprint("Hello from the kernel side!\n");
-
-    sti();
 
     cursor_init();
     while (true)

@@ -1,6 +1,10 @@
 #include "ata.h"
 #include "../io.h"
 #include "./serial.h"
+#include "drivers/apic.h"
+#include "arch/irq.h"
+#include "utils/asm_instrs.h"
+
 #include <stdint.h>
 
 #define ATA_PRIMARY_IO 0x1F0
@@ -20,6 +24,30 @@
 #define ATA_SR_DRQ 0x08 // data request ready
 #define ATA_SR_ERR 0x01 // error
 
+static volatile uint8_t ata_drq = 0;
+static volatile uint8_t ata_err = 0;
+
+static void ata_handler()
+{
+    // when this is called, the hard disk 
+    // has already, so the BSY bit is switched off.
+    // we care ERR and DRQ only.
+
+    uint8_t stat = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+    
+    if (stat & ATA_SR_ERR)
+    {
+        // todo handle error
+    }
+
+    if (stat & ATA_SR_DRQ)
+    {
+        ata_drq = 1;
+    }
+    
+    lapic_send_eoi();
+}
+
 void ata_wait_bsy()
 {
     while (inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_BSY)
@@ -38,6 +66,8 @@ void ata_wait_drq()
 
 void ata_identify()
 {
+    ata_wait_bsy();
+
     // select the Master drive
     // by sending 0xE0 to port 0x1F6
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xE0);
@@ -77,6 +107,9 @@ void ata_identify()
     kprint("Model: ");
     kprint(model);
     kprint("\n");
+
+    outb(ATA_PRIMARY_CTRL, 0x00);
+    register_irq_handler(0xe, ata_handler);
 }
 
 void ata_string_swap(char *dst, uint16_t *src, int len)
@@ -92,6 +125,9 @@ void ata_string_swap(char *dst, uint16_t *src, int len)
 
 void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count)
 {
+    ata_wait_bsy();
+    ata_drq = 0;
+
     // split the lba (28-bit) to the 4 ports
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, lba & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (lba >> 8) & 0xFF);
@@ -110,9 +146,12 @@ void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count)
     // in a loop
     for (int i = 0; i < sec_count; i++)
     {
-        ata_wait_bsy();
-        ata_wait_drq();
+        while (!ata_drq)
+        {
+            hlt();
+        }
         
+        ata_drq = 0;
         for (int j = 0; j < 256; j++)
         {
             dst[i * 256 + j] = inw(ATA_PRIMARY_IO + ATA_REG_DATA);
@@ -122,6 +161,13 @@ void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count)
 
 void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count)
 {
+    if (sec_count == 0)
+    {
+        return;
+    }
+    ata_wait_bsy();
+    ata_drq = 0;
+
     // split the lba (28-bit) to the 4 ports
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, lba & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (lba >> 8) & 0xFF);
@@ -138,16 +184,27 @@ void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count)
     // it sets the drq, and clears the bsy to continue
     // writing to the next sector, we need to wait 
     // in a loop
-    for (int i = 0; i < sec_count; i++)
+
+    ata_wait_drq();
+    for (int j = 0; j < 256; j++)
     {
-        ata_wait_bsy();
-        ata_wait_drq();
-        
+        outw(ATA_PRIMARY_IO + ATA_REG_DATA, src[j]);
+    }
+
+    for (int i = 1; i < sec_count; i++)
+    {
+        while (!ata_drq)
+        {
+            hlt();
+        }
+        ata_drq = 0;
         for (int j = 0; j < 256; j++)
         {
             outw(ATA_PRIMARY_IO + ATA_REG_DATA, src[i * 256 + j]);
         }
     }
+
+    ata_wait_bsy();
 }
 
 /*

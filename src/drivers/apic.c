@@ -105,8 +105,9 @@ void apic_init()
     /*
     Each irq takes up 2 32-bit regs.
     The offset to calc starts at 0x10.
-    For keyboard: irq 1 -> 0x10 + (1 * 2) = 0x12 and 0x13
-    For mouse: irq 12 -> 0x10 + (12 * 2) = 0x28 and 0x29
+    For keyboard: irq 1 -> 0x10 + (1 * 2) = 0x12 and 0x13; and the vector num is 0x20 + 1 = 0x21
+    For mouse: irq 12 -> 0x10 + (12 * 2) = 0x28 and 0x29; and the vector num is 0x20 + 12 = 0x2c
+    For ata primary: irq 14 -> 0x10 + (14 * 2) = 0x2c and 0x2d; and the vector num is 0x20 + 14 = 0x2e
     */
 
     // wire up the keyboard handler
@@ -114,14 +115,12 @@ void apic_init()
     ioapic_write(0x13, 0x00);
 
     // wire up the mouse handle 
-   
     ioapic_write(0x28, 0x2c);
     ioapic_write(0x29, 0x00);
 
-    // Test, read the I/O APIC chip's version at the 0x01 reg
-    // kprint("Version is: ");
-    // kprint_hex_32(ioapic_read(0x01));
-    // kprint("\n");
+    // wire up the ata primary
+    ioapic_write(0x2c, 0x2e);
+    ioapic_write(0x2d, 0x00);
 }
 
 void lapic_send_eoi(void)
