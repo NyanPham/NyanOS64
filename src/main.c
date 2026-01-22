@@ -16,6 +16,7 @@
 #include "drivers/legacy/pit.h"
 #include "drivers/legacy/pic.h"
 #include "drivers/video.h"
+#include "drivers/ata.h"
 #include "sched/sched.h"
 #include "fs/dev.h"
 #include "elf.h"
@@ -153,6 +154,7 @@ void kmain(void)
     syscall_init();
     dev_init_stdio();
     sched_init();
+    ata_identify();
 
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1)
@@ -161,9 +163,6 @@ void kmain(void)
     }
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     video_init(fb);
-
-    // int rect_x = 0;
-    // int rect_y = 200;
 
     /*=========== Test the initramfs ===========*/
     if (module_request.response == NULL || module_request.response->module_count < 1)
@@ -207,6 +206,46 @@ void kmain(void)
     {
         kprint("Warning: ROOTFS.TAR not found.\n");
     }
+
+    // test ata
+    uint16_t buf[256];
+    ata_read_sectors(buf, 0, 1);
+
+    kprint("Last word of sector 0: ");
+    if (buf[255] == 0xAA55)
+    {
+        kprint("Valid Boot Sector found (0xAA55)!\n");
+    }
+    else
+    {
+        kprint("Invalid Boot Sector / Read Error.\n");
+    }
+
+    uint16_t write_buf[256];
+    for (int i = 0; i < 256; i++)
+    {
+        write_buf[i] = 0;
+    }
+    char *msg = "Hello NyanOS! Writing to disk...";
+    char *ptr = (char*)write_buf;
+    int k = 0;
+    while (msg[k] != 0)
+    {
+        ptr[k] = msg[k];
+        k++;
+    }
+    ata_write_sectors(write_buf, 1, 1);
+    kprint("Write command sent to Sector 1.\n");
+
+    uint16_t read_buf[256];
+    for (int i = 0; i < 256; i++)
+    {
+        read_buf[i] = 0;
+    }
+    ata_read_sectors(read_buf, 1, 1);
+    kprint("Read back from Sector 1: ");
+    kprint((char*)read_buf);
+    kprint("\n");
 
     // test kprint
     // if we reach here, at least the inits above,

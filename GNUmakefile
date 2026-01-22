@@ -145,7 +145,7 @@ image: bin/$(OUTPUT) limine/limine limine.conf shell.elf rootfs.tar
 .PHONY: run
 run: image
 	@echo "Booting $(IMAGE_FILE) with QEMU..."
-	@qemu-system-x86_64 -hda $(IMAGE_FILE) -serial stdio
+	@qemu-system-x86_64 -hda $(IMAGE_FILE) -hdb hdd.img -serial stdio
 
 .PHONY: debug
 debug: image
