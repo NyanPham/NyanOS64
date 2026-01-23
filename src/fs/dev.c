@@ -12,6 +12,8 @@
 static vfs_node_t *g_stdin_node = NULL;
 static vfs_node_t *g_stdout_node = NULL;
 
+static vfs_node_t *g_dev_list = NULL;
+
 /**
  * @brief Writes to the screen
  */
@@ -168,4 +170,36 @@ void dev_attach_stdio(file_handle_t **fd_tbl)
     h_err->mode = 2;
     h_err->ref_count = 1;
     fd_tbl[2] = h_err;
+}
+
+int dev_register(vfs_node_t *node)
+{
+    if (node == NULL)
+    {
+        return -1;
+    }
+    node->next = g_dev_list;
+    g_dev_list = node;
+    
+    return 0;
+}
+
+vfs_node_t *dev_find(const char *name)
+{
+    vfs_node_t *curr_dev = g_dev_list;
+    while (curr_dev != NULL)
+    {
+        if (strcmp(curr_dev->name, name) == 0)
+        {
+            return curr_dev;
+        }
+        curr_dev = curr_dev->next;
+    }
+
+    return NULL;
+}
+
+void dev_init()
+{
+
 }

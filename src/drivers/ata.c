@@ -4,6 +4,10 @@
 #include "drivers/apic.h"
 #include "arch/irq.h"
 #include "utils/asm_instrs.h"
+#include "mem/vmm.h"
+#include "mem/kmalloc.h"
+#include "fs/dev.h"
+#include "../string.h"
 
 #include <stdint.h>
 
@@ -29,12 +33,12 @@ static volatile uint8_t ata_err = 0;
 
 static void ata_handler()
 {
-    // when this is called, the hard disk 
+    // when this is called, the hard disk
     // has already, so the BSY bit is switched off.
     // we care ERR and DRQ only.
 
     uint8_t stat = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
-    
+
     if (stat & ATA_SR_ERR)
     {
         // todo handle error
@@ -44,7 +48,7 @@ static void ata_handler()
     {
         ata_drq = 1;
     }
-    
+
     lapic_send_eoi();
 }
 
@@ -88,7 +92,7 @@ void ata_identify()
         return;
     }
 
-    // wait 
+    // wait
     ata_wait_bsy();
     ata_wait_drq();
 
@@ -139,10 +143,10 @@ void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count)
 
     // send the 0x20 command to read the sec count
     outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, 0x20);
-    
+
     // because each sector is done being read
     // it sets the drq, and clears the bsy to continue
-    // reading the next sector, we need to wait 
+    // reading the next sector, we need to wait
     // in a loop
     for (int i = 0; i < sec_count; i++)
     {
@@ -150,7 +154,7 @@ void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count)
         {
             hlt();
         }
-        
+
         ata_drq = 0;
         for (int j = 0; j < 256; j++)
         {
@@ -179,10 +183,10 @@ void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count)
 
     // send the 0x30 command to write the sec count
     outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, 0x30);
-    
+
     // because each sector is done being written to
     // it sets the drq, and clears the bsy to continue
-    // writing to the next sector, we need to wait 
+    // writing to the next sector, we need to wait
     // in a loop
 
     ata_wait_drq();
@@ -205,6 +209,113 @@ void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count)
     }
 
     ata_wait_bsy();
+}
+
+/**
+ * @brief Reads with vfs-based
+ */
+static void ata_fs_read(uint8_t *dst, int count, int offset)
+{
+    uint32_t start_lba = offset / 512;
+    int end_offset = offset + count - 1;
+    uint32_t end_lba = end_offset / 512;
+    int num_sectors = end_lba - start_lba + 1;
+    if (num_sectors > 255)
+    {
+        kprint("ATA_FS_READ failed: num_sectors is too large\n");
+        return;
+    }
+    int sec_offset = offset % 512;
+    uint16_t *tmp_buf = vmm_alloc(sizeof(uint16_t) * num_sectors * 256);
+    if (tmp_buf == NULL)
+    {
+        kprint("ATA_FS_READ failed: OOM\n");
+        return;
+    }
+
+    /* READ */
+    ata_read_sectors(tmp_buf, start_lba, num_sectors);
+    memcpy(dst, (uint8_t *)tmp_buf + sec_offset, count);
+    vmm_free(tmp_buf);
+}
+
+/**
+ * @brief Writes with vfs-based
+ * Uses the read-modify-write strategy
+ */
+static void ata_fs_write(uint8_t *data, int count, int offset)
+{
+    uint32_t start_lba = offset / 512;
+    int end_offset = offset + count - 1;
+    uint32_t end_lba = end_offset / 512;
+    int num_sectors = end_lba - start_lba + 1;
+    if (num_sectors > 255)
+    {
+        kprint("ATA_FS_WRITE failed: num_sectors is too large\n");
+        return;
+    }
+    int sec_offset = offset % 512;
+    uint16_t *tmp_buf = vmm_alloc(sizeof(uint16_t) * num_sectors * 256);
+    if (tmp_buf == NULL)
+    {
+        kprint("ATA_FS_WRITE failed: OOM\n");
+        return;
+    }
+
+    /* READ */
+    ata_read_sectors(tmp_buf, start_lba, num_sectors);
+
+    /* MODIFY */
+    memcpy((uint8_t *)tmp_buf + sec_offset, data, count);
+
+    /* WRITE */
+    ata_write_sectors(tmp_buf, start_lba, num_sectors);
+    vmm_free(tmp_buf);
+}
+
+vfs_fs_ops_t ata_ops = {
+    .read = ata_fs_read,
+    .write = ata_fs_write,
+    .open = NULL,
+    .close = NULL,
+    .finddir = NULL,
+};
+
+void ata_fs_init()
+{
+    vfs_node_t *root = (vfs_node_t *)kmalloc(sizeof(vfs_node_t));
+    strncpy(root->name, "hda", 4);
+    root->ops = &ata_ops;
+
+    dev_register(root);
+    ata_probe_partitions();
+}
+
+void ata_probe_partitions()
+{
+    uint8_t mbr_buf[512];
+    ata_read_sectors((uint16_t*)mbr_buf, 0, 1);
+
+    PartitionEntry *part_list = (PartitionEntry *)&mbr_buf[0x1BE];
+    for (int i = 0; i < 4; i++)
+    {
+        PartitionEntry part_entry = part_list[i];
+        if (part_entry.partition_type != 0)
+        {
+            kprint("Partition ");
+            kprint_int(i);
+            kprint(":\n");
+            kprint("  Type: ");
+            kprint_int(part_entry.partition_type);
+            kprint("\n");
+            kprint("  Start LBA: ");
+            kprint_int(part_entry.lba_start);
+            kprint("\n");
+            kprint("  Size: ");
+            kprint_int(part_entry.total_sectors);
+            kprint("\n");
+        }
+    }
 }
 
 /*

@@ -10,5 +10,8 @@ uint64_t stdin_write(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* 
 
 void dev_init_stdio(void);
 void dev_attach_stdio(file_handle_t** fd_tbl);
+int dev_register(vfs_node_t *node);
+vfs_node_t *dev_find(const char *name);
+void dev_init(void);
 
 #endif

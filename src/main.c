@@ -152,6 +152,7 @@ void kmain(void)
     sched_init();
     ata_identify();
     sti();
+    ata_fs_init();
 
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1)
@@ -204,7 +205,7 @@ void kmain(void)
         kprint("Warning: ROOTFS.TAR not found.\n");
     }
 
-    // test ata
+    // start test raw ata
     uint16_t buf[256];
     ata_read_sectors(buf, 0, 1);
 
@@ -243,6 +244,24 @@ void kmain(void)
     kprint("Read back from Sector 1: ");
     kprint((char*)read_buf);
     kprint("\n");
+    // end test raw ata
+
+    // start test vfa ata
+    file_handle_t *disk = vfs_open("/dev/hda", 2);
+    if (disk) 
+    {
+        kprint("Opened /dev/hda successfully via VFS!\n");
+
+        char *vfs_msg = "Hell from VFS abstraction layer!";
+        vfs_write(disk, strlen(vfs_msg), (uint8_t*)vfs_msg);
+        kprint("Wrote to disk via VFS.\n");
+        vfs_close(disk);
+    }
+    else 
+    {
+        kprint("Failed to open /dev/hda via VFS.\n");
+    }
+    // end test vfa ata
 
     // test kprint
     // if we reach here, at least the inits above,

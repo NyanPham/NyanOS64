@@ -29,6 +29,7 @@ typedef struct vfs_node
 
     vfs_fs_ops_t* ops;
     void* device_data;
+    struct vfs_node *next;
 } vfs_node_t;
 
 typedef struct file_handle
