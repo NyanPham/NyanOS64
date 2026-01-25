@@ -153,3 +153,8 @@ void vfs_close(file_handle_t *file)
 
     kfree((void *)file);
 }
+
+void vfs_seek(file_handle_t *file, uint64_t new_offset)
+{
+    file->offset = new_offset;
+}

@@ -61,7 +61,6 @@ __attribute__((used, section(".limine_requests_start"))) static volatile uint64_
 
 __attribute__((used, section(".limine_requests_end"))) static volatile uint64_t limine_requests_end_marker[2] = LIMINE_REQUESTS_END_MARKER;
 
-
 extern uint64_t hhdm_offset;
 extern uint64_t *kern_pml4;
 extern uint64_t kern_stk_ptr;
@@ -106,7 +105,7 @@ static inline void spawn_shell()
         uint64_t shell_rsp = USER_STACK_TOP - sizeof(uint64_t);
 
         write_cr3(curr_pml4);
-        
+
         task_context_setup(shell_task, shell_entry, shell_rsp);
         sched_register_task(shell_task);
     }
@@ -150,7 +149,7 @@ void kmain(void)
     syscall_init();
     dev_init_stdio();
     sched_init();
-    ata_identify();
+    ata_identify(1);
     sti();
     ata_fs_init();
 
@@ -206,60 +205,72 @@ void kmain(void)
     }
 
     // start test raw ata
-    uint16_t buf[256];
-    ata_read_sectors(buf, 0, 1);
+    // uint16_t buf[256];
+    // ata_read_sectors(buf, 0, 1);
 
-    kprint("Last word of sector 0: ");
-    if (buf[255] == 0xAA55)
-    {
-        kprint("Valid Boot Sector found (0xAA55)!\n");
-    }
-    else
-    {
-        kprint("Invalid Boot Sector / Read Error.\n");
-    }
+    // kprint("Last word of sector 0: ");
+    // if (buf[255] == 0xAA55)
+    // {
+    //     kprint("Valid Boot Sector found (0xAA55)!\n");
+    // }
+    // else
+    // {
+    //     kprint("Invalid Boot Sector / Read Error.\n");
+    // }
 
-    uint16_t write_buf[256];
-    for (int i = 0; i < 256; i++)
-    {
-        write_buf[i] = 0;
-    }
-    char *msg = "Hello NyanOS! Writing to disk...";
-    char *ptr = (char*)write_buf;
-    int k = 0;
-    while (msg[k] != 0)
-    {
-        ptr[k] = msg[k];
-        k++;
-    }
-    ata_write_sectors(write_buf, 1, 1);
-    kprint("Write command sent to Sector 1.\n");
+    // uint16_t write_buf[256];
+    // for (int i = 0; i < 256; i++)
+    // {
+    //     write_buf[i] = 0;
+    // }
+    // char *msg = "Hello NyanOS! Writing to disk...";
+    // char *ptr = (char*)write_buf;
+    // int k = 0;
+    // while (msg[k] != 0)
+    // {
+    //     ptr[k] = msg[k];
+    //     k++;
+    // }
+    // ata_write_sectors(write_buf, 1, 1);
+    // kprint("Write command sent to Sector 1.\n");
 
-    uint16_t read_buf[256];
-    for (int i = 0; i < 256; i++)
-    {
-        read_buf[i] = 0;
-    }
-    ata_read_sectors(read_buf, 1, 1);
-    kprint("Read back from Sector 1: ");
-    kprint((char*)read_buf);
-    kprint("\n");
+    // uint16_t read_buf[256];
+    // for (int i = 0; i < 256; i++)
+    // {
+    //     read_buf[i] = 0;
+    // }
+    // ata_read_sectors(read_buf, 1, 1);
+    // kprint("Read back from Sector 1: ");
+    // kprint((char*)read_buf);
+    // kprint("\n");
     // end test raw ata
 
     // start test vfa ata
-    file_handle_t *disk = vfs_open("/dev/hda", 2);
-    if (disk) 
+    file_handle_t *disk = vfs_open("/dev/hda1", 2);
+    if (disk)
     {
-        kprint("Opened /dev/hda successfully via VFS!\n");
+        kprint("Opened /dev/hda1 successfully via VFS!\n");
+        kprint("Length: ");
+        kprint_int(disk->node->length);
+        kprint("\n");
 
-        char *vfs_msg = "Hell from VFS abstraction layer!";
-        vfs_write(disk, strlen(vfs_msg), (uint8_t*)vfs_msg);
+        char read_buf[256];
+        vfs_read(disk, 60, (uint8_t *)read_buf);
+        read_buf[60] = '\0';
+        kprint("Current Disk Content: ");
+        kprint(read_buf);
+        kprint("\n");
+
+        vfs_seek(disk, 0);
+
+        char *vfs_msg = "NYANOS PERSISTENCE TEST SUCCESS\0";
+        vfs_write(disk, strlen(vfs_msg) + 1, (uint8_t *)vfs_msg);
         kprint("Wrote to disk via VFS.\n");
         vfs_close(disk);
     }
-    else 
+    else
     {
-        kprint("Failed to open /dev/hda via VFS.\n");
+        kprint("Failed to open /dev/hda1 via VFS.\n");
     }
     // end test vfa ata
 

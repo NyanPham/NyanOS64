@@ -15,14 +15,22 @@ typedef struct
     uint32_t total_sectors;
 } __attribute__((packed)) PartitionEntry;
 
+typedef struct
+{
+    uint32_t start_lba; // base
+    uint32_t sector_count; // size/limit
+    uint8_t drive_sel;
+} __attribute__((packed)) PartitionDevice;
+
 void ata_wait_bsy(void);
 void ata_wait_drq(void);
-void ata_identify(void);
+void ata_identify(uint8_t drive_sel);
 void ata_string_swap(char *dst, uint16_t *src, int len);
-void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count);
-void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count);
+void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count, uint8_t drive_sel);
+void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count, uint8_t drive_sel);
 void ata_fs_init(void);
-void ata_probe_partitions(void);
+void ata_probe_partitions(uint8_t drive_sel);
+void ata_flush(void);
 
 extern vfs_fs_ops_t ata_ops;
 

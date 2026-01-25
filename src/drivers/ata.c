@@ -28,6 +28,8 @@
 #define ATA_SR_DRQ 0x08 // data request ready
 #define ATA_SR_ERR 0x01 // error
 
+#define SECTOR_SIZE 0x200
+
 static volatile uint8_t ata_drq = 0;
 static volatile uint8_t ata_err = 0;
 
@@ -68,13 +70,13 @@ void ata_wait_drq()
     }
 }
 
-void ata_identify()
+void ata_identify(uint8_t drive_sel)
 {
     ata_wait_bsy();
 
     // select the Master drive
     // by sending 0xE0 to port 0x1F6
-    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xE0);
+    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, drive_sel & 0xFF);
 
     // set other ports to 0
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, 0);
@@ -127,7 +129,7 @@ void ata_string_swap(char *dst, uint16_t *src, int len)
     *dst = '\0';
 }
 
-void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count)
+void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count, uint8_t drive_sel)
 {
     ata_wait_bsy();
     ata_drq = 0;
@@ -136,7 +138,7 @@ void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count)
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, lba & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (lba >> 8) & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_HI, (lba >> 16) & 0xFF);
-    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, ((lba >> 24) & 0x0F) | 0xE0);
+    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, ((lba >> 24) & 0x0F) | (drive_sel & 0xFF));
 
     // send the sec_count to the sector count port
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, sec_count);
@@ -163,7 +165,7 @@ void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count)
     }
 }
 
-void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count)
+void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count, uint8_t drive_sel)
 {
     if (sec_count == 0)
     {
@@ -176,7 +178,7 @@ void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count)
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, lba & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (lba >> 8) & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_HI, (lba >> 16) & 0xFF);
-    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, ((lba >> 24) & 0x0F) | 0xE0);
+    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, ((lba >> 24) & 0x0F) | (drive_sel & 0xFF));
 
     // send the sec_count to the sector count port
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, sec_count);
@@ -209,68 +211,79 @@ void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count)
     }
 
     ata_wait_bsy();
+    ata_flush();
 }
 
 /**
  * @brief Reads with vfs-based
  */
-static void ata_fs_read(uint8_t *dst, int count, int offset)
+static uint64_t ata_fs_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
-    uint32_t start_lba = offset / 512;
-    int end_offset = offset + count - 1;
-    uint32_t end_lba = end_offset / 512;
-    int num_sectors = end_lba - start_lba + 1;
+    PartitionDevice *part_dev = (PartitionDevice *)node->device_data;
+    uint64_t dev_lba = part_dev->start_lba;
+    uint64_t sec_idx = offset / SECTOR_SIZE;
+    uint64_t start_lba = dev_lba + sec_idx;
+    uint64_t end_offset = offset + size - 1;
+    uint64_t end_lba = dev_lba + end_offset / SECTOR_SIZE;
+    uint64_t num_sectors = end_lba - start_lba + 1;
     if (num_sectors > 255)
     {
         kprint("ATA_FS_READ failed: num_sectors is too large\n");
-        return;
+        return 0;
     }
-    int sec_offset = offset % 512;
+    int sec_offset = offset % SECTOR_SIZE;
     uint16_t *tmp_buf = vmm_alloc(sizeof(uint16_t) * num_sectors * 256);
     if (tmp_buf == NULL)
     {
         kprint("ATA_FS_READ failed: OOM\n");
-        return;
+        return 0;
     }
 
     /* READ */
-    ata_read_sectors(tmp_buf, start_lba, num_sectors);
-    memcpy(dst, (uint8_t *)tmp_buf + sec_offset, count);
+    ata_read_sectors(tmp_buf, start_lba, num_sectors, part_dev->drive_sel);
+    memcpy(buf, (uint8_t *)tmp_buf + sec_offset, size);
     vmm_free(tmp_buf);
+
+    return size;
 }
 
 /**
  * @brief Writes with vfs-based
  * Uses the read-modify-write strategy
  */
-static void ata_fs_write(uint8_t *data, int count, int offset)
+static uint64_t ata_fs_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
-    uint32_t start_lba = offset / 512;
-    int end_offset = offset + count - 1;
-    uint32_t end_lba = end_offset / 512;
-    int num_sectors = end_lba - start_lba + 1;
+    PartitionDevice *part_dev = (PartitionDevice *)node->device_data;
+    uint64_t dev_lba = part_dev->start_lba;
+    uint64_t sec_idx = offset / SECTOR_SIZE;
+    uint64_t start_lba = dev_lba + sec_idx;
+    uint64_t end_offset = offset + size - 1;
+    uint64_t end_lba = dev_lba + end_offset / SECTOR_SIZE;
+    uint64_t num_sectors = end_lba - start_lba + 1;
     if (num_sectors > 255)
     {
         kprint("ATA_FS_WRITE failed: num_sectors is too large\n");
-        return;
+        return 0;
     }
-    int sec_offset = offset % 512;
+    int sec_offset = offset % SECTOR_SIZE;
     uint16_t *tmp_buf = vmm_alloc(sizeof(uint16_t) * num_sectors * 256);
     if (tmp_buf == NULL)
     {
         kprint("ATA_FS_WRITE failed: OOM\n");
-        return;
+        return 0;
     }
 
     /* READ */
-    ata_read_sectors(tmp_buf, start_lba, num_sectors);
+    ata_read_sectors(tmp_buf, start_lba, num_sectors, part_dev->drive_sel);
 
     /* MODIFY */
-    memcpy((uint8_t *)tmp_buf + sec_offset, data, count);
+    memcpy((uint8_t *)tmp_buf + sec_offset, buf, size);
 
     /* WRITE */
-    ata_write_sectors(tmp_buf, start_lba, num_sectors);
+    ata_write_sectors(tmp_buf, start_lba, num_sectors, part_dev->drive_sel);
     vmm_free(tmp_buf);
+
+    return size;
 }
 
 vfs_fs_ops_t ata_ops = {
@@ -284,17 +297,40 @@ vfs_fs_ops_t ata_ops = {
 void ata_fs_init()
 {
     vfs_node_t *root = (vfs_node_t *)kmalloc(sizeof(vfs_node_t));
-    strncpy(root->name, "hda", 4);
+    if (root == NULL)
+    {
+        kprint("ATA_FS_INIT failed: OOM\n");
+        return;
+    }
+
+    PartitionDevice *part_dev = (PartitionDevice *)kmalloc(sizeof(PartitionDevice));
+    if (part_dev == NULL)
+    {
+        kprint("ATA_FS_INIT failed: OOM\n");
+        kfree(root);
+        return;
+    }
+
+    uint8_t tgt_drive = 0xF0; // test the data persistence on Slave
+
+    part_dev->start_lba = 0;
+    part_dev->sector_count = 0;
+    part_dev->drive_sel = tgt_drive;
+
+    strncpy(root->name, tgt_drive == 0xF0 ? "hda1" : "hda", 4);
+    root->flags = VFS_BLOCK_DEVICE;
+    root->length = 0xFFFFFFFF;
     root->ops = &ata_ops;
+    root->device_data = (void *)part_dev;
 
     dev_register(root);
-    ata_probe_partitions();
+    ata_probe_partitions(tgt_drive);
 }
 
-void ata_probe_partitions()
+void ata_probe_partitions(uint8_t drive_sel)
 {
-    uint8_t mbr_buf[512];
-    ata_read_sectors((uint16_t*)mbr_buf, 0, 1);
+    uint8_t mbr_buf[SECTOR_SIZE];
+    ata_read_sectors((uint16_t *)mbr_buf, 0, 1, drive_sel);
 
     PartitionEntry *part_list = (PartitionEntry *)&mbr_buf[0x1BE];
     for (int i = 0; i < 4; i++)
@@ -302,20 +338,57 @@ void ata_probe_partitions()
         PartitionEntry part_entry = part_list[i];
         if (part_entry.partition_type != 0)
         {
-            kprint("Partition ");
-            kprint_int(i);
-            kprint(":\n");
-            kprint("  Type: ");
-            kprint_int(part_entry.partition_type);
-            kprint("\n");
-            kprint("  Start LBA: ");
-            kprint_int(part_entry.lba_start);
-            kprint("\n");
-            kprint("  Size: ");
-            kprint_int(part_entry.total_sectors);
-            kprint("\n");
+            vfs_node_t *hda = (vfs_node_t *)kmalloc(sizeof(vfs_node_t));
+            if (hda == NULL)
+            {
+                kprint("ATA_PROBE_PARTITIONS failed: OOM\n");
+                return;
+            }
+
+            PartitionDevice *part_dev = (PartitionDevice *)kmalloc(sizeof(PartitionDevice));
+            if (part_dev == NULL)
+            {
+                kprint("ATA_PROBE_PARTITIONS failed: OOM\n");
+                kfree(hda);
+                return;
+            }
+
+            part_dev->start_lba = part_entry.lba_start;
+            part_dev->sector_count = part_entry.total_sectors;
+            part_dev->drive_sel = drive_sel;
+
+            strncpy(hda->name, "hda", 3);
+            hda->name[3] = '1' + i;
+            hda->name[4] = '\0';
+
+            hda->flags = VFS_BLOCK_DEVICE;
+            hda->length = (uint64_t)part_entry.total_sectors * SECTOR_SIZE;
+            hda->ops = &ata_ops;
+            hda->device_data = (void *)part_dev;
+
+            dev_register(hda);
+
+            // kprint("Partition ");
+            // kprint_int(i);
+            // kprint(":\n");
+            // kprint("  Type: ");
+            // kprint_int(part_entry.partition_type);
+            // kprint("\n");
+            // kprint("  Start LBA: ");
+            // kprint_int();
+            // kprint("\n");
+            // kprint("  Size: ");
+            // kprint_int(part_entry.total_sectors);
+            // kprint("\n");
         }
     }
+}
+
+void ata_flush()
+{
+    ata_wait_bsy();
+    outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, 0xE7);
+    ata_wait_bsy();
 }
 
 /*
