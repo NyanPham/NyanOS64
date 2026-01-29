@@ -66,13 +66,29 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
     vfs_node_t *node = g_fs_root->ops->finddir(g_fs_root, filename);
     if (node == NULL)
     {
-        kprint("Node not found!\n");
-        return NULL;
+        if ((mode & O_CREAT) && (g_fs_root->ops->create))
+        {
+            kprint("Creating node for file: ");
+            kprint(filename);
+            kprint("\n");
+
+            node = g_fs_root->ops->create(g_fs_root, filename, mode);
+            if (node == NULL)
+            {
+                kprint("Node not found and cannot be created!\n");
+                return NULL;
+            }
+        }
+        else
+        {
+            kprint("Node not found!\n");
+            return NULL;
+        }
     }
 
     if (node->ops && node->ops->open)
     {
-        node->ops->open(node);
+        node->ops->open(node, mode);
     }
 
     file_handle_t *fhandle = kmalloc(sizeof(file_handle_t));

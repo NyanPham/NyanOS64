@@ -5,19 +5,21 @@
 
 #include <stdint.h>
 
-typedef struct 
-{   
-    uint8_t boot_indicator; // 0x80 = bootable, 0x00 = nope
+#define SECTOR_SIZE 0x200
+
+typedef struct
+{
+    uint8_t boot_indicator;  // 0x80 = bootable, 0x00 = nope
     uint8_t starting_chs[3]; // legacy, ignore
-    uint8_t partition_type; // e.g. 0x83 is Linux
-    uint8_t ending_chs[3]; // legacy, ignore
+    uint8_t partition_type;  // e.g. 0x83 is Linux
+    uint8_t ending_chs[3];   // legacy, ignore
     uint32_t lba_start;
     uint32_t total_sectors;
 } __attribute__((packed)) PartitionEntry;
 
 typedef struct
 {
-    uint32_t start_lba; // base
+    uint32_t start_lba;    // base
     uint32_t sector_count; // size/limit
     uint8_t drive_sel;
 } __attribute__((packed)) PartitionDevice;

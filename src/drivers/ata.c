@@ -28,8 +28,6 @@
 #define ATA_SR_DRQ 0x08 // data request ready
 #define ATA_SR_ERR 0x01 // error
 
-#define SECTOR_SIZE 0x200
-
 static volatile uint8_t ata_drq = 0;
 static volatile uint8_t ata_err = 0;
 
@@ -75,8 +73,8 @@ void ata_identify(uint8_t drive_sel)
     ata_wait_bsy();
 
     // select the Master drive
-    // by sending 0xE0 to port 0x1F6
-    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, drive_sel & 0xFF);
+    // by sending 0xA0, or 0xE0 to port 0x1F6
+    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0 | ((drive_sel & 0x01) << 4));
 
     // set other ports to 0
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, 0);
@@ -138,7 +136,7 @@ void ata_read_sectors(uint16_t *dst, uint32_t lba, uint8_t sec_count, uint8_t dr
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, lba & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (lba >> 8) & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_HI, (lba >> 16) & 0xFF);
-    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, ((lba >> 24) & 0x0F) | (drive_sel & 0xFF));
+    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, ((lba >> 24) & 0x0F) | 0xE0 | ((drive_sel & 0x01) << 4)); // 0xE0 sets bits 5, 6, and 7 (LBA mode)
 
     // send the sec_count to the sector count port
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, sec_count);
@@ -178,7 +176,7 @@ void ata_write_sectors(uint16_t *src, uint32_t lba, uint8_t sec_count, uint8_t d
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, lba & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (lba >> 8) & 0xFF);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_HI, (lba >> 16) & 0xFF);
-    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, ((lba >> 24) & 0x0F) | (drive_sel & 0xFF));
+    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, ((lba >> 24) & 0x0F) | 0xE0 | ((drive_sel & 0x01) << 4));
 
     // send the sec_count to the sector count port
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, sec_count);
@@ -286,9 +284,14 @@ static uint64_t ata_fs_write(vfs_node_t *node, uint64_t offset, uint64_t size, u
     return size;
 }
 
+static vfs_node_t *ata_fs_create(vfs_node_t *parent, const char *name, uint32_t flags)
+{
+}
+
 vfs_fs_ops_t ata_ops = {
     .read = ata_fs_read,
     .write = ata_fs_write,
+    .create = ata_fs_create,
     .open = NULL,
     .close = NULL,
     .finddir = NULL,
@@ -311,7 +314,7 @@ void ata_fs_init()
         return;
     }
 
-    uint8_t tgt_drive = 0xF0; // test the data persistence on Slave
+    uint8_t tgt_drive = 1; // test the data persistence on Slave
 
     part_dev->start_lba = 0;
     part_dev->sector_count = 0;

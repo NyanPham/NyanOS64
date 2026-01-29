@@ -20,7 +20,7 @@ uint64_t pipe_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *bu
         if (rb_pop(&pipe->buf, &c))
         {
             buf[read_count++] = c;
-            
+
             if (pipe->writer_pid != -1)
             {
                 sched_wake_pid(pipe->writer_pid);
@@ -102,7 +102,7 @@ uint64_t pipe_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *b
             }
             sti();
         }
-        else 
+        else
         {
             // read_end is closed
             return write_count;
@@ -124,7 +124,7 @@ uint64_t pipe_close_reader(vfs_node_t *node)
     }
 
     return 0;
-}   
+}
 
 uint64_t pipe_close_writer(vfs_node_t *node)
 {
@@ -138,16 +138,22 @@ uint64_t pipe_close_writer(vfs_node_t *node)
     }
 
     return 0;
-}   
+}
 
 vfs_fs_ops_t pipe_read_ops = {
     .read = pipe_read,
     .write = NULL,
     .close = pipe_close_reader,
+    .open = NULL,
+    .finddir = NULL,
+    .create = NULL,
 };
 
 vfs_fs_ops_t pipe_write_ops = {
     .read = NULL,
     .write = pipe_write,
     .close = pipe_close_writer,
+    .open = NULL,
+    .finddir = NULL,
+    .create = NULL,
 };

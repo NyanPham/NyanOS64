@@ -112,7 +112,9 @@ static vfs_fs_ops_t stdout_ops =
         .write = stdout_write,
         .open = NULL,
         .close = NULL,
-        .finddir = NULL};
+        .finddir = NULL,
+        .create = NULL,
+};
 
 static vfs_fs_ops_t stdin_ops =
     {
@@ -120,7 +122,9 @@ static vfs_fs_ops_t stdin_ops =
         .write = stdin_write,
         .open = NULL,
         .close = NULL,
-        .finddir = NULL};
+        .finddir = NULL,
+        .create = NULL,
+};
 
 /**
  * @brief Inits stdio
@@ -180,7 +184,7 @@ int dev_register(vfs_node_t *node)
     }
     node->next = g_dev_list;
     g_dev_list = node;
-    
+
     return 0;
 }
 
@@ -201,5 +205,4 @@ vfs_node_t *dev_find(const char *name)
 
 void dev_init()
 {
-
 }

@@ -23,6 +23,7 @@
 #include "fs/tar.h"
 #include "fs/vfs.h"
 #include "fs/tar_fs.h"
+#include "fs/fat32.h"
 #include "cpu.h"
 #include "./string.h"
 #include "gui/window.h"
@@ -204,75 +205,23 @@ void kmain(void)
         kprint("Warning: ROOTFS.TAR not found.\n");
     }
 
-    // start test raw ata
-    // uint16_t buf[256];
-    // ata_read_sectors(buf, 0, 1);
+    fat32_init(0, 1);
+    kprint("List Root Directory:\n");
+    fat32_list_root();
 
-    // kprint("Last word of sector 0: ");
-    // if (buf[255] == 0xAA55)
-    // {
-    //     kprint("Valid Boot Sector found (0xAA55)!\n");
-    // }
-    // else
-    // {
-    //     kprint("Invalid Boot Sector / Read Error.\n");
-    // }
-
-    // uint16_t write_buf[256];
-    // for (int i = 0; i < 256; i++)
-    // {
-    //     write_buf[i] = 0;
-    // }
-    // char *msg = "Hello NyanOS! Writing to disk...";
-    // char *ptr = (char*)write_buf;
-    // int k = 0;
-    // while (msg[k] != 0)
-    // {
-    //     ptr[k] = msg[k];
-    //     k++;
-    // }
-    // ata_write_sectors(write_buf, 1, 1);
-    // kprint("Write command sent to Sector 1.\n");
-
-    // uint16_t read_buf[256];
-    // for (int i = 0; i < 256; i++)
-    // {
-    //     read_buf[i] = 0;
-    // }
-    // ata_read_sectors(read_buf, 1, 1);
-    // kprint("Read back from Sector 1: ");
-    // kprint((char*)read_buf);
-    // kprint("\n");
-    // end test raw ata
-
-    // start test vfa ata
-    file_handle_t *disk = vfs_open("/dev/hda1", 2);
-    if (disk)
+    DirectoryEntry test_entry;
+    kprint("Searching TEST.TXT...\n");
+    if (fat32_find_file("TEST.TXT", &test_entry) == 0)
     {
-        kprint("Opened /dev/hda1 successfully via VFS!\n");
-        kprint("Length: ");
-        kprint_int(disk->node->length);
-        kprint("\n");
-
-        char read_buf[256];
-        vfs_read(disk, 60, (uint8_t *)read_buf);
-        read_buf[60] = '\0';
-        kprint("Current Disk Content: ");
-        kprint(read_buf);
-        kprint("\n");
-
-        vfs_seek(disk, 0);
-
-        char *vfs_msg = "NYANOS PERSISTENCE TEST SUCCESS\0";
-        vfs_write(disk, strlen(vfs_msg) + 1, (uint8_t *)vfs_msg);
-        kprint("Wrote to disk via VFS.\n");
-        vfs_close(disk);
+        kprint("SUCCESS: Found TEST.TXT!\n");
+        kprint("File Size: ");
+        kprint_int(test_entry.file_size);
+        kprint(" bytes\n");
     }
     else
     {
-        kprint("Failed to open /dev/hda1 via VFS.\n");
+        kprint("FAILED: TEST.TXT not found.\n");
     }
-    // end test vfa ata
 
     // test kprint
     // if we reach here, at least the inits above,
