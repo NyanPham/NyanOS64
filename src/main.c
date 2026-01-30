@@ -205,22 +205,27 @@ void kmain(void)
         kprint("Warning: ROOTFS.TAR not found.\n");
     }
 
-    fat32_init(0, 1);
-    kprint("List Root Directory:\n");
-    fat32_list_root();
+    vfs_node_t *fat_root = fat32_init_fs(0, 1);
+    vfs_mount("/data", fat_root);
 
-    DirectoryEntry test_entry;
-    kprint("Searching TEST.TXT...\n");
-    if (fat32_find_file("TEST.TXT", &test_entry) == 0)
+    file_handle_t *f1 = vfs_open("/data/TEST.TXT", 0);
+    if (f1)
     {
-        kprint("SUCCESS: Found TEST.TXT!\n");
-        kprint("File Size: ");
-        kprint_int(test_entry.file_size);
-        kprint(" bytes\n");
+        kprint("VFS TEST: Success! Found TEST.TXT\n");
+
+        // read some bytes
+        char buf[65];
+        uint64_t bytes_read = vfs_read(f1, 64, (uint8_t *)buf);
+        buf[bytes_read] = 0;
+        kprint("Content: ");
+        kprint(buf);
+        kprint("\n");
+
+        vfs_close(f1);
     }
     else
     {
-        kprint("FAILED: TEST.TXT not found.\n");
+        kprint("VFS TEST: Failed to open TEST.TXT\n");
     }
 
     // test kprint

@@ -1,11 +1,18 @@
 #include "fat32.h"
 #include "drivers/ata.h"
 #include "string.h"
+#include "fs/vfs.h"
+#include "mem/kmalloc.h"
+#include "mem/vmm.h"
 #include "drivers/serial.h"
+#include "utils/math.h"
+
+#define EOC 0x0FFFFFF8
 
 static fat32_bpb g_bpb;
 static uint32_t data_start_lba;
 static uint8_t g_drive_sel;
+static uint64_t g_bytes_per_cluster;
 
 // According to FAT32, Cluster 2 is the first cluster
 static inline uint32_t fat32_cluster_to_lba(uint32_t cluster)
@@ -19,7 +26,129 @@ static inline uint32_t fat32_cluster_to_lba(uint32_t cluster)
     return data_start_lba + (cluster - 2) * (uint32_t)g_bpb.sectors_per_cluster;
 }
 
-void fat32_init(uint32_t partition_lba, uint8_t drive_sel)
+/* START: VFS */
+typedef struct
+{
+    uint32_t first_cluster;
+} fat32_node_data;
+
+extern vfs_fs_ops_t fat32_ops;
+
+static vfs_node_t *fat32_finddir(vfs_node_t *node, const char *name)
+{
+    const char *file_name = name;
+    int len = strlen(name);
+    for (int i = len - 1; i >= 0; i--)
+    {
+        if (name[i] == '/')
+        {
+            file_name = name + i + 1;
+            break;
+        }
+    }
+
+    DirectoryEntry dir_entry;
+    if (fat32_find_file(file_name, &dir_entry) < 0)
+    {
+        return NULL;
+    }
+
+    vfs_node_t *new_node = (vfs_node_t *)kmalloc(sizeof(vfs_node_t));
+    if (new_node == NULL)
+    {
+        kprint("FAT32_FINDDIR failed: OOM\n");
+        return NULL;
+    }
+
+    fat32_node_data *node_data = (fat32_node_data *)kmalloc(sizeof(fat32_node_data));
+    if (node_data == NULL)
+    {
+        kprint("FAT32_FINDDIR failed: OOM\n");
+        kfree(node);
+        return NULL;
+    }
+
+    strcpy(new_node->name, file_name);
+    new_node->length = dir_entry.file_size;
+    new_node->flags = VFS_FILE;
+
+    node_data->first_cluster = (dir_entry.first_cluster_high << 0x10) | dir_entry.first_cluster_low;
+    new_node->device_data = node_data;
+    new_node->ops = &fat32_ops;
+
+    return new_node;
+}
+
+static uint64_t fat32_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buffer)
+{
+    if (offset >= node->length)
+    {
+        return 0;
+    }
+
+    if (offset + size >= node->length)
+    {
+        size = node->length - offset;
+    }
+
+    fat32_node_data *node_data = (fat32_node_data *)(node->device_data);
+    uint32_t curr_cluster = node_data->first_cluster;
+
+    for (int i = 0; i < offset / g_bytes_per_cluster; i++)
+    {
+        curr_cluster = fat32_read_fat(curr_cluster);
+    }
+
+    uint32_t read_offset = offset % g_bytes_per_cluster;
+
+    uint8_t *tmp_buf = (uint8_t *)vmm_alloc(g_bytes_per_cluster);
+    if (tmp_buf == NULL)
+    {
+        kprint("FAT32_READ failed: OOM\n");
+        return 0;
+    }
+
+    uint64_t rem_size = size;
+    while (rem_size > 0)
+    {
+        uint64_t copy_size = uint64_min(rem_size, g_bytes_per_cluster - read_offset);
+        uint32_t lba = fat32_cluster_to_lba(curr_cluster);
+        ata_read_sectors(tmp_buf, lba, g_bpb.sectors_per_cluster, g_drive_sel);
+        memcpy(buffer, tmp_buf + read_offset, copy_size);
+        buffer += copy_size;
+        rem_size -= copy_size;
+        read_offset = 0;
+        curr_cluster = fat32_read_fat(curr_cluster);
+    }
+
+    vmm_free(tmp_buf);
+    return size;
+}
+
+vfs_fs_ops_t fat32_ops = {
+    .read = fat32_read,
+    .write = NULL, // todo
+    .finddir = fat32_finddir,
+    .open = NULL,
+    .close = NULL,
+    .create = NULL, // todo
+};
+
+/* END: VFS */
+
+uint32_t fat32_read_fat(uint32_t cluster)
+{
+    uint32_t fat_offset = cluster * sizeof(uint32_t);
+    uint32_t fat_sector = g_bpb.reserved_sectors + (fat_offset / g_bpb.bytes_per_sector);
+    uint32_t ent_offset = fat_offset % g_bpb.bytes_per_sector;
+
+    uint16_t tmp_buf[SECTOR_SIZE / 2];
+    ata_read_sectors(tmp_buf, fat_sector, 1, g_drive_sel);
+
+    return *((uint32_t *)((uint8_t *)tmp_buf + ent_offset)) & 0x0FFFFFFF;
+}
+
+vfs_node_t *fat32_init_fs(uint32_t partition_lba, uint8_t drive_sel)
 {
     // our purpose is to find the data region lba.
     // reserved region is where bpb is stored
@@ -33,6 +162,16 @@ void fat32_init(uint32_t partition_lba, uint8_t drive_sel)
 
     uint32_t fats_region = (uint32_t)g_bpb.fats_num * g_bpb.sectors_per_fat32;
     data_start_lba = partition_lba + (uint32_t)g_bpb.reserved_sectors + fats_region;
+    g_bytes_per_cluster = g_bpb.sectors_per_cluster * g_bpb.bytes_per_sector;
+
+    vfs_node_t *root = (vfs_node_t *)kmalloc(sizeof(vfs_node_t));
+    strcpy(root->name, "fat32_root");
+    root->flags = VFS_DIRECTORY;
+    root->length = 0;
+    root->device_data = NULL;
+    root->ops = &fat32_ops;
+
+    return root;
 }
 
 int list_cb(DirectoryEntry *dir_entry, void *ctx)
@@ -139,6 +278,11 @@ int find_cb(DirectoryEntry *dir_entry, void *ctx)
     return 0;
 }
 
+/**
+ * @brief Finds a file in FAT32 format drive
+ * returns 0 if file found
+ * returns -1 otherwise
+ */
 int fat32_find_file(const char *name, DirectoryEntry *out_entry)
 {
     // First, let's normalize the name into the dir_entry->name and dir_entry->ext
@@ -179,7 +323,7 @@ int fat32_iterate_root(fat32_entry_cb_t entry_cb, void *ctx)
 {
     uint32_t curr_cluster = g_bpb.root_cluster;
 
-    while (curr_cluster < 0x0FFFFFF8)
+    while (curr_cluster < EOC)
     {
         uint32_t root_lba = fat32_cluster_to_lba(curr_cluster);
         uint16_t tmp_buf[g_bpb.bytes_per_sector / 2];
@@ -222,14 +366,26 @@ int fat32_iterate_root(fat32_entry_cb_t entry_cb, void *ctx)
     return 0;
 }
 
-uint32_t fat32_read_fat(uint32_t cluster)
+uint8_t *fat32_read_file(DirectoryEntry *entry)
 {
-    uint32_t fat_offset = cluster * sizeof(uint32_t);
-    uint32_t fat_sector = g_bpb.reserved_sectors + (fat_offset / g_bpb.bytes_per_sector);
-    uint32_t ent_offset = fat_offset % g_bpb.bytes_per_sector;
+    uint8_t *buf = (uint8_t *)vmm_alloc(entry->file_size + 1);
+    if (buf == NULL)
+    {
+        return NULL;
+    }
 
-    uint16_t tmp_buf[SECTOR_SIZE / 2];
-    ata_read_sectors(tmp_buf, fat_sector, 1, g_drive_sel);
+    uint32_t curr_cluster = (entry->first_cluster_high << 0x10) | entry->first_cluster_low;
+    uint8_t *buf_cur = buf;
 
-    return *((uint32_t *)((uint8_t *)tmp_buf + ent_offset)) & 0x0FFFFFFF;
+    while (curr_cluster < EOC)
+    {
+        uint32_t lba = fat32_cluster_to_lba(curr_cluster);
+        ata_read_sectors(buf_cur, lba, g_bpb.sectors_per_cluster, g_drive_sel);
+        buf_cur += g_bpb.bytes_per_sector * g_bpb.sectors_per_cluster;
+        curr_cluster = fat32_read_fat(curr_cluster);
+    }
+
+    buf[entry->file_size] = '\0';
+
+    return buf;
 }

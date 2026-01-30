@@ -1,6 +1,7 @@
 #ifndef FAT32_H
 #define FAT32_H
 
+#include "fs/vfs.h"
 #include <stdint.h>
 
 typedef struct
@@ -56,11 +57,12 @@ typedef struct
 
 typedef int (*fat32_entry_cb_t)(DirectoryEntry *, void *);
 
-void fat32_init(uint32_t partition_lba, uint8_t drive_sel);
+uint32_t fat32_read_fat(uint32_t cluster);
+vfs_node_t *fat32_init_fs(uint32_t partition_lba, uint8_t drive_sel);
 void fat32_list_root(void);
 int fat32_parse_name(const char *fname, char *out_name, char *out_ext);
 int fat32_find_file(const char *name, DirectoryEntry *out_entry);
 int fat32_iterate_root(fat32_entry_cb_t cb, void *ctx);
-uint32_t fat32_read_fat(uint32_t cluster);
+uint8_t *fat32_read_file(DirectoryEntry *entry);
 
 #endif
