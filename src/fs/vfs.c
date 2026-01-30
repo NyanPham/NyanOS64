@@ -63,27 +63,27 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
         return fhandle;
     }
 
-    vfs_node_t *node = g_fs_root->ops->finddir(g_fs_root, filename);
+    vfs_node_t *node = vfs_navigate(filename);
     if (node == NULL)
     {
-        if ((mode & O_CREAT) && (g_fs_root->ops->create))
-        {
-            kprint("Creating node for file: ");
-            kprint(filename);
-            kprint("\n");
+        // if ((mode & O_CREAT) && (g_fs_root->ops->create))
+        // {
+        //     kprint("Creating node for file: ");
+        //     kprint(filename);
+        //     kprint("\n");
 
-            node = g_fs_root->ops->create(g_fs_root, filename, mode);
-            if (node == NULL)
-            {
-                kprint("Node not found and cannot be created!\n");
-                return NULL;
-            }
-        }
-        else
-        {
-            kprint("Node not found!\n");
-            return NULL;
-        }
+        //     node = g_fs_root->ops->create(g_fs_root, filename, mode);
+        //     if (node == NULL)
+        //     {
+        //         kprint("Node not found and cannot be created!\n");
+        //         return NULL;
+        //     }
+        // }
+        // else
+        // {
+        kprint("VFS: Node not found!\n");
+        return NULL;
+        // }
     }
 
     if (node->ops && node->ops->open)
@@ -173,4 +173,66 @@ void vfs_close(file_handle_t *file)
 void vfs_seek(file_handle_t *file, uint64_t new_offset)
 {
     file->offset = new_offset;
+}
+
+/**
+ * @brief Path Walking to return the target vfs_node
+ */
+vfs_node_t *vfs_navigate(const char *path)
+{
+    if (g_fs_root == NULL)
+    {
+        return NULL;
+    }
+
+    vfs_node_t *curr_node = g_fs_root;
+    char name[128];
+
+    int i = 0;
+    while (path[i] != '\0')
+    {
+        // skip the leading consecutive '/' (e.g. ///data/file.txt)
+        while (path[i] == '/')
+        {
+            i++;
+        }
+
+        if (path[i] == '\0') // we're done
+        {
+            break;
+        }
+
+        // extract the next node's name
+        // for example: "data" from data/test.txt
+        int j = 0;
+        while (path[i] != '/' && path[i] != '\0')
+        {
+            if (j < 127)
+            {
+                name[j++] = path[i++];
+            }
+        }
+        name[j] = '\0';
+
+        if (curr_node->flags != VFS_DIRECTORY)
+        {
+            kprint("VFS: Not a directory, cannot navigate further.\n");
+            return NULL;
+        }
+
+        if (curr_node->ops->finddir == NULL)
+        {
+            return NULL;
+        }
+
+        vfs_node_t *next_node = curr_node->ops->finddir(curr_node, name);
+        if (next_node == NULL)
+        {
+            return NULL;
+        }
+
+        curr_node = next_node;
+    }
+
+    return curr_node;
 }

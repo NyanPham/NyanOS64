@@ -208,7 +208,7 @@ void kmain(void)
     vfs_node_t *fat_root = fat32_init_fs(0, 1);
     vfs_mount("/data", fat_root);
 
-    file_handle_t *f1 = vfs_open("/data/TEST.TXT", 0);
+    file_handle_t *f1 = vfs_open("/TEST.TXT", 0);
     if (f1)
     {
         kprint("VFS TEST: Success! Found TEST.TXT\n");

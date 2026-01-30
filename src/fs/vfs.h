@@ -52,6 +52,7 @@ typedef struct file_handle
 void vfs_init();
 int vfs_mount(const char *path, vfs_node_t *fs_root);
 void vfs_retain(file_handle_t *file);
+vfs_node_t *vfs_navigate(const char *path);
 file_handle_t *vfs_open(const char *filename, uint32_t mode);
 void vfs_close(file_handle_t *file);
 uint64_t vfs_read(file_handle_t *file, uint64_t size, uint8_t *buffer);

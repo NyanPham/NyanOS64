@@ -36,19 +36,11 @@ extern vfs_fs_ops_t fat32_ops;
 
 static vfs_node_t *fat32_finddir(vfs_node_t *node, const char *name)
 {
-    const char *file_name = name;
-    int len = strlen(name);
-    for (int i = len - 1; i >= 0; i--)
-    {
-        if (name[i] == '/')
-        {
-            file_name = name + i + 1;
-            break;
-        }
-    }
+    fat32_node_data *node_data = (fat32_node_data *)node->device_data;
+    uint32_t cluster = node_data->first_cluster;
 
     DirectoryEntry dir_entry;
-    if (fat32_find_file(file_name, &dir_entry) < 0)
+    if (fat32_find_file(cluster, name, &dir_entry) < 0)
     {
         return NULL;
     }
@@ -60,20 +52,22 @@ static vfs_node_t *fat32_finddir(vfs_node_t *node, const char *name)
         return NULL;
     }
 
-    fat32_node_data *node_data = (fat32_node_data *)kmalloc(sizeof(fat32_node_data));
-    if (node_data == NULL)
+    fat32_node_data *new_node_data = (fat32_node_data *)kmalloc(sizeof(fat32_node_data));
+    if (new_node_data == NULL)
     {
         kprint("FAT32_FINDDIR failed: OOM\n");
-        kfree(node);
+        kfree(new_node);
         return NULL;
     }
 
-    strcpy(new_node->name, file_name);
+    strcpy(new_node->name, name);
     new_node->length = dir_entry.file_size;
-    new_node->flags = VFS_FILE;
+    new_node->flags = (dir_entry.attributes & 0x10)
+                          ? VFS_DIRECTORY
+                          : VFS_FILE;
 
-    node_data->first_cluster = (dir_entry.first_cluster_high << 0x10) | dir_entry.first_cluster_low;
-    new_node->device_data = node_data;
+    new_node_data->first_cluster = (dir_entry.first_cluster_high << 0x10) | dir_entry.first_cluster_low;
+    new_node->device_data = new_node_data;
     new_node->ops = &fat32_ops;
 
     return new_node;
@@ -165,10 +159,22 @@ vfs_node_t *fat32_init_fs(uint32_t partition_lba, uint8_t drive_sel)
     g_bytes_per_cluster = g_bpb.sectors_per_cluster * g_bpb.bytes_per_sector;
 
     vfs_node_t *root = (vfs_node_t *)kmalloc(sizeof(vfs_node_t));
+    if (root == NULL)
+    {
+        return NULL;
+    }
+    fat32_node_data *node_data = (fat32_node_data *)kmalloc(sizeof(fat32_node_data));
+    if (node_data == NULL)
+    {
+        kfree(root);
+        return NULL;
+    }
+
     strcpy(root->name, "fat32_root");
     root->flags = VFS_DIRECTORY;
     root->length = 0;
-    root->device_data = NULL;
+    node_data->first_cluster = g_bpb.root_cluster;
+    root->device_data = node_data;
     root->ops = &fat32_ops;
 
     return root;
@@ -201,7 +207,7 @@ int list_cb(DirectoryEntry *dir_entry, void *ctx)
 
 void fat32_list_root()
 {
-    fat32_iterate_root(list_cb, NULL);
+    fat32_iterate(g_bpb.root_cluster, list_cb, NULL);
 }
 
 /**
@@ -283,7 +289,7 @@ int find_cb(DirectoryEntry *dir_entry, void *ctx)
  * returns 0 if file found
  * returns -1 otherwise
  */
-int fat32_find_file(const char *name, DirectoryEntry *out_entry)
+int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entry)
 {
     // First, let's normalize the name into the dir_entry->name and dir_entry->ext
     char target_name[8] = {0};
@@ -304,7 +310,7 @@ int fat32_find_file(const char *name, DirectoryEntry *out_entry)
         .out_entry = out_entry,
     };
 
-    int res = fat32_iterate_root(find_cb, &find_control);
+    int res = fat32_iterate(cluster, find_cb, &find_control);
     if (res > 0)
     {
         kprint("Found a file\n");
@@ -319,9 +325,9 @@ int fat32_find_file(const char *name, DirectoryEntry *out_entry)
     return -1;
 }
 
-int fat32_iterate_root(fat32_entry_cb_t entry_cb, void *ctx)
+int fat32_iterate(uint32_t cluster, fat32_entry_cb_t entry_cb, void *ctx)
 {
-    uint32_t curr_cluster = g_bpb.root_cluster;
+    uint32_t curr_cluster = cluster;
 
     while (curr_cluster < EOC)
     {
@@ -350,7 +356,7 @@ int fat32_iterate_root(fat32_entry_cb_t entry_cb, void *ctx)
                 int res = entry_cb(dir_entry, ctx);
                 if (res < 0)
                 {
-                    kprint("ERROR IN fat32_iterate_root after calling entry_cb\n");
+                    kprint("ERROR IN fat32_iterate after calling entry_cb\n");
                     return -1;
                 }
                 else if (res > 0)
