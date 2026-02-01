@@ -64,5 +64,6 @@ int fat32_parse_name(const char *fname, char *out_name, char *out_ext);
 int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entry);
 int fat32_iterate(uint32_t cluster, fat32_entry_cb_t cb, void *ctx);
 uint8_t *fat32_read_file(DirectoryEntry *entry);
+int fat32_readdir(vfs_node_t *node, uint32_t idx, dirent_t *out);
 
 #endif

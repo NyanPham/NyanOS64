@@ -4,16 +4,38 @@
 #include "dev.h"
 #include "../string.h"
 
-static vfs_node_t *g_fs_root = NULL;
+#define MAX_MOUNTPOINTS 4
+
+typedef struct
+{
+    char path[0x40];
+    vfs_node_t *root;
+} mount_point_t;
+
+static mount_point_t g_mounts[MAX_MOUNTPOINTS];
+static int8_t g_mount_count = 0;
 
 void vfs_init()
 {
-    g_fs_root = NULL;
+    g_mount_count = 0;
+    for (int8_t i = 0; i < MAX_MOUNTPOINTS; i++)
+    {
+        g_mounts[i].path[0] = 0;
+        g_mounts[i].root = NULL;
+    }
 }
 
 int vfs_mount(const char *path, vfs_node_t *fs_root)
 {
-    g_fs_root = fs_root;
+    if (g_mount_count >= MAX_MOUNTPOINTS)
+    {
+        kprint("VFS: Mount table full!\n");
+        return -1;
+    }
+
+    strcpy(g_mounts[g_mount_count].path, path);
+    g_mounts[g_mount_count++].root = fs_root;
+
     return 0;
 }
 
@@ -28,15 +50,9 @@ void vfs_retain(file_handle_t *file)
 
 file_handle_t *vfs_open(const char *filename, uint32_t mode)
 {
-    if (g_fs_root == NULL)
+    if (g_mount_count == 0)
     {
-        kprint("VFS not mounted!\n");
-        return NULL;
-    }
-
-    if (!(g_fs_root->ops && g_fs_root->ops->finddir))
-    {
-        kprint("VFS not having ops finddir!\n");
+        kprint("VFS: No file systems mounted!\n");
         return NULL;
     }
 
@@ -162,7 +178,7 @@ void vfs_close(file_handle_t *file)
         file->node->ops->close(file->node);
     }
 
-    if (file->node && file->node != g_fs_root && (file->node->flags & VFS_NODE_AUTOFREE))
+    if (file->node && (file->node->flags & VFS_NODE_AUTOFREE))
     {
         kfree((void *)file->node);
     }
@@ -180,24 +196,71 @@ void vfs_seek(file_handle_t *file, uint64_t new_offset)
  */
 vfs_node_t *vfs_navigate(const char *path)
 {
-    if (g_fs_root == NULL)
+    vfs_node_t *best_mount_root = NULL;
+    const char *best_mount_path = "";
+    int best_match_len = -1;
+
+    /*
+    Firstly, find the best match Mount Point
+    */
+    for (int8_t i = 0; i < g_mount_count; i++)
+    {
+        // if mount = "/data", path is "/data/test.txt" -> matched!
+        int mount_len = strlen(g_mounts[i].path);
+
+        if (strncmp(path, g_mounts[i].path, mount_len) == 0)
+        {
+            /*
+            in case mount="/d", path="/data"
+            but this is wrong.
+            so we check if the next char is "/", or "\0".
+            */
+            char next_char = path[mount_len];
+            if (next_char == '/' || next_char == '\0' || mount_len == 1)
+            {
+                if (mount_len > best_match_len)
+                {
+                    best_match_len = mount_len;
+                    best_mount_root = g_mounts[i].root;
+                    best_mount_path = g_mounts[i].path;
+                }
+            }
+        }
+    }
+
+    if (best_mount_root == NULL)
     {
         return NULL;
     }
 
-    vfs_node_t *curr_node = g_fs_root;
-    char name[128];
+    /*
+    Secondly, parse the remaining Relative Path
+    e.g. path="/data/TEST.TXT", best_mount="/data"
+    -> relative="/TEST.TXT"
+    */
+    const char *rel_path = path + best_match_len;
 
+    // rel_path is empty, or just "/", return the root right away
+    if (*rel_path == '\0')
+    {
+        return best_mount_root;
+    }
+
+    /*
+    Thirdly, find the node, starting from best_mount_root.
+    */
+    vfs_node_t *curr_node = best_mount_root;
+    char name[128];
     int i = 0;
-    while (path[i] != '\0')
+    while (rel_path[i] != '\0')
     {
         // skip the leading consecutive '/' (e.g. ///data/file.txt)
-        while (path[i] == '/')
+        while (rel_path[i] == '/')
         {
             i++;
         }
 
-        if (path[i] == '\0') // we're done
+        if (rel_path[i] == '\0') // we're done
         {
             break;
         }
@@ -205,11 +268,11 @@ vfs_node_t *vfs_navigate(const char *path)
         // extract the next node's name
         // for example: "data" from data/test.txt
         int j = 0;
-        while (path[i] != '/' && path[i] != '\0')
+        while (rel_path[i] != '/' && rel_path[i] != '\0')
         {
             if (j < 127)
             {
-                name[j++] = path[i++];
+                name[j++] = rel_path[i++];
             }
         }
         name[j] = '\0';
@@ -235,4 +298,19 @@ vfs_node_t *vfs_navigate(const char *path)
     }
 
     return curr_node;
+}
+
+int vfs_readdir(vfs_node_t *node, uint32_t index, dirent_t *out)
+{
+    if (node == NULL || node->ops == NULL || node->ops->readdir == NULL)
+    {
+        return -1;
+    }
+
+    if ((node->flags & VFS_DIRECTORY) == 0)
+    {
+        return -1;
+    }
+
+    return node->ops->readdir(node, index, out);
 }

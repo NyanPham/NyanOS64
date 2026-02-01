@@ -80,27 +80,32 @@ void reboot(void)
 
 int fork(void)
 {
-    return syscall(6, 0, 0, 0);
+    return (int)syscall(6, 0, 0, 0);
 }
 
 int getpid(void)
 {
-    return syscall(22, 0, 0, 0);
+    return (int)syscall(22, 0, 0, 0);
 }
 
 int pipe(int pipefd[2])
 {
-    return syscall(20, (uint64_t)pipefd, 0, 0);
+    return (int)syscall(20, (uint64_t)pipefd, 0, 0);
 }
 
 int dup2(int old_fd, int new_fd)
 {
-    return syscall(21, (uint64_t)old_fd, (uint64_t)new_fd, 0);
+    return (int)syscall(21, (uint64_t)old_fd, (uint64_t)new_fd, 0);
+}
+
+int readdir(int fd, uint32_t idx, dirent_t *out)
+{
+    return (int)syscall(23, (uint64_t)fd, (uint64_t)idx, (uint64_t)out);
 }
 
 int win_create(WinParams_t *win_params)
 {
-    return syscall(17, (uint64_t)win_params, 0, 0);
+    return (int)syscall(17, (uint64_t)win_params, 0, 0);
 }
 
 int create_term(int x, int y, uint32_t w, uint32_t h, const char *title, uint32_t win_flags)

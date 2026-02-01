@@ -123,6 +123,7 @@ vfs_fs_ops_t fat32_ops = {
     .read = fat32_read,
     .write = NULL, // todo
     .finddir = fat32_finddir,
+    .readdir = fat32_readdir,
     .open = NULL,
     .close = NULL,
     .create = NULL, // todo
@@ -394,4 +395,69 @@ uint8_t *fat32_read_file(DirectoryEntry *entry)
     buf[entry->file_size] = '\0';
 
     return buf;
+}
+
+typedef struct
+{
+    uint32_t tgt_idx;
+    uint32_t curr_idx;
+    dirent_t *out;
+} readdir_ctx;
+
+int readdir_cb(DirectoryEntry *entry, void *p)
+{
+    readdir_ctx *ctx = (readdir_ctx *)p;
+
+    // ignore the Long File Names
+    if (entry->attributes == 0x0F)
+    {
+        return 0;
+    }
+
+    // Found the file at 'idx'
+    if (ctx->curr_idx == ctx->tgt_idx)
+    {
+        int j = 0;
+        int k = 0;
+        while (k < 8 && entry->name[k] != ' ')
+        {
+            ctx->out->name[j++] = entry->name[k++];
+        }
+
+        if (entry->ext[0] != ' ')
+        {
+            ctx->out->name[j++] = '.';
+            k = 0;
+            while (k < 3 && entry->ext[k] != ' ')
+            {
+                ctx->out->name[j++] = entry->ext[k++];
+            }
+        }
+        ctx->out->name[j] = '\0';
+        ctx->out->type = (entry->attributes & 0x10)
+                             ? VFS_DIRECTORY
+                             : VFS_FILE;
+
+        ctx->out->size = entry->file_size;
+        return 1;
+    }
+    ctx->curr_idx++;
+    return 0;
+}
+
+int fat32_readdir(vfs_node_t *node, uint32_t idx, dirent_t *out)
+{
+    fat32_node_data *data = (fat32_node_data *)node->device_data;
+
+    readdir_ctx ctx;
+    ctx.tgt_idx = idx;
+    ctx.curr_idx = 0;
+    ctx.out = out;
+
+    if (fat32_iterate(data->first_cluster, readdir_cb, &ctx) == 1)
+    {
+        return 0;
+    }
+
+    return -1;
 }

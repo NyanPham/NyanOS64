@@ -38,20 +38,52 @@ int cmd_clear()
     print("\033[2J\033[1;1H");
 }
 
-int cmd_ls()
+int cmd_ls(int argc, char **argv)
 {
-    char *list = (char *)malloc(512);
-    list_files(list, 512);
-
-    char *curr_list = list;
-    while (*curr_list != 0)
+    char path[128];
+    if (argc > 1)
     {
-        print(curr_list);
-        print("\n");
-        curr_list += strlen(curr_list) + 1;
+        strcpy(path, argv[1]);
+    }
+    else
+    {
+        // get the current dir
+        if (getcwd(path, 128) == NULL)
+        {
+            print("ls: cannot get current direcotyr\n");
+            return 1;
+        }
     }
 
-    free(list);
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+    {
+        print("ls: cannot open direcotyr '");
+        print(path);
+        print("'\n");
+        return 1;
+    }
+
+    dirent_t entry;
+    int idx = 0;
+
+    while (readdir(fd, idx, &entry) == 0)
+    {
+        if (entry.type == VFS_DIRECTORY)
+        {
+            print("\033[36m[DIR] \033[0m");
+        }
+        else
+        {
+            print("[FILE] ");
+        }
+
+        print(entry.name);
+        print("\n");
+        idx++;
+    }
+
+    close(fd);
     return 0;
 }
 
@@ -210,7 +242,7 @@ int exec_cmd(int argc, char **argv)
     /* --- LS --- */
     else if (strncmp(argv[0], "ls", 3) == 0)
     {
-        cmd_ls();
+        cmd_ls(argc, argv);
         return 1;
     }
 

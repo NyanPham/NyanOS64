@@ -10,6 +10,17 @@
 #define O_WRONLY 0x01
 #define O_RDWR 0x02
 
+#define VFS_FILE 0x01
+#define VFS_DIRECTORY 0x02
+
+typedef struct dirent
+{
+    char name[128];
+    uint32_t type;
+    uint64_t size;
+} dirent_t;
+ 
+
 void exit(int status);
 void print(const char *str);
 void kprint(const char *s);
@@ -22,6 +33,7 @@ int fork(void);
 int getpid(void);
 int pipe(int pipefd[2]);
 int dup2(int old_fd, int new_fd);
+int readdir(int fd, uint32_t idx, dirent_t *out);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);

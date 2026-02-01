@@ -80,6 +80,7 @@ static inline void spawn_shell()
         WIN_MOVABLE | WIN_RESIZEABLE | WIN_MINIMIZABLE);
     shell_task->term = console;
     console->win->owner_pid = shell_task->pid;
+    strcpy(shell_task->cwd, "/");
 
     uint64_t curr_pml4 = read_cr3(); // this could be kern_pml4, but nah, let's make thing variable :))
 
@@ -116,6 +117,49 @@ static inline void spawn_shell()
         kprint("Failed to load Shell!\n");
         sched_destroy_task(shell_task);
     }
+}
+
+void k_ls(const char *path)
+{
+    kprint("\n--- LS Command Testing: ");
+    kprint(path);
+    kprint(" ---\n");
+
+    file_handle_t *f = vfs_open(path, 0);
+    if (f == NULL)
+    {
+        kprint("k_ls: Failed to open path!\n");
+        return;
+    }
+
+    if ((f->node->flags & VFS_DIRECTORY) == 0)
+    {
+        kprint("k_ls: Not a directory!\n");
+        vfs_close(f);
+        return;
+    }
+
+    dirent_t entry;
+    int index = 0;
+
+    while (vfs_readdir(f->node, index, &entry) == 0)
+    {
+        if (entry.type == VFS_DIRECTORY)
+        {
+            kprint("[DIR ] ");
+        }
+        else
+        {
+            kprint("[FILE] ");
+        }
+        kprint(entry.name);
+        kprint(" - ");
+        kprint_int(entry.size);
+        kprint(" bytes\n");
+        index++;
+    }
+    kprint("--- End of List ---\n");
+    vfs_close(f);
 }
 
 void kmain(void)
@@ -180,10 +224,10 @@ void kmain(void)
 
         // test VFS
         kprint("VFS Test: Opening hello.txt...\n");
-        file_handle_t *f = vfs_open("hello.txt", 0);
+        file_handle_t *f = vfs_open("/hello.txt", 0);
         if (f)
         {
-            kprint("VFS TEST: Success! Found hello.txt\n");
+            kprint("VFS TEST: Success! Found /hello.txt\n");
 
             // read some bytes
             char buf[32];
@@ -197,7 +241,7 @@ void kmain(void)
         }
         else
         {
-            kprint("VFS TEST: Failed to open hello.txt\n");
+            kprint("VFS TEST: Failed to open /hello.txt\n");
         }
     }
     else
@@ -208,10 +252,10 @@ void kmain(void)
     vfs_node_t *fat_root = fat32_init_fs(0, 1);
     vfs_mount("/data", fat_root);
 
-    file_handle_t *f1 = vfs_open("/TEST.TXT", 0);
+    file_handle_t *f1 = vfs_open("/data/TEST.TXT", 0);
     if (f1)
     {
-        kprint("VFS TEST: Success! Found TEST.TXT\n");
+        kprint("VFS TEST: Success! Found /data/TEST.TXT\n");
 
         // read some bytes
         char buf[65];
@@ -225,8 +269,11 @@ void kmain(void)
     }
     else
     {
-        kprint("VFS TEST: Failed to open TEST.TXT\n");
+        kprint("VFS TEST: Failed to open /data/TEST.TXT\n");
     }
+
+    k_ls("/");
+    k_ls("/data");
 
     // test kprint
     // if we reach here, at least the inits above,

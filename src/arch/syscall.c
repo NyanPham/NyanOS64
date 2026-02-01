@@ -806,6 +806,37 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
     {
         return get_curr_task_pid();
     }
+    case 23: // sys_readdir
+    {
+        int fd = (int)arg1;
+        uint32_t idx = (uint32_t)arg2;
+        dirent_t *user_dirent = (dirent_t *)arg3;
+
+        if (fd < 0 || fd >= MAX_OPEN_FILES)
+        {
+            return -1;
+        }
+
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk->fd_tbl[fd] == NULL)
+        {
+            return -1;
+        }
+
+        file_handle_t *fh = curr_tsk->fd_tbl[fd];
+        if (fh == NULL)
+        {
+            return -1;
+        }
+
+        if (!verify_usr_access((uint64_t)user_dirent, sizeof(dirent_t)))
+        {
+            kprint("SYS_READDIR: Invalid user ptr\n");
+            return -1;
+        }
+
+        return vfs_readdir(fh->node, idx, user_dirent);
+    }
     default:
     {
         kprint("Kernel: unknown sys_num: ");
