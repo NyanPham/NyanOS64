@@ -25,7 +25,7 @@ uint64_t oct2bin(const char *str, int size)
     return n;
 }
 
-bool tar_validate(tar_header *header)
+bool tar_validate(tar_header_t *header)
 {
     if (header->magic[0] != 'u' ||
         header->magic[1] != 's' ||
@@ -38,16 +38,16 @@ bool tar_validate(tar_header *header)
     return true;
 }
 
-char* tar_read_file(const char* fname)
+char *tar_read_file(const char *fname)
 {
-    if (g_tar_addr == NULL) 
+    if (g_tar_addr == NULL)
     {
         return NULL;
     }
 
-    tar_header* hdr = (tar_header*)g_tar_addr;
+    tar_header_t *hdr = (tar_header_t *)g_tar_addr;
 
-    const char* search_name = fname;
+    const char *search_name = fname;
     if (*search_name == '/')
     {
         search_name++;
@@ -62,19 +62,19 @@ char* tar_read_file(const char* fname)
 
         if (strcmp(hdr->name, search_name) == 0)
         {
-            return (char*)((uint64_t)hdr + 512);
+            return (char *)((uint64_t)hdr + 512);
         }
 
         uint64_t size = oct2bin(hdr->size, 11);
         uint64_t size_aligned = (size + 511) / 512 * 512;
         uint64_t next_hdr_addr = (uint64_t)hdr + 512 + size_aligned;
-        hdr = (tar_header*)next_hdr_addr;
+        hdr = (tar_header_t *)next_hdr_addr;
     }
 
     return NULL;
 }
 
-void tar_list(char* list, uint64_t max_len)
+void tar_list(char *list, uint64_t max_len)
 {
     if (g_tar_addr == NULL)
     {
@@ -82,7 +82,7 @@ void tar_list(char* list, uint64_t max_len)
         return;
     }
 
-    tar_header *hdr = (tar_header *)g_tar_addr;
+    tar_header_t *hdr = (tar_header_t *)g_tar_addr;
     uint64_t curr_len = 0;
 
     while (1)
@@ -110,7 +110,7 @@ void tar_list(char* list, uint64_t max_len)
 
         uint64_t size_aligned = (size + 511) / 512 * 512;
         uint64_t next_hdr_addr = (uint64_t)hdr + 512 + size_aligned;
-        hdr = (tar_header *)next_hdr_addr;
+        hdr = (tar_header_t *)next_hdr_addr;
     }
 
     *list = 0;

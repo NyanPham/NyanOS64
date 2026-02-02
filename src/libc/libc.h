@@ -19,7 +19,6 @@ typedef struct dirent
     uint32_t type;
     uint64_t size;
 } dirent_t;
- 
 
 void exit(int status);
 void print(const char *str);
@@ -44,6 +43,7 @@ void *memcpy(void *dest, const void *src, size_t n);
 void *memmove(void *dest, const void *src, size_t n);
 int memcmp(const void *s1, const void *s2, size_t n);
 char *strstr(const char *haystack, const char *needle);
+char *strchr(const char *haystack, const char needle);
 
 /* Heap manager */
 void *sbrk(int64_t incr_payload);

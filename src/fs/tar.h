@@ -3,8 +3,8 @@
 
 #include "stdbool.h"
 #include "stdint.h"
- 
-typedef struct tar_header
+
+typedef struct tar_header_t
 {
     char name[100];
     char mode[8];
@@ -23,10 +23,10 @@ typedef struct tar_header
     char devminor[8];
     char prefix[155];
     char padding[12];
-} __attribute__((packed)) tar_header;
+} __attribute__((packed)) tar_header_t;
 
-void tar_list(char* list, uint64_t max_len);
-char* tar_read_file(const char* fname);
-void tar_init(void* tar_addr);
+void tar_list(char *list, uint64_t max_len);
+char *tar_read_file(const char *fname);
+void tar_init(void *tar_addr);
 
 #endif

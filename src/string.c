@@ -275,3 +275,22 @@ char *strstr(const char *haystack, const char *needle)
     }
     return NULL;
 }
+
+char *strchr(const char *haystack, const char needle)
+{
+    while (*haystack != '\0')
+    {
+        if (*haystack == needle)
+        {
+            return (char *)haystack;
+        }
+        haystack++;
+    }
+
+    if (needle == '\0')
+    {
+        return (char *)haystack;
+    }
+
+    return NULL;
+}

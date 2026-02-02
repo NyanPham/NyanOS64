@@ -17,5 +17,6 @@ void *memmove(void *dest, const void *src, size_t n);
 int memcmp(const void *s1, const void *s2, size_t n);
 
 char *strstr(const char *haystack, const char *needle);
+char *strchr(const char *haystack, const char needle);
 
 #endif

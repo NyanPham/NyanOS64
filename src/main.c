@@ -86,7 +86,7 @@ static inline void spawn_shell()
 
     write_cr3(shell_task->pml4);
 
-    uint64_t shell_entry = elf_load("shell.elf");
+    uint64_t shell_entry = elf_load("/shell.elf");
 
     if (shell_entry != 0)
     {

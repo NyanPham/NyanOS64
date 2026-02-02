@@ -260,6 +260,19 @@ char *strstr(const char *haystack, const char *needle)
     return NULL;
 }
 
+char *strchr(const char *haystack, const char needle)
+{
+    while (*haystack != '\0')
+    {
+        if (*haystack == needle)
+        {
+            return (char *)haystack;
+        }
+        haystack++;
+    }
+    return NULL;
+}
+
 /* ======= HEAP MANGER (MALLOC) =======*/
 
 void *sbrk(int64_t incr_payload)
