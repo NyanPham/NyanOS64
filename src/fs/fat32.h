@@ -55,6 +55,12 @@ typedef struct
     DirectoryEntry *out_entry;
 } find_control_t;
 
+typedef struct
+{
+    uint32_t sector_lba;
+    uint32_t offset;
+} fat32_location_t;
+
 typedef int (*fat32_entry_cb_t)(DirectoryEntry *, void *);
 
 uint32_t fat32_read_fat(uint32_t cluster);
@@ -65,5 +71,62 @@ int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entr
 int fat32_iterate(uint32_t cluster, fat32_entry_cb_t cb, void *ctx);
 uint8_t *fat32_read_file(DirectoryEntry *entry);
 int fat32_readdir(vfs_node_t *node, uint32_t idx, dirent_t *out);
+int fat32_create(vfs_node_t *parent, const char *name, int flags);
+void fat32_write_fat_entry(uint32_t cluster, uint32_t value);
+int64_t fat32_find_free_cluster(void);
+int fat32_find_free_directory_entry(uint32_t dir_cluster, fat32_location_t *out_loc);
 
 #endif
+
+/*
++-----------------------------------------------------------------------+
+|                        ENTIRE DISK (DISK IMAGE)                       |
++===================+===================+===============================+
+|  1. RESERVED      |  2. FAT REGION    |  3. DATA REGION               |
+|  (Boot Code)      | (Allocation Table)|  (File & Directory Content)   |
++-------------------+-------------------+-------------------------------+
+| Sector 0          | Sector X          | Cluster 2 | Cluster 3 | ...   |
+| [BPB Parameter]   | [FAT Table 1]     | [ROOT DIR]| [DATA...] |       |
+|                   | [FAT Table 2]     |           |           |       |
++-------------------+-------------------+-----------+-----------+-------+
+          ⬇️                  ⬇️                 ⬇️
+    Disk Config         Cluster Map:      Storage / Content:
+                        Cluster 2: EOF    - Entry "DATA"
+                        Cluster 3: 0      - Entry "TEST.TXT"
+                        Cluster 100: 0    ...
+
+---
+
+[DATA REGION]
+   |
+   +-- [Cluster 2] (OS knows this is ROOT DIR)
+   |      |
+   |      +-- [Entry 1]: Name="DATA", Attr=DIR, StartCluster=5
+   |      |
+   |      +-- [Entry 2]: Name="TEST.TXT", Attr=FILE, StartCluster=100
+   |
+   |
+    +-- [Cluster 5] (Subdirectory /DATA)
+   |      |
+   |      +-- [Entry 1]: Name="GAME.ELF", Attr=FILE, StartCluster=200
+   |                                                      ⬇️
+   |                                          (OS goes to Cluster 200 first)
+   |
+   +-- [Cluster 100] (This is TEST.TXT content) 👈 CONTENT IS HERE!
+   |      |
+   |      +-- "Hello world from FAT32..." (Raw Data)
+   |
+   |
+    +-- [Cluster 200] (GAME.ELF Part 1)
+   |      |
+   |      +-- 0x7F 0x45 0x4C ... (First 4KB of data)
+   |      |
+   |      +-- (End of cluster, OS checks FAT Table -> Sees "201")
+   |
+   |
+   +-- [Cluster 201] (GAME.ELF Part 2)
+    |
+    +-- ... 0x90 0xC3 (Remaining data)
+    |
+    +-- (End of cluster, OS checks FAT Table -> Sees "EOF" -> STOP)
+*/

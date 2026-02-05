@@ -162,6 +162,68 @@ void k_ls(const char *path)
     vfs_close(f);
 }
 
+void test_tar_fs()
+{
+    kprint("VFS Test: Opening hello.txt...\n");
+    file_handle_t *f = vfs_open("/hello.txt", 0);
+    if (f)
+    {
+        kprint("VFS TEST: Success! Found /hello.txt\n");
+
+        // read some bytes
+        char buf[32];
+        uint64_t bytes_read = vfs_read(f, 13, (uint8_t *)buf);
+        buf[bytes_read] = 0;
+        kprint("Content: ");
+        kprint(buf);
+        kprint("\n");
+
+        vfs_close(f);
+    }
+    else
+    {
+        kprint("VFS TEST: Failed to open /hello.txt\n");
+    }
+}
+
+void test_fat32(vfs_node_t *fat_root)
+{
+    file_handle_t *f1 = vfs_open("/data/TEST.TXT", 0);
+    if (f1)
+    {
+        kprint("VFS TEST: Success! Found /data/TEST.TXT\n");
+
+        // read some bytes
+        char buf[65];
+        uint64_t bytes_read = vfs_read(f1, 64, (uint8_t *)buf);
+        buf[bytes_read] = 0;
+        kprint("Content: ");
+        kprint(buf);
+        kprint("\n");
+
+        vfs_close(f1);
+    }
+    else
+    {
+        kprint("VFS TEST: Failed to open /data/TEST.TXT\n");
+    }
+
+    k_ls("/");
+    k_ls("/data");
+
+    kprint("Creating test.txt...\n");
+    int res = fat32_create(fat_root, "test.txt", 0);
+    if (res == 0)
+    {
+        kprint("Creation successful! Listing root:\n");
+        fat32_list_root();
+    }
+    else
+    {
+        kprint("Creation failed.\n");
+    }
+}
+
 void kmain(void)
 {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false)
@@ -222,27 +284,7 @@ void kmain(void)
         vfs_node_t *tar_root = tar_fs_init(tar_file->address);
         vfs_mount("/", tar_root);
 
-        // test VFS
-        kprint("VFS Test: Opening hello.txt...\n");
-        file_handle_t *f = vfs_open("/hello.txt", 0);
-        if (f)
-        {
-            kprint("VFS TEST: Success! Found /hello.txt\n");
-
-            // read some bytes
-            char buf[32];
-            uint64_t bytes_read = vfs_read(f, 13, (uint8_t *)buf);
-            buf[bytes_read] = 0;
-            kprint("Content: ");
-            kprint(buf);
-            kprint("\n");
-
-            vfs_close(f);
-        }
-        else
-        {
-            kprint("VFS TEST: Failed to open /hello.txt\n");
-        }
+        test_tar_fs();
     }
     else
     {
@@ -252,28 +294,7 @@ void kmain(void)
     vfs_node_t *fat_root = fat32_init_fs(0, 1);
     vfs_mount("/data", fat_root);
 
-    file_handle_t *f1 = vfs_open("/data/TEST.TXT", 0);
-    if (f1)
-    {
-        kprint("VFS TEST: Success! Found /data/TEST.TXT\n");
-
-        // read some bytes
-        char buf[65];
-        uint64_t bytes_read = vfs_read(f1, 64, (uint8_t *)buf);
-        buf[bytes_read] = 0;
-        kprint("Content: ");
-        kprint(buf);
-        kprint("\n");
-
-        vfs_close(f1);
-    }
-    else
-    {
-        kprint("VFS TEST: Failed to open /data/TEST.TXT\n");
-    }
-
-    k_ls("/");
-    k_ls("/data");
+    test_fat32(fat_root);
 
     // test kprint
     // if we reach here, at least the inits above,
