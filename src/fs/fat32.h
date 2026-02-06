@@ -50,10 +50,10 @@ typedef struct
 
 typedef struct
 {
-    const char *name;
-    const char *ext;
-    DirectoryEntry *out_entry;
-} find_control_t;
+    uint32_t first_cluster;
+    uint32_t sector_lba;
+    uint32_t offset;
+} fat32_node_data;
 
 typedef struct
 {
@@ -61,13 +61,21 @@ typedef struct
     uint32_t offset;
 } fat32_location_t;
 
-typedef int (*fat32_entry_cb_t)(DirectoryEntry *, void *);
+typedef struct
+{
+    const char *name;
+    const char *ext;
+    DirectoryEntry *out_entry;
+    fat32_location_t *out_loc;
+} find_control_t;
+
+typedef int (*fat32_entry_cb_t)(DirectoryEntry *, fat32_location_t *loc, void *);
 
 uint32_t fat32_read_fat(uint32_t cluster);
 vfs_node_t *fat32_init_fs(uint32_t partition_lba, uint8_t drive_sel);
 void fat32_list_root(void);
 int fat32_parse_name(const char *fname, char *out_name, char *out_ext);
-int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entry);
+int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entry, fat32_location_t *out_loc);
 int fat32_iterate(uint32_t cluster, fat32_entry_cb_t cb, void *ctx);
 uint8_t *fat32_read_file(DirectoryEntry *entry);
 int fat32_readdir(vfs_node_t *node, uint32_t idx, dirent_t *out);

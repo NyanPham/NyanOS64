@@ -50,7 +50,7 @@ int cmd_ls(int argc, char **argv)
         // get the current dir
         if (getcwd(path, 128) == NULL)
         {
-            print("ls: cannot get current direcotyr\n");
+            print("ls: cannot get current directory\n");
             return 1;
         }
     }
@@ -58,7 +58,7 @@ int cmd_ls(int argc, char **argv)
     int fd = open(path, O_RDONLY);
     if (fd < 0)
     {
-        print("ls: cannot open direcotyr '");
+        print("ls: cannot open directory '");
         print(path);
         print("'\n");
         return 1;

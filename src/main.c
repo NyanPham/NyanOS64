@@ -211,16 +211,69 @@ void test_fat32(vfs_node_t *fat_root)
     k_ls("/");
     k_ls("/data");
 
-    kprint("Creating test.txt...\n");
-    int res = fat32_create(fat_root, "test.txt", 0);
+    kprint("Creating test2.txt...\n");
+    int res = fat32_create(fat_root, "test2.txt", VFS_FILE);
     if (res == 0)
     {
         kprint("Creation successful! Listing root:\n");
-        fat32_list_root();
+        k_ls("/data");
     }
     else
     {
         kprint("Creation failed.\n");
+    }
+
+    kprint("Writing content to test2.txt...\n");
+    file_handle_t *f_write = vfs_open("/data/test2.txt", 0);
+    if (f_write)
+    {
+        char *test_str = "Hello NyanOS! FAT32 Write works perfectly!";
+        uint64_t len = strlen(test_str);
+        uint64_t written = vfs_write(f_write, len, (uint8_t *)test_str);
+        kprint("Written: ");
+        kprint_int(written);
+        kprint(" bytes.\n");
+
+        vfs_close(f_write);
+    }
+    else
+    {
+        kprint("Failed to open test2.txt for writing!\n");
+    }
+
+    kprint("Verifying content of test2.txt...\n");
+    file_handle_t *f_read = vfs_open("/data/test2.txt", 0);
+    if (f_read)
+    {
+        char buf[100];
+        uint64_t bytes_read = vfs_read(f_read, 100, (uint8_t *)buf);
+        buf[bytes_read] = 0;
+
+        kprint("Read back: [");
+        kprint(buf);
+        kprint("]\n");
+
+        kprint("File Size in VFS: ");
+        kprint_int(f_read->node->length);
+        kprint("\n");
+
+        vfs_close(f_read);
+    }
+    else
+    {
+        kprint("Failed to open test2.txt for verification!\n");
+    }
+
+    kprint("\nCreating directory 'MYDIR'...\n");
+    int res_dir = fat32_create(fat_root, "mydir", VFS_DIRECTORY);
+    if (res_dir == 0)
+    {
+        kprint("Folder creation successful!\n");
+        k_ls("/data/mydir");
+    }
+    else
+    {
+        kprint("Folder creation failed\n");
     }
 }
 
