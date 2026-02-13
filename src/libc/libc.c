@@ -103,6 +103,11 @@ int readdir(int fd, uint32_t idx, dirent_t *out)
     return (int)syscall(23, (uint64_t)fd, (uint64_t)idx, (uint64_t)out);
 }
 
+int unlink(const char *pathname)
+{
+    return (int)syscall(24, (uint64_t)pathname, 0, 0);
+}
+
 int win_create(WinParams_t *win_params)
 {
     return (int)syscall(17, (uint64_t)win_params, 0, 0);
@@ -173,6 +178,16 @@ int strncmp(const char *s1, const char *s2, size_t n)
     if (n == 0)
     {
         return 0;
+    }
+    return *(unsigned char *)s1 - *(unsigned char *)s2;
+}
+
+int strcmp(const char *s1, const char *s2)
+{
+    while (*s1 && (*s1 == *s2))
+    {
+        s1++;
+        s2++;
     }
     return *(unsigned char *)s1 - *(unsigned char *)s2;
 }

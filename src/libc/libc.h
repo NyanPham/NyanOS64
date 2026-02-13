@@ -6,10 +6,13 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define O_RDONLY 0x00
-#define O_WRONLY 0x01
-#define O_RDWR 0x02
+#define O_RDONLY 0x0
+#define O_WRONLY 0x1
+#define O_RDWR 0x2
 #define O_CREAT 0x08
+#define O_EXCL 0x10
+#define O_TRUNC 0x20
+#define O_APPEND 0x40
 
 #define VFS_FILE 0x01
 #define VFS_DIRECTORY 0x02
@@ -34,10 +37,12 @@ int getpid(void);
 int pipe(int pipefd[2]);
 int dup2(int old_fd, int new_fd);
 int readdir(int fd, uint32_t idx, dirent_t *out);
+int unlink(const char *pathname);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);
 int strncmp(const char *s1, const char *s2, size_t n);
+int strcmp(const char *s1, const char *s2);
 size_t strlen(const char *s);
 void *memset(void *s, int c, size_t n);
 void *memcpy(void *dest, const void *src, size_t n);

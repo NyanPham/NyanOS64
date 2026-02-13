@@ -227,6 +227,23 @@ int cmd_echo(int argc, char **argv)
     return argc - 1;
 }
 
+int cmd_rm(int argc, char **argv)
+{
+    if (argc <= 1)
+    {
+        print("No filename provided\n");
+        return 0;
+    }
+
+    if (unlink(argv[1]) < 0)
+    {
+        print("Error to remove file\n");
+        return -1;
+    }
+
+    return 0;
+}
+
 int exec_cmd(int argc, char **argv)
 {
     /* --- HI --- */
@@ -306,6 +323,12 @@ int exec_cmd(int argc, char **argv)
         return 1;
     }
 
+    else if (strncmp(argv[0], "rm", 3) == 0)
+    {
+        cmd_rm(argc, argv);
+        return 1;
+    }
+
     return 0;
 }
 
@@ -318,7 +341,7 @@ static int find_char(char **argv, char *c)
         {
             return -1;
         }
-        if (strncmp(argv[i], c, 2) == 0)
+        if (strcmp(argv[i], c) == 0)
         {
             return i;
         }
@@ -410,14 +433,25 @@ void run_pipe(char **left_argv, char **right_argv)
     waitpid(pid2, &stat2);
 }
 
-int find_redirection(char **argv)
-{
-    return find_char(argv, ">");
-}
-
 int setup_redir(char **argv)
 {
-    int redir_idx = find_redirection(argv);
+    int append_idx = find_char(argv, ">>");
+    int trunc_idx = find_char(argv, ">");
+
+    int redir_idx = -1;
+    int mode = O_WRONLY | O_CREAT;
+
+    if (append_idx >= 0)
+    {
+        redir_idx = append_idx;
+        mode |= O_APPEND;
+    }
+    else if (trunc_idx >= 0)
+    {
+        redir_idx = trunc_idx;
+        mode |= O_TRUNC;
+    }
+
     if (redir_idx < 0 || argv[redir_idx + 1] == NULL)
     {
         return -1;
@@ -426,7 +460,7 @@ int setup_redir(char **argv)
     char *fname = argv[redir_idx + 1];
     argv[redir_idx] = NULL;
 
-    int file_fd = open(fname, O_WRONLY | O_CREAT);
+    int file_fd = open(fname, mode);
     if (file_fd < 0)
     {
         print("Shell: Cannot open/create file for redirection\n");
@@ -611,7 +645,19 @@ int main()
             continue;
         }
 
-        int redir_idx = find_redirection(argv);
+        int append_idx = find_char(argv, ">>");
+        int trunc_idx = find_char(argv, ">");
+        int redir_idx = -1;
+
+        if (append_idx >= 0)
+        {
+            redir_idx = append_idx;
+        }
+        else if (trunc_idx >= 0)
+        {
+            redir_idx = trunc_idx;
+        }
+
         if (redir_idx >= 0)
         {
             argc = redir_idx;

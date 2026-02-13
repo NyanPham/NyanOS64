@@ -310,6 +310,7 @@ vfs_fs_ops_t fat32_ops = {
     .open = NULL,
     .close = NULL,
     .create = fat32_create,
+    .unlink = fat32_unlink,
 };
 
 /* END: VFS */
@@ -537,7 +538,6 @@ int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entr
     int res = fat32_iterate(cluster, find_cb, &find_control);
     if (res > 0)
     {
-        kprint("Found a file\n");
         return 0;
     }
 
@@ -937,4 +937,22 @@ int fat32_find_free_directory_entry(uint32_t dir_cluster, fat32_location_t *out_
     }
 
     return -1;
+}
+
+void fat32_unlink(vfs_node_t *node)
+{
+    fat32_node_data *node_data = (fat32_node_data *)node->device_data;
+    uint8_t *tmp_buf = (uint8_t *)kmalloc(SECTOR_SIZE);
+    ata_read_sectors((uint16_t *)tmp_buf, node_data->sector_lba, 1, g_drive_sel);
+    ((DirectoryEntry *)(tmp_buf + node_data->offset))->name[0] = 0xE5;
+    ata_write_sectors((uint16_t *)tmp_buf, node_data->sector_lba, 1, g_drive_sel);
+    kfree(tmp_buf);
+
+    uint32_t curr_cluster = node_data->first_cluster;
+    while (curr_cluster != EOC)
+    {
+        uint32_t next_cluster = fat32_read_fat(curr_cluster);
+        fat32_write_fat_entry(curr_cluster, 0);
+        curr_cluster = next_cluster;
+    }
 }

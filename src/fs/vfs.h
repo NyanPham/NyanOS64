@@ -36,6 +36,7 @@ typedef struct vfs_fs_ops
     struct vfs_node *(*finddir)(struct vfs_node *node, const char *name);
     struct vfs_node *(*create)(struct vfs_node *parent, const char *name, uint32_t flags);
     int (*readdir)(struct vfs_node *node, uint32_t index, struct dirent *out);
+    void (*unlink)(struct vfs_node *node);
 } vfs_fs_ops_t;
 
 typedef struct vfs_node
@@ -68,5 +69,6 @@ uint64_t vfs_write(file_handle_t *file, uint64_t size, uint8_t *buffer);
 void vfs_seek(file_handle_t *file, uint64_t new_offset);
 vfs_node_t *vfs_navigate(const char *path);
 int vfs_readdir(vfs_node_t *node, uint32_t index, dirent_t *out);
+int vfs_unlink(const char *path);
 
 #endif

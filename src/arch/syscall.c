@@ -846,6 +846,25 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         return vfs_readdir(fh->node, idx, user_dirent);
     }
+    case 24: // sys_unlink
+    {
+        char *path = (char *)arg1;
+        if (!verify_usr_access((uint64_t)path, 1))
+        {
+            return -1;
+        }
+
+        Task *curr_tsk = get_curr_task();
+
+        char new_path[256];
+        resolve_path(curr_tsk->cwd, path, new_path);
+        if (strlen(new_path) >= 255)
+        {
+            return -1;
+        }
+
+        return vfs_unlink(new_path);
+    }
     default:
     {
         kprint("Kernel: unknown sys_num: ");

@@ -65,6 +65,11 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
             return NULL;
         }
 
+        if (mode & O_TRUNC)
+        {
+            node->length = 0;
+        }
+
         file_handle_t *fhandle = kmalloc(sizeof(file_handle_t));
         if (fhandle == NULL)
         {
@@ -72,9 +77,11 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
             return NULL;
         }
         fhandle->node = node;
-        fhandle->offset = 0;
         fhandle->mode = mode;
         fhandle->ref_count = 1;
+        fhandle->offset = (mode & O_APPEND)
+                              ? node->length
+                              : 0;
 
         return fhandle;
     }
@@ -153,6 +160,11 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
         node->ops->open(node, mode);
     }
 
+    if (mode & O_TRUNC)
+    {
+        node->length = 0;
+    }
+
     file_handle_t *fhandle = kmalloc(sizeof(file_handle_t));
     if (fhandle == NULL)
     {
@@ -161,9 +173,11 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
     }
 
     fhandle->node = node;
-    fhandle->offset = 0;
     fhandle->mode = mode;
     fhandle->ref_count = 1;
+    fhandle->offset = (mode & O_APPEND)
+                          ? node->length
+                          : 0;
 
     return fhandle;
 }
@@ -359,4 +373,21 @@ int vfs_readdir(vfs_node_t *node, uint32_t index, dirent_t *out)
     }
 
     return node->ops->readdir(node, index, out);
+}
+
+int vfs_unlink(const char *path)
+{
+    vfs_node_t *node = vfs_navigate(path);
+    if (node == NULL)
+    {
+        return -1;
+    }
+
+    if (node->ops && node->ops->unlink)
+    {
+        node->ops->unlink(node);
+    }
+
+    kfree(node);
+    return 0;
 }

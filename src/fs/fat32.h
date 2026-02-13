@@ -83,6 +83,7 @@ int fat32_create(vfs_node_t *parent, const char *name, int flags);
 void fat32_write_fat_entry(uint32_t cluster, uint32_t value);
 int64_t fat32_find_free_cluster(void);
 int fat32_find_free_directory_entry(uint32_t dir_cluster, fat32_location_t *out_loc);
+void fat32_unlink(vfs_node_t *node);
 
 #endif
 
