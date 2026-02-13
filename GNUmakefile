@@ -186,12 +186,13 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf
+rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf
 	@echo "Creating rootfs.tar..."
 	cp shell.elf rootfs/
 	cp hello.elf rootfs/
 	cp snake.elf rootfs/
 	cp test_fork.elf rootfs/
+	cp crash.elf rootfs/
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
 obj/src/libc/crt0.o: src/libc/crt0.asm
@@ -233,6 +234,16 @@ test_fork.elf: progs/test_fork.c $(USER_OBJS)
 		obj/progs/test_fork.c.o \
 		obj/src/libc/libc.c.o \
 		-o test_fork.elf
+
+crash.elf: progs/crash.c $(USER_OBJS)
+	@echo "Building Crash program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/crash.c -o obj/progs/crash.c.o
+	$(LD) -nostdlib -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/crash.c.o \
+		obj/src/libc/libc.c.o \
+		-o crash.elf
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
 	mkdir -p "$(dir $@)"

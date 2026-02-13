@@ -42,10 +42,25 @@ typedef struct
     uint64_t base;  // The 64-bit linear base address of the IDT.
 } __attribute__((packed)) idtr_t;
 
+typedef struct
+{
+    uint64_t rax, rbx, rcx, rdx, rsi, rdi, rbp;
+    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;
+    
+    uint64_t int_no;
+    uint64_t err_code;
+
+    uint64_t rip;
+    uint64_t cs;
+    uint64_t rflags;
+    uint64_t rsp;
+    uint64_t ss;
+} __attribute__((packed)) registers_t;
+
 // A generic, simple exception handler that halts the CPU.
 // This is used as a default for unhandled exceptions to prevent triple faults.
 __attribute__((noreturn))
-void exception_handler(void);
+void exception_handler(registers_t *regs);
 
 // Sets a descriptor (gate) in the IDT for an interrupt vector.
 void idt_set_descriptor(uint8_t vector, void* isr, uint8_t flags);

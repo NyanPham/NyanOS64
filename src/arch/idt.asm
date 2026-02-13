@@ -2,22 +2,69 @@
 ; These stubs are called by the CPU when an exception occurs.
 ; They are responsible for calling the common exception handler.
 
+[BITS 64]
+
+; The common exception handler, defined in idt.c.
+extern exception_handler
+
 ; A macro for creating an ISR stub for exceptions that push an error code.
 %macro isr_err_stub 1
 isr_stub_%+%1:
-    call exception_handler
-    iretq
+    push %1
+    jmp isr_common_stub
 %endmacro
 
 ; A macro for creating an ISR stub for exceptions that do not push an error code.
 %macro isr_no_err_stub 1
 isr_stub_%+%1:
-    call exception_handler
-    iretq
+    push 0
+    push %1
+    jmp isr_common_stub
 %endmacro
 
-; The common exception handler, defined in idt.c.
-extern exception_handler
+isr_common_stub:
+    ; save all the GP registers
+    push r15
+    push r14
+    push r13
+    push r12
+    push r11
+    push r10
+    push r9
+    push r8
+    push rbp
+    push rdi
+    push rsi
+    push rdx
+    push rcx
+    push rbx
+    push rax
+    
+    ; now rsp points to the struct registers_t, 
+    ; containing all the regs we just pushed
+    mov rdi, rsp
+
+    call exception_handler
+
+    pop rax
+    pop rbx
+    pop rcx
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rbp
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+    
+    add rsp, 16
+
+    iretq
 
 ; Create the ISR stubs for the first 32 exceptions.
 isr_no_err_stub 0
