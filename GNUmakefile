@@ -153,7 +153,7 @@ run: image
 debug: image
 	@echo "Booting $(IMAGE_FILE) with QEMU for GDB debugging..."
 	@echo "Waiting for GDB to connect on port 1234 (run: gdb -ex 'target remote :1234' bin/nyanOS)"
-	@qemu-system-x86_64 -hda $(IMAGE_FILE) -S -s -serial stdio
+	@qemu-system-x86_64 -hda $(IMAGE_FILE) -hdb hdd.img -S -s -serial stdio
 
 .PHONY: clean
 clean:

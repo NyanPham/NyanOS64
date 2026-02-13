@@ -410,6 +410,12 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         char *fname = (char *)arg1;
         uint32_t mode = (uint32_t)arg2;
 
+        if (!verify_usr_access((uint64_t)fname, 1))
+        {
+            kprint("SYS_OPEN failed: Invalid user access\n");
+            return -1;
+        }
+
         Task *curr_tsk = get_curr_task();
 
         int8_t fd = find_free_fd(curr_tsk);
@@ -418,7 +424,10 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             return -1;
         }
 
-        file_handle_t *f = vfs_open(fname, mode);
+        char full_path[256];
+        resolve_path(curr_tsk->cwd, fname, full_path);
+
+        file_handle_t *f = vfs_open(full_path, mode);
         if (f == NULL)
         {
             return -1;
@@ -862,7 +871,7 @@ int8_t find_free_fd(Task *task)
 
 void resolve_path(const char *cwd, const char *inp_path, char *out_buf)
 {
-    char tmp[256];
+    char *tmp = (char *)kmalloc(256);
 
     // First, let's find the starting point
     if (inp_path[0] == '/')
@@ -883,7 +892,12 @@ void resolve_path(const char *cwd, const char *inp_path, char *out_buf)
     }
 
     // Second, handle the Stack logic with `..` and `.`
-    char stack[32][32];
+    char (*stack)[32] = (char (*)[32])kmalloc(32 * 32);
+    if (stack == NULL)
+    {
+        kfree(tmp);
+        return;
+    }
     int top = 0;
     int i = 0;
 
@@ -941,4 +955,7 @@ void resolve_path(const char *cwd, const char *inp_path, char *out_buf)
         }
         strcat(out_buf, stack[k]);
     }
+
+    kfree(tmp);
+    kfree(stack);
 }

@@ -82,24 +82,70 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
     vfs_node_t *node = vfs_navigate(filename);
     if (node == NULL)
     {
-        // if ((mode & O_CREAT) && (g_fs_root->ops->create))
-        // {
-        //     kprint("Creating node for file: ");
-        //     kprint(filename);
-        //     kprint("\n");
+        if (mode & O_CREAT)
+        {
+            /*
+            First, determine the parent and child
+            For example, filename = "/data/test.txt"
+            parent = "/data" and child = "test.txt"
+            */
+            char parent_path[128];
+            char child_name[128];
 
-        //     node = g_fs_root->ops->create(g_fs_root, filename, mode);
-        //     if (node == NULL)
-        //     {
-        //         kprint("Node not found and cannot be created!\n");
-        //         return NULL;
-        //     }
-        // }
-        // else
-        // {
-        kprint("VFS: Node not found!\n");
-        return NULL;
-        // }
+            int len = strlen(filename);
+            int last_slash = -1;
+            for (int i = len - 1; i >= 0; i--)
+            {
+                if (filename[i] == '/')
+                {
+                    last_slash = i;
+                    break;
+                }
+            }
+
+            if (last_slash == -1)
+            {
+                // no parent, then it's at root
+                // like "test.txt"
+                return NULL;
+            }
+
+            strncpy(parent_path, filename, last_slash);
+            parent_path[last_slash] = '\0';
+            if (last_slash == 0)
+            {
+                strcpy(parent_path, "/");
+            }
+            strcpy(child_name, &filename[last_slash + 1]);
+
+            vfs_node_t *parent_node = vfs_navigate(parent_path);
+
+            if (parent_node == NULL)
+            {
+                kprint("VFS_OPEN failed: Parent directory not found for creation.\n");
+                return NULL;
+            }
+
+            if (parent_node->ops && parent_node->ops->create)
+            {
+                int res = parent_node->ops->create(parent_node, child_name, mode);
+                if (res == 0)
+                {
+                    node = vfs_navigate(filename);
+                }
+            }
+
+            if (node == NULL)
+            {
+                kprint("VFS_OPEN failed: Node not found after attempt to create\n");
+                return NULL;
+            }
+        }
+        else
+        {
+            kprint("VFS: Node not found!\n");
+            return NULL;
+        }
     }
 
     if (node->ops && node->ops->open)

@@ -769,7 +769,12 @@ int fat32_create(vfs_node_t *parent, const char *fname, int flags)
         return -1;
     }
 
-    uint8_t tmp_buf[SECTOR_SIZE];
+    uint8_t *tmp_buf = (uint8_t *)kmalloc(SECTOR_SIZE);
+    if (tmp_buf == NULL)
+    {
+        kprint("FAT32_CREATE: OOM\n");
+        return -1;
+    }
     memset(tmp_buf, 0, SECTOR_SIZE);
 
     DirectoryEntry new_entry;
@@ -804,10 +809,10 @@ int fat32_create(vfs_node_t *parent, const char *fname, int flags)
         two_dot_entry.first_cluster_low = parent_data->first_cluster & 0xFFFF;
 
         memcpy(tmp_buf, &dot_entry, sizeof(DirectoryEntry));
-        memcpy(&tmp_buf[sizeof(DirectoryEntry)], &two_dot_entry, sizeof(DirectoryEntry));
+        memcpy(tmp_buf + sizeof(DirectoryEntry), &two_dot_entry, sizeof(DirectoryEntry));
 
         uint32_t lba = fat32_cluster_to_lba(free_cluster_id);
-        ata_write_sectors(tmp_buf, lba, 1, g_drive_sel);
+        ata_write_sectors((uint16_t *)tmp_buf, lba, 1, g_drive_sel);
     }
 
     ata_read_sectors((uint16_t *)tmp_buf, loc.sector_lba, 1, g_drive_sel);
@@ -816,6 +821,7 @@ int fat32_create(vfs_node_t *parent, const char *fname, int flags)
 
     fat32_write_fat_entry(free_cluster_id, EOC);
 
+    kfree(tmp_buf);
     return 0;
 }
 

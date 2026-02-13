@@ -9,6 +9,7 @@
 #define O_RDONLY 0x00
 #define O_WRONLY 0x01
 #define O_RDWR 0x02
+#define O_CREAT 0x08
 
 #define VFS_FILE 0x01
 #define VFS_DIRECTORY 0x02

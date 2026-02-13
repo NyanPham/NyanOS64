@@ -209,6 +209,24 @@ int cmd_grep(int argc, char **argv)
     return 0;
 }
 
+int cmd_echo(int argc, char **argv)
+{
+    if (argc <= 1)
+    {
+        print("\n");
+        return 0;
+    }
+
+    for (int i = 1; i < argc && argv[i] != NULL; i++)
+    {
+        print(argv[i]);
+        print(" ");
+    }
+    print("\n");
+
+    return argc - 1;
+}
+
 int exec_cmd(int argc, char **argv)
 {
     /* --- HI --- */
@@ -281,10 +299,17 @@ int exec_cmd(int argc, char **argv)
         return 1;
     }
 
+    /* --- ECHO --- */
+    else if (strncmp(argv[0], "echo", 5) == 0)
+    {
+        cmd_echo(argc, argv);
+        return 1;
+    }
+
     return 0;
 }
 
-int find_pipe(char **argv)
+static int find_char(char **argv, char *c)
 {
     int i = 0;
     while (1)
@@ -293,12 +318,17 @@ int find_pipe(char **argv)
         {
             return -1;
         }
-        if (strncmp(argv[i], "|", 2) == 0)
+        if (strncmp(argv[i], c, 2) == 0)
         {
             return i;
         }
         i++;
     }
+}
+
+int find_pipe(char **argv)
+{
+    return find_char(argv, "|");
 }
 
 void run_pipe(char **left_argv, char **right_argv)
@@ -378,6 +408,43 @@ void run_pipe(char **left_argv, char **right_argv)
     int stat2 = 0;
     waitpid(pid1, &stat1);
     waitpid(pid2, &stat2);
+}
+
+int find_redirection(char **argv)
+{
+    return find_char(argv, ">");
+}
+
+int setup_redir(char **argv)
+{
+    int redir_idx = find_redirection(argv);
+    if (redir_idx < 0 || argv[redir_idx + 1] == NULL)
+    {
+        return -1;
+    }
+
+    char *fname = argv[redir_idx + 1];
+    argv[redir_idx] = NULL;
+
+    int file_fd = open(fname, O_WRONLY | O_CREAT);
+    if (file_fd < 0)
+    {
+        print("Shell: Cannot open/create file for redirection\n");
+        return -1;
+    }
+
+    int stdout_bk = 10;
+    if (dup2(1, stdout_bk) < 0)
+    {
+        print("Shell: Failed to backup stdout\n");
+        close(file_fd);
+        return -1;
+    }
+
+    dup2(file_fd, 1);
+    close(file_fd);
+
+    return stdout_bk;
 }
 
 int parse_cmd(char *line, char **argv)
@@ -544,6 +611,14 @@ int main()
             continue;
         }
 
+        int redir_idx = find_redirection(argv);
+        if (redir_idx >= 0)
+        {
+            argc = redir_idx;
+        }
+
+        int stdout_bk = setup_redir(argv);
+
         if (!exec_cmd(argc, argv))
         {
             /* --- EXTERNAL PROGS --- */
@@ -562,6 +637,12 @@ int main()
                 int stat;
                 waitpid(pid, &stat);
             }
+        }
+
+        if (stdout_bk != -1)
+        {
+            dup2(stdout_bk, 1);
+            close(stdout_bk);
         }
     }
 
