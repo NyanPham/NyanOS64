@@ -79,6 +79,7 @@ static inline void spawn_shell()
         700, "Shell",
         WIN_MOVABLE | WIN_RESIZEABLE | WIN_MINIMIZABLE);
     shell_task->term = console;
+    shell_task->win = console->win;
     console->win->owner_pid = shell_task->pid;
     strcpy(shell_task->cwd, "/");
 
@@ -312,6 +313,7 @@ void kmain(void)
     ata_identify(1);
     sti();
     ata_fs_init();
+    enable_sse();
 
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1)
@@ -381,8 +383,39 @@ void kmain(void)
                     Window *top_win = win_get_active();
                     if (top_win != NULL && top_win->owner_pid != -1)
                     {
-                        sched_send_signal(top_win->owner_pid, SIGINT);
-                        sched_wake_pid(top_win->owner_pid);
+                        int target_pid = top_win->owner_pid;
+                        uint8_t should_kill = 1;
+                        Task *win_owner_tsk = sched_find_task(top_win->owner_pid);
+
+                        if (win_owner_tsk != NULL && win_owner_tsk->term != NULL && win_owner_tsk->term->win == top_win)
+                        {
+                            int child_pid = win_owner_tsk->term->child_pid;
+                            Task *child_tsk = sched_find_task(child_pid);
+
+                            if (child_pid > 0 && child_tsk != NULL && child_tsk->state != TASK_ZOMBIE && child_tsk->state != TASK_DEAD)
+                            {
+                                target_pid = child_pid;
+                            }
+                            else
+                            {
+                                if (win_owner_tsk->parent == NULL || win_owner_tsk->parent->pid == 0)
+                                {
+                                    should_kill = 0;
+                                    term_put_char(win_owner_tsk->term, '^');
+                                    term_put_char(win_owner_tsk->term, 'C');
+                                    term_put_char(win_owner_tsk->term, '\n');
+                                }
+                                else
+                                {
+                                    kprint("Killing User Terminal App (PID > 1).\n");
+                                }
+                            }
+                        }
+                        if (should_kill)
+                        {
+                            sched_send_signal(target_pid, SIGINT);
+                            sched_wake_pid(target_pid);
+                        }
                     }
                     else
                     {

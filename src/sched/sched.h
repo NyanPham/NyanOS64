@@ -36,6 +36,8 @@ typedef struct Task
 
     // Signal
     uint32_t pending_signals;
+
+    uint8_t fpu_regs[512 + 16];
 } Task;
 
 Task *sched_new_task(void);
@@ -57,7 +59,7 @@ void sched_send_signal(int pid, uint32_t sig_code);
 
 void sched_register_task(Task *task);
 Task *task_factory_create(uint64_t entry, uint64_t rsp);
-Task *task_factory_fork(Task* parent);
+Task *task_factory_fork(Task *parent);
 
 static void inline sched_clean_gui(Task *tsk);
 static void inline sched_clean_fds(Task *tsk);

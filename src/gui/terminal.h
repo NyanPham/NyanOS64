@@ -59,7 +59,7 @@ typedef struct Terminal
 } Terminal;
 
 Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max_rows, const char *title, uint32_t win_flags);
-void term_destroy(Terminal *term);
+void term_release(Terminal *term, int requestor_pid);
 void term_refresh(Terminal *term);
 void term_put_char(Terminal *term, char c);
 size_t term_read(Terminal *term, char *buf, size_t count);

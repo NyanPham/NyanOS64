@@ -28,8 +28,16 @@ extern uint64_t *kern_pml4;
 extern void tss_set_stack(uint64_t stk_ptr);
 extern uint64_t kern_stk_ptr;
 
-extern void switch_to_task(uint64_t *prev_rsp_ptr, uint64_t next_rsp);
+extern void switch_to_task(uint64_t *prev_rsp_ptr, uint64_t next_rsp, uint8_t *prev_fpu, uint8_t *next_fpu);
 extern void task_start_stub(void);
+
+static uint8_t *get_aligned_fpu_region(Task *tsk)
+{
+    uint64_t addr = (uint64_t)tsk->fpu_regs;
+    // E.G. 0x1008 -> (0x1008 + 15) & ~0xF = 0x1017 & ...F0 = 0x1010 (Aligned!)
+    addr = (addr + 15) & ~((uint64_t)0xF);
+    return (uint8_t *)addr;
+}
 
 /*
  * Allocs mem for a Task
@@ -51,6 +59,9 @@ Task *sched_new_task(void)
     new_tsk->win = NULL;
     new_tsk->term = NULL;
     new_tsk->pending_signals = 0;
+    uint8_t *fpu_ptr = get_aligned_fpu_region(new_tsk);
+    memset(fpu_ptr, 0, 512);
+    *((uint32_t *)(fpu_ptr + 0x18)) = 0x1F80; // set MXCS to avoid exceptions in float math
 
     if (g_curr_tsk != NULL) // has parent -> copy dir from him
     {
@@ -125,7 +136,7 @@ void task_context_reset(Task *tsk, uint64_t entry, uint64_t rsp)
     *(--sp) = NEW_TASK_RFLAGS; // RFLAGS
     *(--sp) = NEW_TASK_CS;     // CS
     *(--sp) = entry;           // RIP
-    
+
     // Push GPRs (rax->r15)
     for (int i = 0; i < 15; i++)
     {
@@ -252,7 +263,7 @@ void schedule(void)
         }
     }
 
-    Task *prev_task = g_curr_tsk;
+    Task *prev_tsk = g_curr_tsk;
     g_curr_tsk = next_tsk;
 
     tss_set_stack(next_tsk->kern_stk_top);
@@ -264,16 +275,18 @@ void schedule(void)
 
     /*
     Context Switching
-    We do save current RSP value into &prev_task->kern_stk_rsp
+    We do save current RSP value into &prev_tsk->kern_stk_rsp
     and pass new RSP value from next_tsk->kern_stk_rsp
     */
-    if (prev_task == NULL)
+    uint8_t *prev_fpu = (prev_tsk != NULL) ? get_aligned_fpu_region(prev_tsk) : NULL;
+    uint8_t *next_fpu = get_aligned_fpu_region(next_tsk);
+    if (prev_tsk == NULL)
     {
-        switch_to_task(NULL, next_tsk->kern_stk_rsp);
+        switch_to_task(NULL, next_tsk->kern_stk_rsp, NULL, next_fpu);
     }
     else
     {
-        switch_to_task(&prev_task->kern_stk_rsp, next_tsk->kern_stk_rsp);
+        switch_to_task(&prev_tsk->kern_stk_rsp, next_tsk->kern_stk_rsp, prev_fpu, next_fpu);
     }
 
     // CPU is now running g_curr_tsk, which is the next_tsk right above this comment.
@@ -348,7 +361,8 @@ void sched_exit(int code)
     sched_clean_fds(task_to_exit);
 
     kprint("Task exited. Switching to next...");
-    switch_to_task(NULL, next_tsk->kern_stk_rsp);
+    uint8_t *next_fpu = get_aligned_fpu_region(next_tsk);
+    switch_to_task(NULL, next_tsk->kern_stk_rsp, NULL, next_fpu);
 }
 
 void sched_kill(int pid)
@@ -489,6 +503,10 @@ Task *task_factory_fork(Task *parent_tsk)
         }
     }
 
+    asm volatile("fxsave %0" : "=m"(*get_aligned_fpu_region(parent_tsk)));
+    uint8_t *parent_fpu = get_aligned_fpu_region(parent_tsk);
+    uint8_t *child_fpu = get_aligned_fpu_region(child_tsk);
+    memcpy(child_fpu, parent_fpu, 512);
 
     // copy the memory space
     uint64_t new_pml4 = vmm_copy_hierarchy((uint64_t *)(parent_tsk->pml4 + hhdm_offset), 4);
@@ -505,7 +523,7 @@ Task *task_factory_fork(Task *parent_tsk)
 
     // copy environment
     memcpy(child_tsk->fd_tbl, parent_tsk->fd_tbl, MAX_OPEN_FILES * sizeof(file_handle_t *));
-    
+
     for (int i = 0; i < MAX_OPEN_FILES; i++)
     {
         if (child_tsk->fd_tbl[i] == NULL)
@@ -573,35 +591,20 @@ Task *task_factory_fork(Task *parent_tsk)
 
 static void inline sched_clean_gui(Task *tsk)
 {
-    asm volatile("cli");
     // Handle GUI vs CLI
     if (tsk->term != NULL)
     {
-        if (tsk->term->child_pid == tsk->pid)
+        if (tsk->win == tsk->term->win)
         {
-            if (tsk->parent != NULL)
-            {
-                tsk->term->child_pid = tsk->parent->pid;
-            }
-            else
-            {
-                tsk->term->child_pid = -1;
-            }
+            tsk->win = NULL;
         }
-        if (tsk->term->win != NULL && tsk->term->win->owner_pid == tsk->pid)
-        {
-            term_destroy(tsk->term);
-        }
+        term_release(tsk->term, tsk->pid);
         tsk->term = NULL;
-        tsk->win = NULL;
     }
 
     if (tsk->win != NULL)
     {
-        if (tsk->win->owner_pid == tsk->pid)
-        {
-            win_close(tsk->win);
-        }
+        win_close(tsk->win);
         tsk->win = NULL;
     }
 }

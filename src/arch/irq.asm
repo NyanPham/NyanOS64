@@ -32,15 +32,25 @@ do_irq:
     push r10
     push r11
 
+    ; Save FPU/SSE state
+    ; The stack now is 16 aligned
+    ; RSP is subtracted 520 bytes (512 byte data + 8 byte padding)
+    sub rsp, 520 
+    fxsave [rsp]
+
     ; The stack pointer is the first argument to irq_entry.
     ; The IRQ number is the second argument.
-    ; How come we get rsp + 0x58? do_irq pushed 9 regs, 
+    ; How come we get rsp + 0x260? do_irq pushed 9 regs, and 520 bytes of FPU/SSE
     ; and its caller, irq%1_stub has stack layout as ret_addr, dummy value, and IRQ number.
-    ; we want to stop at the IRQ number, so offset = 9 * 8 + 8 + 8 = 0x58.
-
+    ; we want to stop at the IRQ number, so offset = 520 + 9 * 8 + 8 + 8 = 608 = 0x260.
     mov rdi, rsp    
-    mov rsi, [rsp+0x58] 
+    add rdi, 520 ; rdi now points to the struct registers_t
+    mov rsi, [rsp+0x260] 
     call irq_entry  ; Call the C-level IRQ entry function.
+
+    ; Restore FPU/SSE
+    fxrstor [rsp]
+    add rsp, 520
 
     ; Restore all general-purpose registers.
     pop r11

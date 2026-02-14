@@ -170,9 +170,11 @@ clean:
 
 USER_CFLAGS := -Wall -Wextra -std=gnu11 -ffreestanding \
 	-fno-stack-protector -fno-stack-check -fno-lto -fno-PIC \
-	-m64 -march=x86-64 -mabi=sysv -mno-80387 -mno-mmx -mno-sse -mno-sse2 \
+	-m64 -march=x86-64 -mabi=sysv -mno-80387 -mno-mmx \
 	-mcmodel=small \
 	-Isrc/include
+
+USER_LDFLAGS := -m elf_x86_64 -nostdlib -static -z max-page-size=0x1000
 
 USER_OBJS := obj/src/libc/crt0.o obj/src/libc/libc.c.o
 
@@ -180,19 +182,20 @@ shell.elf: progs/shell.c $(USER_OBJS)
 	@echo "Building Shell..."
 	mkdir -p obj/progs
 	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/shell.c -o obj/progs/shell.c.o
-	$(LD) -nostdlib -Ttext=0x400000 \
+	$(LD) $(USER_LDFLAGS) -Ttext=0x400000 \
 		obj/src/libc/crt0.o \
 		obj/progs/shell.c.o \
 		obj/src/libc/libc.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf
+rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf
 	@echo "Creating rootfs.tar..."
 	cp shell.elf rootfs/
 	cp hello.elf rootfs/
 	cp snake.elf rootfs/
 	cp test_fork.elf rootfs/
 	cp crash.elf rootfs/
+	cp fpu_test.elf rootfs/
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
 obj/src/libc/crt0.o: src/libc/crt0.asm
@@ -205,7 +208,7 @@ hello.elf: progs/hello.c $(USER_OBJS)
 	
 	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/hello.c -o obj/progs/hello.c.o
 
-	$(LD) -nostdlib -Ttext=0x800000 \
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
 		obj/src/libc/crt0.o \
 		obj/progs/hello.c.o \
 		obj/src/libc/libc.c.o \
@@ -217,7 +220,7 @@ snake.elf: progs/snake.c $(USER_OBJS)
 	
 	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/snake.c -o obj/progs/snake.c.o
 
-	$(LD) -nostdlib -Ttext=0x800000 \
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
 		obj/src/libc/crt0.o \
 		obj/progs/snake.c.o \
 		obj/src/libc/libc.c.o \
@@ -229,7 +232,7 @@ test_fork.elf: progs/test_fork.c $(USER_OBJS)
 	
 	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/test_fork.c -o obj/progs/test_fork.c.o
 
-	$(LD) -nostdlib -Ttext=0x800000 \
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
 		obj/src/libc/crt0.o \
 		obj/progs/test_fork.c.o \
 		obj/src/libc/libc.c.o \
@@ -239,11 +242,21 @@ crash.elf: progs/crash.c $(USER_OBJS)
 	@echo "Building Crash program..."
 	mkdir -p obj/progs
 	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/crash.c -o obj/progs/crash.c.o
-	$(LD) -nostdlib -Ttext=0x800000 \
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
 		obj/src/libc/crt0.o \
 		obj/progs/crash.c.o \
 		obj/src/libc/libc.c.o \
 		-o crash.elf
+
+fpu_test.elf: progs/fpu_test.c $(USER_OBJS)
+	@echo "Building FPU TEST program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/fpu_test.c -o obj/progs/fpu_test.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/fpu_test.c.o \
+		obj/src/libc/libc.c.o \
+		-o fpu_test.elf
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
 	mkdir -p "$(dir $@)"

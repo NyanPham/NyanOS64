@@ -44,6 +44,13 @@ static WinDragCtx drag_ctx =
         .off_y = 0,
 };
 
+static inline uint64_t get_rflags(void)
+{
+    uint64_t rflags;
+    asm volatile("pushfq; pop %0" : "=r"(rflags));
+    return rflags;
+}
+
 static void win_stain_list(Window *win)
 {
     while (win != NULL)
@@ -210,6 +217,8 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     win->pixels_size = pixel_buf_size;
     init_win_pixels(win);
 
+    uint64_t rflags = get_rflags();
+    cli();
     // link it to the list
     // the latest created win is always
     // on top
@@ -226,6 +235,10 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
         win->prev = g_win_top;
         g_win_top->next = win;
         g_win_top = win;
+    }
+    if (rflags & (1 << 9))
+    {
+        sti();
     }
 
     Task *tsk = get_curr_task();
@@ -275,6 +288,7 @@ bool check_win_drag(Window *win, int64_t mouse_x, int64_t mouse_y)
 
 void win_paint()
 {
+    uint64_t rflags = get_rflags();
     cli();
     Window *curr = g_win_list;
     while (curr != NULL)
@@ -282,7 +296,10 @@ void win_paint()
         win_draw(curr);
         curr = curr->next;
     }
-    sti();
+    if (rflags & (1 << 9))
+    {
+        sti();
+    }
 }
 
 Window *get_win_at(int64_t mx, int64_t my)
@@ -341,6 +358,8 @@ void win_focus(Window *win)
 
 void win_close(Window *win)
 {
+    uint64_t rflags = get_rflags();
+    cli();
     video_add_dirty_rect(win->x, win->y, win->width, win->height);
 
     if (win == drag_ctx.target)
@@ -373,6 +392,11 @@ void win_close(Window *win)
     {
         win->prev->next = win->next;
         win->next->prev = win->prev;
+    }
+
+    if (rflags & (1 << 9))
+    {
+        sti();
     }
 
     if (win->pixels != NULL)
@@ -454,6 +478,8 @@ void win_put_char(Window *win, char c)
 
 void win_update(void)
 {
+    cli();
+
     int64_t mstat = mouse_get_stat();
     int64_t mx = mouse_get_x();
     int64_t my = mouse_get_y();
@@ -612,6 +638,8 @@ void win_update(void)
         }
         curr_win = curr_win->next;
     }
+
+    sti();
 }
 
 Window *win_get_active()

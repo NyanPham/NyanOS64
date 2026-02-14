@@ -17,6 +17,7 @@
 #include "kern_defs.h"
 #include "include/syscall_args.h"
 #include "fs/pipe.h"
+#include "utils/asm_instrs.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -32,6 +33,7 @@
 extern uint64_t hhdm_offset;
 extern void syscall_entry(void);
 int8_t find_free_fd(Task *task);
+extern void switch_to_task(uint64_t *prev_rsp_ptr, uint64_t next_rsp, uint8_t *prev_fpu, uint8_t *next_fpu);
 
 static bool verify_usr_access(uint64_t ptr, uint64_t size)
 {
@@ -303,7 +305,16 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             kfree(argv_list);
             return -1;
         }
+
+        /*
+        turn of the interrupts to
+        avoid our scheduler intervention
+        when the pml4 swapping is still happening
+        */
+        cli();
         write_cr3(new_pml4);
+        curr_tsk->pml4 = new_pml4;
+        sti();
 
         uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
         uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
@@ -339,7 +350,10 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         if (entry == 0)
         {
+            cli();
             write_cr3(old_pml4);
+            curr_tsk->pml4 = old_pml4;
+            sti();
             kfree(elf_fname);
             vmm_ret_pml4(new_pml4);
             return -1;
@@ -347,7 +361,6 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         kfree(elf_fname);
 
-        curr_tsk->pml4 = new_pml4;
         curr_tsk->heap_end = USER_HEAP_START;
 
         vmm_free_table((uint64_t *)(old_pml4 + hhdm_offset), 4);
@@ -357,9 +370,16 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             curr_tsk->term->child_pid = curr_tsk->pid;
         }
 
+        curr_tsk->win = NULL;
+
         task_context_reset(curr_tsk, entry, rsp_virt_addr);
 
-        switch_to_task(NULL, curr_tsk->kern_stk_rsp);
+        uint64_t fpu_addr = (uint64_t)curr_tsk->fpu_regs;
+        uint8_t *fpu_aligned = (uint8_t *)((fpu_addr + 15) & ~((uint64_t)0xF));
+        memset(fpu_aligned, 0, 512);
+        *((uint16_t *)(fpu_aligned)) = 0x037F;
+        *((uint32_t *)(fpu_aligned + 0x18)) = 0x1F80;
+        switch_to_task(NULL, curr_tsk->kern_stk_rsp, NULL, fpu_aligned);
 
         return 0;
     }

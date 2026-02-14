@@ -72,6 +72,12 @@ void exception_handler(registers_t *regs)
 
     kprint("\n[EXCEPTION] Unhandled Interrupt: ");
     kprint_int(regs->int_no);
+    kprint("\nRIP: ");
+    kprint_hex_64(regs->rip);
+    kprint("  CS: ");
+    kprint_hex_64(regs->cs);
+    kprint("  RFLAGS: ");
+    kprint_hex_64(regs->rflags);
     kprint("\n");
     __asm__ volatile("cli; hlt");
     for (;;)

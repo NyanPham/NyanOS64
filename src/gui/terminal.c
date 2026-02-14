@@ -248,13 +248,8 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
 /**
  * @brief
  */
-void term_destroy(Terminal *term)
+static void term_free_internal(Terminal *term)
 {
-    if (term == NULL)
-    {
-        return;
-    }
-
     if (term->text_buf != NULL)
     {
         vmm_free(term->text_buf);
@@ -269,6 +264,29 @@ void term_destroy(Terminal *term)
     }
 
     kfree(term);
+}
+
+void term_release(Terminal *term, int requestor_pid)
+{
+    if (term == NULL)
+    {
+        return;
+    }
+
+    // requestor is the child, so just returns the term to the parent
+    // not destroy the term
+    if (term->child_pid == requestor_pid)
+    {
+        term->child_pid = -1;
+        return;
+    }
+
+    // requestor is the owner of the term, destroy the term
+    if (term->win != NULL && term->win->owner_pid == requestor_pid)
+    {
+        term_free_internal(term);
+        return;
+    }
 }
 
 static void draw_text_cursor(Terminal *term, uint64_t win_rows)
