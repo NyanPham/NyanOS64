@@ -11,7 +11,6 @@
 
 #include <stddef.h>
 
-extern uint64_t hhdm_offset;
 extern uint64_t *kern_pml4;
 
 uint64_t elf_load(const char *fname)
@@ -38,7 +37,7 @@ uint64_t elf_load(const char *fname)
     }
 
     uint64_t curr_pml4_phys = read_cr3();
-    uint64_t *curr_pml4_virt = (uint64_t *)(curr_pml4_phys + hhdm_offset);
+    uint64_t *curr_pml4_virt = vmm_phys_to_hhdm(curr_pml4_phys);
 
     uint16_t phdrs_size = elf_hdr.e_phnum * elf_hdr.e_phentsize;
     Elf64_Phdr *phdr = (Elf64_Phdr *)vmm_alloc(phdrs_size);
@@ -66,7 +65,7 @@ uint64_t elf_load(const char *fname)
 
                 memset(loc_virt_addr, 0, PAGE_SIZE);
 
-                uint64_t phys_addr = (uint64_t)loc_virt_addr - hhdm_offset;
+                uint64_t phys_addr = vmm_hhdm_to_phys(loc_virt_addr);
                 uint64_t targt_addr = vaddr + (j * PAGE_SIZE);
 
                 vmm_map_page(

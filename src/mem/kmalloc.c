@@ -26,12 +26,12 @@ void *request_new_page()
     // we need to convertthe phys_addr to virt_addr
     if ((uint64_t)ptr < hhdm_offset)
     {
-        ptr = (void*)((uint64_t)ptr + hhdm_offset);
+        ptr = vmm_phys_to_hhdm((uint64_t)ptr);
     }
 
-    FreeBlock *new_page = (FreeBlock*)ptr;
+    FreeBlock *new_page = (FreeBlock *)ptr;
     new_page->size = PAGE_SIZE;
-    kfree((void*)((uint8_t*)new_page + sizeof(FreeBlock)));
+    kfree((void *)((uint8_t *)new_page + sizeof(FreeBlock)));
 
     return new_page;
 }
@@ -103,7 +103,7 @@ void *kmalloc(size_t size)
             return NULL;
         }
     }
-    
+
     size_t allocated_size = sizeof(FreeBlock) + size;
     size_t remaining_size = blk->size - allocated_size;
     blk->size = allocated_size;
@@ -113,9 +113,9 @@ void *kmalloc(size_t size)
     {
         FreeBlock *remaining = (FreeBlock *)((uint8_t *)blk + allocated_size);
         remaining->size = remaining_size;
-        kfree((void*)((uint8_t*)remaining + sizeof(FreeBlock)));
+        kfree((void *)((uint8_t *)remaining + sizeof(FreeBlock)));
     }
-    else 
+    else
     {
         blk->size += remaining_size;
     }
@@ -131,7 +131,7 @@ void kfree(void *ptr)
     }
 
     FreeBlock *blk_to_free = (FreeBlock *)((void *)ptr - sizeof(FreeBlock));
-    
+
     // coalescing
     if (blk_to_free->size == 0)
     {
@@ -148,8 +148,8 @@ void kfree(void *ptr)
         g_free_list_head = blk_to_free;
 
         // merge right
-        if (blk_to_free->next != NULL && 
-        ((uint64_t)blk_to_free + blk_to_free->size) == (uint64_t)blk_to_free->next)
+        if (blk_to_free->next != NULL &&
+            ((uint64_t)blk_to_free + blk_to_free->size) == (uint64_t)blk_to_free->next)
         {
             blk_to_free->size += blk_to_free->next->size;
             blk_to_free->next = blk_to_free->next->next;
@@ -168,8 +168,8 @@ void kfree(void *ptr)
     prev->next = blk_to_free;
 
     // 3. merge right - blk_to_free /w next?
-    if (blk_to_free->next != NULL && 
-       ((uint64_t)blk_to_free + blk_to_free->size) == (uint64_t)blk_to_free->next)
+    if (blk_to_free->next != NULL &&
+        ((uint64_t)blk_to_free + blk_to_free->size) == (uint64_t)blk_to_free->next)
     {
         blk_to_free->size += blk_to_free->next->size;
         blk_to_free->next = blk_to_free->next->next;

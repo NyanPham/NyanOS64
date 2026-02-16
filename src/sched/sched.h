@@ -6,6 +6,7 @@
 #define TASK_DEAD 0x2
 #define TASK_ZOMBIE 0x3
 
+#include "mem/vmm.h"
 #include "fs/vfs.h"
 #include <stdint.h>
 
@@ -28,6 +29,9 @@ typedef struct Task
     struct Task *parent;
     int ret_val; // exit code
     uint64_t heap_end;
+    VmFreeRegion *vm_free_head;
+    VmAllocatedList *vm_alloc_head;
+
     char cwd[MAX_CWD_LEN];
 
     // GUI & CLI

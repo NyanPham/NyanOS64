@@ -49,6 +49,8 @@ syscall_entry:
     push r15
 
     ; shuffle the registers from user-space to System V ABI
+    mov r9, r8
+    mov r8, r10
     mov rcx, rdx
     mov rdx, rsi
     mov rsi, rdi

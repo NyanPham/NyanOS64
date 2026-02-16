@@ -24,10 +24,9 @@
 #define IOREGSEL_OFFSET 0x00
 #define IOWIN_OFFSET 0x10
 
-extern uint64_t hhdm_offset;
-extern uint64_t* kern_pml4;
-static volatile uint32_t* g_ioapic_base = NULL;
-static volatile uint32_t* g_lapic_regs = NULL;
+extern uint64_t *kern_pml4;
+static volatile uint32_t *g_ioapic_base = NULL;
+static volatile uint32_t *g_lapic_regs = NULL;
 
 /** returns a 'true' value if the CPU supports APIC
  *  and if the local APIC hasn't been disabled in MSRs
@@ -36,21 +35,21 @@ static volatile uint32_t* g_lapic_regs = NULL;
 bool check_apic()
 {
     uint32_t eax, ebx, ecx, edx;
-    cpuid(1, &eax, &ecx, &edx, &ebx);   // 1 to get processor info and feature bits 
+    cpuid(1, &eax, &ecx, &edx, &ebx); // 1 to get processor info and feature bits
     return edx & CPUID_FEAT_EDX_APIC;
 }
 
 // Read a 32-bit reg from I/O APIC
 static uint32_t ioapic_read(uint32_t reg)
 {
-    g_ioapic_base[IOREGSEL_OFFSET] = reg & 0xFF;    // select reg port
+    g_ioapic_base[IOREGSEL_OFFSET] = reg & 0xFF;           // select reg port
     return g_ioapic_base[IOWIN_OFFSET / sizeof(uint32_t)]; // data port
 }
 
 // Write a 32-bit reg to I/O APIC
 static void ioapic_write(uint32_t reg, uint32_t val)
 {
-    g_ioapic_base[IOREGSEL_OFFSET] = reg & 0xFF;    // select reg port
+    g_ioapic_base[IOREGSEL_OFFSET] = reg & 0xFF;          // select reg port
     g_ioapic_base[IOWIN_OFFSET / sizeof(uint32_t)] = val; // data port
 }
 
@@ -64,7 +63,7 @@ void apic_init()
 
     pic_disabled();
     uint64_t base = rdmsr(IA32_APIC_BASE_MSR);
-    
+
     // check if the Bit 11(APIC Enable) is on
     if (!(base & IA32_APIC_BASE_MSR_ENABLE))
     {
@@ -80,11 +79,11 @@ void apic_init()
     */
 
     // get phys_addr and virt_addr of IA32_APIC_BASE_MSR, and do mapping
-    uint64_t phys_addr = base & (~(0xFFF));         // We remove the lowest 12 bits as they are for flags
-    uint64_t virt_addr = phys_addr + hhdm_offset;
+    uint64_t phys_addr = base & (~(0xFFF)); // We remove the lowest 12 bits as they are for flags
+    uint64_t virt_addr = (uint64_t)vmm_phys_to_hhdm(phys_addr);
     vmm_map_page(kern_pml4, virt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
 
-    g_lapic_regs = (volatile uint32_t*)virt_addr;
+    g_lapic_regs = (volatile uint32_t *)virt_addr;
 
     // Enable LAPIC in the CPU
     g_lapic_regs[SPURIOUS_INT_REG_OFFSET / sizeof(uint32_t)] |= (IA32_APIC_BASE_BSP | 0xFF);
@@ -92,15 +91,15 @@ void apic_init()
 
     // Timer
     g_lapic_regs[TIMER_OFFSET / sizeof(uint32_t)] = (0x20 | (1 << 17)); // Set up the timer, 0x20 is our irq0_stub, bit 17 is the "Periodic" mode
-    g_lapic_regs[DIVIDE_CONFIG_OFFSET / sizeof(uint32_t)] |= 0x03;  // divide config to /16
-    g_lapic_regs[INITIAL_COUNT_OFFSET / sizeof(uint32_t)] = 0x100000;// initial count
+    g_lapic_regs[DIVIDE_CONFIG_OFFSET / sizeof(uint32_t)] |= 0x03;      // divide config to /16
+    g_lapic_regs[INITIAL_COUNT_OFFSET / sizeof(uint32_t)] = 0x100000;   // initial count
 
     // get the phys_addr and virt_addr of DEFAULT_IOAPICBASE, and do mapping
     uint64_t ioapic_phys = DEFAULT_IOAPICBASE;
-    uint64_t ioapic_virt = ioapic_phys + hhdm_offset;
+    uint64_t ioapic_virt = (uint64_t)vmm_phys_to_hhdm(ioapic_phys);
     vmm_map_page(kern_pml4, ioapic_virt, ioapic_phys, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
 
-    g_ioapic_base = (volatile uint32_t*)ioapic_virt;
+    g_ioapic_base = (volatile uint32_t *)ioapic_virt;
 
     /*
     Each irq takes up 2 32-bit regs.
@@ -114,7 +113,7 @@ void apic_init()
     ioapic_write(0x12, 0x21);
     ioapic_write(0x13, 0x00);
 
-    // wire up the mouse handle 
+    // wire up the mouse handle
     ioapic_write(0x28, 0x2c);
     ioapic_write(0x29, 0x00);
 

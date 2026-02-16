@@ -6,25 +6,34 @@
 #include "../string.h"
 #include "kern_defs.h"
 #include "utils/asm_instrs.h"
+#include "sched/sched.h"
 
 #include <stddef.h>
 
-extern uint64_t hhdm_offset; // from pmm.c
-uint64_t *kern_pml4 = NULL;  // shared to other components
+uint64_t *kern_pml4 = NULL; // shared to other components
 
 static VmAllocatedList *g_vm_allocated_head;
 static VmFreeRegion *g_vm_free_head;
 
-static void vmm_add_free_region(uint64_t addr, size_t size);
-
-static int8_t vmm_add_allocated_mem(uint64_t addr, size_t size);
-static VmAllocatedList *vmm_pop_allocated_mem(uint64_t addr);
-static VmAllocatedList *vmm_find_allocated_mem(uint64_t addr);
-static void vmm_remove_allocated_mem(VmAllocatedList *prev, VmAllocatedList *curr);
-
 static inline size_t get_aligned_size(size_t size)
 {
     return (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+}
+
+static void get_vm_ctx(VmFreeRegion ***free_head_ptr, VmAllocatedList ***alloc_head_ptr)
+{
+    Task *curr = get_curr_task();
+
+    if (curr != NULL && curr->pid > 0 && curr->vm_free_head != NULL)
+    {
+        *free_head_ptr = &curr->vm_free_head;
+        *alloc_head_ptr = &curr->vm_alloc_head;
+    }
+    else
+    {
+        *free_head_ptr = &g_vm_free_head;
+        *alloc_head_ptr = &g_vm_allocated_head;
+    }
 }
 
 uint64_t vmm_new_pml4()
@@ -35,7 +44,7 @@ uint64_t vmm_new_pml4()
         return NULL;
     }
 
-    uint64_t pml4_phys = ((uint64_t)pml4_virt - hhdm_offset);
+    uint64_t pml4_phys = vmm_hhdm_to_phys(pml4_virt);
     memset(pml4_virt, 0, PAGE_SIZE);
     memcpy(
         &((uint64_t *)pml4_virt)[256],
@@ -47,7 +56,7 @@ uint64_t vmm_new_pml4()
 
 void vmm_ret_pml4(uint64_t pml4_phys)
 {
-    void *pml4_virt = pml4_phys + hhdm_offset;
+    void *pml4_virt = vmm_phys_to_hhdm(pml4_phys);
     pmm_free_frame(pml4_virt);
 }
 
@@ -61,7 +70,7 @@ void vmm_free_table(uint64_t *table, int level)
             continue;
         }
 
-        uint64_t *virt_addr = (uint64_t *)(pte_get_addr(entry) + hhdm_offset);
+        uint64_t *virt_addr = vmm_phys_to_hhdm(pte_get_addr(entry));
 
         if (level == 1)
         {
@@ -127,7 +136,7 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, bool c
             pdpt_virt = (uint64_t *)((uintptr_t)new_tab_phys); // Note that our pmm already converts the addr to virt addr
             memset(pdpt_virt, 0, PAGE_SIZE);
 
-            uint64_t new_phys_addr = (uintptr_t)new_tab_phys - hhdm_offset;
+            uint64_t new_phys_addr = vmm_hhdm_to_phys(new_tab_phys);
             uint64_t _flags = VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER;
             pml4_virt[pml4_idx] = pte_set_addr(0, new_phys_addr) | _flags;
         }
@@ -140,7 +149,7 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, bool c
     {
         // PDPT exists
         uint64_t pdpt_phys = pte_get_addr(pml4_entry);
-        pdpt_virt = (uint64_t *)(pdpt_phys + hhdm_offset);
+        pdpt_virt = vmm_phys_to_hhdm(pdpt_phys);
     }
 
     uint64_t pdpt_entry = pdpt_virt[pdpt_idx];
@@ -157,7 +166,7 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, bool c
             pd_virt = (uint64_t *)((uintptr_t)new_tab_phys);
             memset(pd_virt, 0, PAGE_SIZE);
 
-            uint64_t new_phys_addr = (uintptr_t)new_tab_phys - hhdm_offset;
+            uint64_t new_phys_addr = vmm_hhdm_to_phys(new_tab_phys);
             uint64_t _flags = VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER;
             pdpt_virt[pdpt_idx] = pte_set_addr(0, new_phys_addr) | _flags;
         }
@@ -169,7 +178,7 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, bool c
     else
     {
         uint64_t pd_phys = pte_get_addr(pdpt_entry);
-        pd_virt = (uint64_t *)(pd_phys + hhdm_offset);
+        pd_virt = vmm_phys_to_hhdm(pd_phys);
     }
 
     uint64_t pd_entry = pd_virt[pd_idx];
@@ -186,7 +195,7 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, bool c
             pt_virt = (uint64_t *)((uintptr_t)new_tab_phys);
             memset(pt_virt, 0, PAGE_SIZE);
 
-            uint64_t new_phys_addr = (uintptr_t)new_tab_phys - hhdm_offset;
+            uint64_t new_phys_addr = vmm_hhdm_to_phys(new_tab_phys);
             uint64_t _flags = VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER;
             pd_virt[pd_idx] = pte_set_addr(0, new_phys_addr) | _flags;
         }
@@ -198,7 +207,7 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, bool c
     else
     {
         uint64_t pt_phys = pte_get_addr(pd_entry);
-        pt_virt = (uint64_t *)(pt_phys + hhdm_offset);
+        pt_virt = vmm_phys_to_hhdm(pt_phys);
     }
 
     return &pt_virt[pt_idx];
@@ -243,15 +252,15 @@ void vmm_unmap_page(uint64_t *pml4, uint64_t virt_addr)
     __asm__ volatile("invlpg (%0)" ::"r"(virt_addr) : "memory");
 }
 
-uint64_t find_free_addr(size_t size)
+uint64_t find_free_addr(VmFreeRegion **head_ref, size_t size)
 {
-    if (g_vm_free_head == NULL)
+    if (head_ref == NULL || *head_ref == NULL)
     {
-        kprint("VMM not inited successfully before!\n");
+        kprint("VMM: empty or invalid VmFreeRegion list!\n");
         return 0;
     }
 
-    VmFreeRegion *curr = g_vm_free_head;
+    VmFreeRegion *curr = *head_ref;
     VmFreeRegion *prev = NULL;
     while (curr != NULL)
     {
@@ -273,7 +282,7 @@ uint64_t find_free_addr(size_t size)
             }
             else
             {
-                g_vm_free_head = curr->next;
+                *head_ref = curr->next;
             }
             kfree(curr);
 
@@ -289,9 +298,12 @@ uint64_t find_free_addr(size_t size)
 void *vmm_alloc(size_t size)
 {
     cli();
-    size_t aligned_size = get_aligned_size(size);
+    VmFreeRegion **free_head;
+    VmAllocatedList **alloc_head;
+    get_vm_ctx(&free_head, &alloc_head);
 
-    uint64_t virt_start_addr = find_free_addr(aligned_size);
+    size_t aligned_size = get_aligned_size(size);
+    uint64_t virt_start_addr = find_free_addr(free_head, aligned_size);
     if (virt_start_addr == 0)
     {
         kprint("VMM ALLOC: Out of memory\n");
@@ -301,7 +313,7 @@ void *vmm_alloc(size_t size)
 
     uint64_t npages = aligned_size / PAGE_SIZE;
     uint64_t i = 0;
-    uint64_t *pml4 = (uint64_t *)(read_cr3() + hhdm_offset);
+    uint64_t *pml4 = vmm_phys_to_hhdm(read_cr3());
 
     for (i = 0; i < npages; i++)
     {
@@ -314,8 +326,8 @@ void *vmm_alloc(size_t size)
         vmm_map_page(
             pml4,
             virt_start_addr + i * PAGE_SIZE,
-            phys_hhdm_addr - hhdm_offset,
-            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
+            vmm_hhdm_to_phys(phys_hhdm_addr),
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
     }
 
     if (i < npages) // Partial failure, roll back
@@ -327,26 +339,26 @@ void *vmm_alloc(size_t size)
             uint64_t virt_addr = virt_start_addr + j * PAGE_SIZE;
             uint64_t phys_addr = vmm_virt2phys(pml4, virt_addr);
             vmm_unmap_page(pml4, virt_addr);
-            pmm_free_frame(phys_addr + hhdm_offset);
+            pmm_free_frame(vmm_phys_to_hhdm(phys_addr));
         }
 
-        vmm_add_free_region(virt_start_addr, aligned_size);
+        vmm_add_free_region(free_head, virt_start_addr, aligned_size);
         sti();
         return NULL;
     }
 
     // append to the allocated list to keep track
-    if (vmm_add_allocated_mem(virt_start_addr, aligned_size) < 0)
+    if (vmm_add_allocated_mem(alloc_head, virt_start_addr, aligned_size, 0) < 0)
     {
         for (uint64_t i = 0; i < npages; i++)
         {
             uint64_t virt_addr = virt_start_addr + i * PAGE_SIZE;
             uint64_t phys_addr = vmm_virt2phys(pml4, virt_addr);
             vmm_unmap_page(pml4, virt_addr);
-            pmm_free_frame(phys_addr + hhdm_offset);
+            pmm_free_frame(vmm_phys_to_hhdm(phys_addr));
         }
 
-        vmm_add_free_region(virt_start_addr, aligned_size);
+        vmm_add_free_region(free_head, virt_start_addr, aligned_size);
         sti();
         return NULL;
     }
@@ -355,14 +367,14 @@ void *vmm_alloc(size_t size)
     return (void *)virt_start_addr;
 }
 
-static void vmm_add_free_region(uint64_t addr, size_t size)
+void vmm_add_free_region(VmFreeRegion **head_ref, uint64_t addr, size_t size)
 {
     if (size == 0)
     {
         return;
     }
 
-    VmFreeRegion *curr = g_vm_free_head;
+    VmFreeRegion *curr = *head_ref;
     VmFreeRegion *prev = NULL;
 
     while (curr != NULL && curr->addr < addr)
@@ -371,7 +383,7 @@ static void vmm_add_free_region(uint64_t addr, size_t size)
         curr = curr->next;
     }
 
-    bool merged = false;
+    uint8_t merged = 0;
 
     // Merge left with Prev
     if (prev != NULL)
@@ -380,7 +392,7 @@ static void vmm_add_free_region(uint64_t addr, size_t size)
         {
             // merge left
             prev->size += size;
-            merged = true;
+            merged = 1;
 
             // merge right?
             if (curr != NULL && prev->addr + prev->size == curr->addr)
@@ -412,7 +424,7 @@ static void vmm_add_free_region(uint64_t addr, size_t size)
         }
         else
         {
-            g_vm_free_head = new_node;
+            *head_ref = new_node;
         }
 
         // then try Merge right with Next
@@ -427,19 +439,28 @@ static void vmm_add_free_region(uint64_t addr, size_t size)
 
 void vmm_free(void *ptr)
 {
-    cli();
     if (ptr == NULL)
     {
-        sti();
         return;
     }
 
+    VmFreeRegion **free_head;
+    VmAllocatedList **alloc_head;
+    get_vm_ctx(&free_head, &alloc_head);
+
     // find and remove from the allocated list
-    VmAllocatedList *curr_node = vmm_pop_allocated_mem((uint64_t)ptr);
+    VmAllocatedList *curr_node = vmm_pop_allocated_mem(alloc_head, (uint64_t)ptr);
+
+    if (curr_node == NULL && (uint64_t)ptr >= KERN_HEAP_START)
+    {
+        free_head = &g_vm_free_head;
+        alloc_head = &g_vm_allocated_head;
+        curr_node = vmm_pop_allocated_mem(alloc_head, (uint64_t)ptr);
+    }
+
     if (curr_node == NULL)
     {
         kprint("Trying to free a not allocated memory\n");
-        sti();
         return;
     }
 
@@ -448,7 +469,7 @@ void vmm_free(void *ptr)
     size_t aligned_size = get_aligned_size(size);
 
     uint64_t npages = aligned_size / PAGE_SIZE;
-    uint64_t *pml4 = (uint64_t *)(read_cr3() + hhdm_offset);
+    uint64_t *pml4 = vmm_phys_to_hhdm(read_cr3());
     uint64_t virt_start_addr = (uint64_t)ptr;
 
     // Physical free
@@ -458,15 +479,16 @@ void vmm_free(void *ptr)
         uint64_t phys_addr = vmm_virt2phys(pml4, virt_addr);
         if (phys_addr != 0)
         {
-            pmm_free_frame(phys_addr + hhdm_offset);
+            if (!(curr_node->flags & VMM_FLAG_SHM))
+            {
+                pmm_free_frame(vmm_phys_to_hhdm(phys_addr));
+            }
             vmm_unmap_page(pml4, virt_addr);
         }
     }
-
     // Virtual Allocator Free
-    vmm_add_free_region(virt_start_addr, aligned_size);
+    vmm_add_free_region(free_head, virt_start_addr, aligned_size);
     kfree(curr_node);
-    sti();
 }
 
 void *vmm_realloc(void *ptr, size_t new_size)
@@ -478,7 +500,11 @@ void *vmm_realloc(void *ptr, size_t new_size)
         return NULL;
     }
 
-    VmAllocatedList *vm_node = vmm_find_allocated_mem((uint64_t)ptr);
+    VmFreeRegion **free_head;
+    VmAllocatedList **alloc_head;
+    get_vm_ctx(&free_head, &alloc_head);
+
+    VmAllocatedList *vm_node = vmm_find_allocated_mem(alloc_head, (uint64_t)ptr);
     if (vm_node == NULL)
     {
         kprint("VMM_REALLOC failed: memory not allocated before\n");
@@ -504,7 +530,7 @@ void *vmm_realloc(void *ptr, size_t new_size)
 void vmm_init()
 {
     uint64_t pml4_phys = read_cr3();
-    kern_pml4 = (uint64_t *)(pml4_phys + hhdm_offset);
+    kern_pml4 = vmm_phys_to_hhdm(pml4_phys);
 
     g_vm_free_head = (VmFreeRegion *)kmalloc(sizeof(VmFreeRegion));
     if (g_vm_free_head == NULL)
@@ -518,7 +544,7 @@ void vmm_init()
     g_vm_free_head->next = NULL;
 }
 
-static int8_t vmm_add_allocated_mem(uint64_t addr, size_t size)
+int8_t vmm_add_allocated_mem(VmAllocatedList **head_ref, uint64_t addr, size_t size, uint32_t flags)
 {
     VmAllocatedList *allocated_node = (VmAllocatedList *)kmalloc(sizeof(VmAllocatedList));
     if (allocated_node == NULL)
@@ -528,17 +554,17 @@ static int8_t vmm_add_allocated_mem(uint64_t addr, size_t size)
     }
     allocated_node->addr = addr;
     allocated_node->size = size;
-    allocated_node->flags = 0;
-    allocated_node->next = g_vm_allocated_head;
-    g_vm_allocated_head = allocated_node;
+    allocated_node->flags = flags;
+    allocated_node->next = *head_ref;
+    *head_ref = allocated_node;
 
     return 0;
 }
 
-static VmAllocatedList *vmm_pop_allocated_mem(uint64_t addr)
+VmAllocatedList *vmm_pop_allocated_mem(VmAllocatedList **head_ref, uint64_t addr)
 {
     VmAllocatedList *prev_node = NULL;
-    VmAllocatedList *curr_node = g_vm_allocated_head;
+    VmAllocatedList *curr_node = *head_ref;
     while (curr_node != NULL)
     {
         if (curr_node->addr == addr)
@@ -549,13 +575,25 @@ static VmAllocatedList *vmm_pop_allocated_mem(uint64_t addr)
         curr_node = curr_node->next;
     }
 
-    vmm_remove_allocated_mem(prev_node, curr_node);
+    if (curr_node != NULL)
+    {
+        if (prev_node == NULL)
+        {
+            *head_ref = curr_node->next;
+        }
+        else
+        {
+            prev_node->next = curr_node->next;
+        }
+        curr_node->next = NULL;
+    }
+
     return curr_node;
 }
 
-static VmAllocatedList *vmm_find_allocated_mem(uint64_t addr)
+VmAllocatedList *vmm_find_allocated_mem(VmAllocatedList **head_ref, uint64_t addr)
 {
-    VmAllocatedList *curr_node = g_vm_allocated_head;
+    VmAllocatedList *curr_node = head_ref;
     while (curr_node != NULL)
     {
         if (curr_node->addr == addr)
@@ -568,27 +606,13 @@ static VmAllocatedList *vmm_find_allocated_mem(uint64_t addr)
     return curr_node;
 }
 
-static void vmm_remove_allocated_mem(VmAllocatedList *prev, VmAllocatedList *curr)
-{
-    if (prev == NULL)
-    {
-        g_vm_allocated_head = curr->next;
-        curr->next = NULL;
-    }
-    else
-    {
-        prev->next = curr->next;
-        curr->next = NULL;
-    }
-}
-
 uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
 {
     uint64_t *child_tbl_virt = (uint64_t *)pmm_alloc_frame();
     memset(child_tbl_virt, 0, PAGE_SIZE);
-    uint64_t child_tbl_phys = (uint64_t)child_tbl_virt - hhdm_offset;
+    uint64_t child_tbl_phys = vmm_hhdm_to_phys(child_tbl_virt);
 
-    int limit = level == 4 ? 256: 512;
+    int limit = level == 4 ? 256 : 512;
 
     if (level > 1)
     {
@@ -602,7 +626,7 @@ uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
             }
 
             uint64_t parent_phys = pte_get_addr(entry);
-            uint64_t *virt_addr = (uint64_t *)(parent_phys + hhdm_offset);
+            uint64_t *virt_addr = vmm_phys_to_hhdm(parent_phys);
             uint64_t child_phys = vmm_copy_hierarchy(virt_addr, level - 1);
             child_tbl_virt[i] = child_phys | pte_get_flags(entry);
         }
@@ -630,15 +654,138 @@ uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
             memset(child_virt_hhdm, 0, PAGE_SIZE);
 
             uint64_t parent_phys = pte_get_addr(entry);
-            void *parent_virt_hhdm = (void *)(parent_phys + hhdm_offset);
+            void *parent_virt_hhdm = vmm_phys_to_hhdm(parent_phys);
 
             memcpy(child_virt_hhdm, parent_virt_hhdm, 512 * sizeof(uint64_t));
-            uint64_t child_phys = (uint64_t)child_virt_hhdm - hhdm_offset;
+            uint64_t child_phys = vmm_hhdm_to_phys(child_virt_hhdm);
             child_tbl_virt[i] = child_phys | pte_get_flags(entry);
         }
     }
 
     return child_tbl_phys;
+}
+
+void *vmm_alloc_global(size_t size)
+{
+    cli();
+    VmFreeRegion **free_head = &g_vm_free_head;
+    VmAllocatedList **alloc_head = &g_vm_allocated_head;
+
+    size_t aligned_size = get_aligned_size(size);
+    uint64_t virt_start_addr = find_free_addr(free_head, aligned_size);
+
+    if (virt_start_addr == 0)
+    {
+        kprint("VMM GLOBAL ALLOC: Out of memory\n");
+        sti();
+        return NULL;
+    }
+
+    uint64_t npages = aligned_size / PAGE_SIZE;
+    uint64_t i = 0;
+
+    for (i = 0; i < npages; i++)
+    {
+        void *phys_hhdm_addr = pmm_alloc_frame();
+        if (phys_hhdm_addr == NULL)
+        {
+            break;
+        }
+
+        uint64_t phys_addr = vmm_hhdm_to_phys(phys_hhdm_addr);
+        uint64_t virt_addr = virt_start_addr + i * PAGE_SIZE;
+
+        vmm_map_page(
+            kern_pml4,
+            virt_addr,
+            phys_addr,
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
+
+        uint64_t curr_cr3 = read_cr3();
+        uint64_t kern_cr3 = vmm_hhdm_to_phys(kern_pml4);
+
+        if (curr_cr3 != kern_cr3)
+        {
+            uint64_t *curr_pml4 = vmm_phys_to_hhdm(curr_cr3);
+            vmm_map_page(curr_pml4, virt_addr, phys_addr, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
+        }
+    }
+
+    if (i < npages) // Partial failure, roll back
+    {
+        kprint("VMM GLOBAL ALLOC: Out of memory\n");
+
+        for (uint64_t j = 0; j < i; j++)
+        {
+            uint64_t virt_addr = virt_start_addr + j * PAGE_SIZE;
+            uint64_t phys_addr = vmm_virt2phys(kern_pml4, virt_addr);
+            vmm_unmap_page(kern_pml4, virt_addr);
+            pmm_free_frame(vmm_phys_to_hhdm(phys_addr));
+        }
+
+        vmm_add_free_region(free_head, virt_start_addr, aligned_size);
+        sti();
+        return NULL;
+    }
+
+    // append to the allocated list to keep track
+    vmm_add_allocated_mem(alloc_head, virt_start_addr, aligned_size, 0);
+    sti();
+    return (void *)virt_start_addr;
+}
+
+VmAllocatedList *vmm_copy_alloc_list(VmAllocatedList *node)
+{
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
+    VmAllocatedList *new_node = (VmAllocatedList *)kmalloc(sizeof(VmAllocatedList));
+    new_node->addr = node->addr;
+    new_node->size = node->size;
+    new_node->flags = node->flags;
+    new_node->next = vmm_copy_alloc_list(node->next);
+
+    return new_node;
+}
+
+VmFreeRegion *vmm_copy_free_list(VmFreeRegion *node)
+{
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
+    VmFreeRegion *new_node = (VmFreeRegion *)kmalloc(sizeof(VmFreeRegion));
+    new_node->addr = node->addr;
+    new_node->size = node->size;
+    new_node->next = vmm_copy_free_list(node->next);
+
+    return new_node;
+}
+
+void vmm_cleanup_task(Task *tsk)
+{
+    VmAllocatedList *a_curr = tsk->vm_alloc_head;
+    while (a_curr != NULL)
+    {
+        VmAllocatedList *next = a_curr->next;
+        kfree(a_curr);
+        a_curr = next;
+    }
+
+    tsk->vm_alloc_head = NULL;
+
+    VmFreeRegion *f_curr = tsk->vm_free_head;
+    while (f_curr != NULL)
+    {
+        VmFreeRegion *next = f_curr->next;
+        kfree(f_curr);
+        f_curr = next;
+    }
+
+    tsk->vm_free_head = NULL;
 }
 
 /*

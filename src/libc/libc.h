@@ -2,6 +2,7 @@
 #define LIBC_H
 
 #include "syscall_args.h"
+#include "stat.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -38,6 +39,11 @@ int pipe(int pipefd[2]);
 int dup2(int old_fd, int new_fd);
 int readdir(int fd, uint32_t idx, dirent_t *out);
 int unlink(const char *pathname);
+int shm_open(const char *name, int flags, int mode);
+int ftruncate(int fd, uint64_t length);
+void *mmap(void *addr, size_t length, int prot, int flags, int fd, int offset);
+int munmap(void *addr, size_t length);
+int fstat(int fd, stat_t *statbuf);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);

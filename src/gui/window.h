@@ -16,7 +16,7 @@
 
 // flags
 #define WIN_MOVABLE (1 << 0)
-#define WIN_RESIZEABLE (1 << 1)
+#define WIN_RESIZABLE (1 << 1)
 #define WIN_MINIMIZABLE (1 << 2)
 #define WIN_DIRTY (1U << 31)
 

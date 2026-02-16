@@ -215,7 +215,7 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
     }
 
     uint64_t buf_size = term->n_rows * term->n_cols * sizeof(TermCell);
-    term->text_buf = (TermCell *)vmm_alloc(buf_size);
+    term->text_buf = (TermCell *)vmm_alloc_global(buf_size);
     if (term->text_buf == NULL)
     {
         // PANIC
@@ -599,7 +599,7 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
     }
 
     uint64_t new_buf_size = new_n_rows * new_n_cols * sizeof(TermCell);
-    TermCell *new_text_buf = (TermCell *)vmm_alloc(new_buf_size);
+    TermCell *new_text_buf = (TermCell *)vmm_alloc_global(new_buf_size);
     if (new_text_buf == NULL)
     {
         // PANIC

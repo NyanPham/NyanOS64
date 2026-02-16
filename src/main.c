@@ -62,7 +62,6 @@ __attribute__((used, section(".limine_requests_start"))) static volatile uint64_
 
 __attribute__((used, section(".limine_requests_end"))) static volatile uint64_t limine_requests_end_marker[2] = LIMINE_REQUESTS_END_MARKER;
 
-extern uint64_t hhdm_offset;
 extern uint64_t *kern_pml4;
 extern uint64_t kern_stk_ptr;
 extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
@@ -77,7 +76,7 @@ static inline void spawn_shell()
         100, 100,
         370, 270,
         700, "Shell",
-        WIN_MOVABLE | WIN_RESIZEABLE | WIN_MINIMIZABLE);
+        WIN_MOVABLE | WIN_RESIZABLE | WIN_MINIMIZABLE);
     shell_task->term = console;
     shell_task->win = console->win;
     console->win->owner_pid = shell_task->pid;
@@ -94,15 +93,15 @@ static inline void spawn_shell()
         kprint("Loading User Task...\n");
 
         uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
-        uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
+        uint64_t phys_usr_stk = vmm_hhdm_to_phys(pmm_alloc_frame());
 
         vmm_map_page(
-            (uint64_t *)(shell_task->pml4 + hhdm_offset),
+            vmm_phys_to_hhdm(shell_task->pml4),
             virt_usr_stk_base,
             phys_usr_stk,
             VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
         // no args, so argc = 0, no need space for argv
-        uint64_t *kern_view_stk = (uint64_t *)(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t) + hhdm_offset);
+        uint64_t *kern_view_stk = vmm_phys_to_hhdm(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t));
         *kern_view_stk = 0;
 
         uint64_t shell_rsp = USER_STACK_TOP - sizeof(uint64_t);

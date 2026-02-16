@@ -24,4 +24,11 @@ static void hcf(void)
     }
 }
 
+static inline uint64_t get_rflags(void)
+{
+    uint64_t rflags;
+    asm volatile("pushfq; pop %0" : "=r"(rflags));
+    return rflags;
+}
+
 #endif

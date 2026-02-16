@@ -10,6 +10,7 @@
 #include "gui/window.h"
 #include "gui/terminal.h"
 #include "include/signal.h"
+#include "utils/asm_instrs.h"
 
 #include <stddef.h>
 
@@ -23,7 +24,6 @@ static Task *g_head_tsk = NULL;
 static Task *g_curr_tsk = NULL;
 static int g_next_pid = KERN_TASK_PID + 1; // value "0" is our OS kernel
 
-extern uint64_t hhdm_offset;
 extern uint64_t *kern_pml4;
 extern void tss_set_stack(uint64_t stk_ptr);
 extern uint64_t kern_stk_ptr;
@@ -62,6 +62,18 @@ Task *sched_new_task(void)
     uint8_t *fpu_ptr = get_aligned_fpu_region(new_tsk);
     memset(fpu_ptr, 0, 512);
     *((uint32_t *)(fpu_ptr + 0x18)) = 0x1F80; // set MXCS to avoid exceptions in float math
+
+    VmFreeRegion *vm_free_head = (VmFreeRegion *)kmalloc(sizeof(VmFreeRegion));
+    if (vm_free_head == NULL)
+    {
+        kprint("SCHED_NEW_TASK failed: OOM\n");
+        return NULL;
+    }
+    new_tsk->vm_free_head = vm_free_head;
+    new_tsk->vm_free_head->addr = USER_MMAP_START;
+    new_tsk->vm_free_head->size = USER_MMAP_SIZE;
+    new_tsk->vm_free_head->next = NULL;
+    new_tsk->vm_alloc_head = NULL;
 
     if (g_curr_tsk != NULL) // has parent -> copy dir from him
     {
@@ -166,7 +178,7 @@ void sched_destroy_task(Task *tsk)
     }
 
     vmm_ret_pml4(tsk->pml4);
-
+    vmm_cleanup_task(tsk);
     sched_clean_gui(tsk);
     kfree(tsk);
 }
@@ -210,11 +222,15 @@ void sched_init(void)
     {
         kern_task->fd_tbl[i] = NULL;
     }
-    kern_task->kern_stk_rsp = 0;
-    kern_task->kern_stk_top = 0;
 
-    // void* stk_phys = pmm_alloc_frame();
-    // kern_task->kern_stk_top = (uint64_t)stk_phys + PAGE_SIZE;
+    void *stk_phys = pmm_alloc_frame();
+    if (stk_phys == NULL)
+    {
+        kprint("PANIC: Kernel Task Stack OOM\n");
+        hcf();
+    }
+    kern_task->kern_stk_top = (uint64_t)stk_phys + PAGE_SIZE;
+    kern_task->kern_stk_rsp = 0;
 
     // uint64_t* sp = (uint64_t*)kern_task->kern_stk_top;
     // *(--sp) = (uint64_t)task_idle;
@@ -360,7 +376,12 @@ void sched_exit(int code)
     sched_clean_gui(task_to_exit);
     sched_clean_fds(task_to_exit);
 
-    kprint("Task exited. Switching to next...");
+    kprint("Task exited. Switching to next...\n");
+    if (next_tsk == NULL)
+    {
+        kprint("PANIC: Next task is NULL!\n");
+        hcf();
+    }
     uint8_t *next_fpu = get_aligned_fpu_region(next_tsk);
     switch_to_task(NULL, next_tsk->kern_stk_rsp, NULL, next_fpu);
 }
@@ -509,7 +530,7 @@ Task *task_factory_fork(Task *parent_tsk)
     memcpy(child_fpu, parent_fpu, 512);
 
     // copy the memory space
-    uint64_t new_pml4 = vmm_copy_hierarchy((uint64_t *)(parent_tsk->pml4 + hhdm_offset), 4);
+    uint64_t new_pml4 = vmm_copy_hierarchy(vmm_phys_to_hhdm(parent_tsk->pml4), 4);
     child_tsk->pml4 = new_pml4;
 
     // alloc kernel stack for the child
@@ -538,6 +559,8 @@ Task *task_factory_fork(Task *parent_tsk)
     child_tsk->state = TASK_READY;
     child_tsk->win = parent_tsk->win;
     child_tsk->term = parent_tsk->term;
+    child_tsk->vm_alloc_head = vmm_copy_alloc_list(parent_tsk->vm_alloc_head);
+    child_tsk->vm_free_head = vmm_copy_free_list(parent_tsk->vm_free_head);
 
     // convert the parent's syscall stack to the child's iretq stack
     uint64_t *parent_sp = (uint64_t *)parent_tsk->kern_stk_top - 13; // right rsp is at R15, totally 8 pushes to the sp

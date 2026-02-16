@@ -5,7 +5,7 @@
 #define WIN_PARAMS_TITLE_SIZE 256
 
 #define WIN_MOVABLE (1 << 0)
-#define WIN_RESIZEABLE (1 << 1)
+#define WIN_RESIZABLE (1 << 1)
 #define WIN_MINIMIZABLE (1 << 2)
 
 typedef struct WinParams

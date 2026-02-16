@@ -1,13 +1,16 @@
 #include "libc.h"
 
 /* ======= SYSCALL WRAPPERS =======*/
-static inline uint64_t syscall(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_t arg3)
+static inline uint64_t syscall(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6)
 {
     uint64_t ret;
     register uint64_t rax asm("rax") = sys_num;
     register uint64_t rdi asm("rdi") = arg1;
     register uint64_t rsi asm("rsi") = arg2;
     register uint64_t rdx asm("rdx") = arg3;
+    register uint64_t r10 asm("r10") = arg4;
+    register uint64_t r8 asm("r8") = arg5;
+    register uint64_t r9 asm("r9") = arg6;
 
     /*
     Input:
@@ -25,7 +28,10 @@ static inline uint64_t syscall(uint64_t sys_num, uint64_t arg1, uint64_t arg2, u
         : "r"(rax),
           "r"(rdi),
           "r"(rsi),
-          "r"(rdx)
+          "r"(rdx),
+          "r"(r10),
+          "r"(r8),
+          "r"(r9)
         : "rcx", "r11", "memory");
 
     return ret;
@@ -33,7 +39,7 @@ static inline uint64_t syscall(uint64_t sys_num, uint64_t arg1, uint64_t arg2, u
 
 void exit(int status)
 {
-    syscall(8, (uint64_t)status, 0, 0);
+    syscall(8, (uint64_t)status, 0, 0, 0, 0, 0);
     while (1)
     {
     };
@@ -42,75 +48,100 @@ void exit(int status)
 void print(const char *str)
 {
     uint64_t len = strlen(str);
-    syscall(1, 1, (uint64_t)str, len);
+    syscall(1, 1, (uint64_t)str, len, 0, 0, 0);
 }
 
 void kprint(const char *s)
 {
-    syscall(13, (uint64_t)s, 0, 0);
+    syscall(13, (uint64_t)s, 0, 0, 0, 0, 0);
 }
 
 void kprint_int(int x)
 {
-    syscall(18, (uint64_t)x, 0, 0);
+    syscall(18, (uint64_t)x, 0, 0, 0, 0, 0);
 }
 
 int open(const char *pathname, uint32_t flags)
 {
     // syscall 10: sys_open
-    return (int)syscall(10, (uint64_t)pathname, (uint64_t)flags, 0);
+    return (int)syscall(10, (uint64_t)pathname, (uint64_t)flags, 0, 0, 0, 0);
 }
 
 int close(int fd)
 {
     // syscall 11: sys_close
-    return (int)syscall(11, (uint64_t)fd, 0, 0);
+    return (int)syscall(11, (uint64_t)fd, 0, 0, 0, 0, 0);
 }
 
 int read(int fd, void *buf, uint64_t count)
 {
     // syscall 0: sys_read
-    return (int)syscall(0, (uint64_t)fd, (uint64_t)buf, count);
+    return (int)syscall(0, (uint64_t)fd, (uint64_t)buf, count, 0, 0, 0);
 }
 
 void reboot(void)
 {
-    syscall(4, 0, 0, 0);
+    syscall(4, 0, 0, 0, 0, 0, 0);
 }
 
 int fork(void)
 {
-    return (int)syscall(6, 0, 0, 0);
+    return (int)syscall(6, 0, 0, 0, 0, 0, 0);
 }
 
 int getpid(void)
 {
-    return (int)syscall(22, 0, 0, 0);
+    return (int)syscall(22, 0, 0, 0, 0, 0, 0);
 }
 
 int pipe(int pipefd[2])
 {
-    return (int)syscall(20, (uint64_t)pipefd, 0, 0);
+    return (int)syscall(20, (uint64_t)pipefd, 0, 0, 0, 0, 0);
 }
 
 int dup2(int old_fd, int new_fd)
 {
-    return (int)syscall(21, (uint64_t)old_fd, (uint64_t)new_fd, 0);
+    return (int)syscall(21, (uint64_t)old_fd, (uint64_t)new_fd, 0, 0, 0, 0);
 }
 
 int readdir(int fd, uint32_t idx, dirent_t *out)
 {
-    return (int)syscall(23, (uint64_t)fd, (uint64_t)idx, (uint64_t)out);
+    return (int)syscall(23, (uint64_t)fd, (uint64_t)idx, (uint64_t)out, 0, 0, 0);
 }
 
 int unlink(const char *pathname)
 {
-    return (int)syscall(24, (uint64_t)pathname, 0, 0);
+    return (int)syscall(24, (uint64_t)pathname, 0, 0, 0, 0, 0);
+}
+
+int shm_open(const char *name, int flags, int mode)
+{
+    return (int)syscall(25, (uint64_t)name, (uint64_t)flags, (uint64_t)mode, 0, 0, 0);
+}
+
+int ftruncate(int fd, uint64_t length)
+{
+    return (int)syscall(26, (uint64_t)fd, (uint64_t)length, 0, 0, 0, 0);
+}
+
+void *mmap(void *addr, size_t length, int prot, int flags, int fd, int offset)
+{
+    return (void *)syscall(27, (uint64_t)addr, (uint64_t)length, (uint64_t)prot, (uint64_t)flags, (uint64_t)fd, (uint64_t)offset);
+}
+
+int munmap(void *addr, size_t length)
+{
+    return (int)syscall(28, (uint64_t)addr, (uint64_t)length, 0, 0, 0, 0);
+}
+
+int fstat(int fd, stat_t *statbuf)
+{
+    return (int)syscall(29, (uint64_t)fd, (uint64_t)statbuf, 0, 0, 0, 0);
 }
 
 int win_create(WinParams_t *win_params)
 {
-    return (int)syscall(17, (uint64_t)win_params, 0, 0);
+    return (int)syscall(17, (uint64_t)win_params, 0, 0, 0, 0, 0);
 }
 
 int create_term(int x, int y, uint32_t w, uint32_t h, const char *title, uint32_t win_flags)
@@ -125,7 +156,7 @@ int create_term(int x, int y, uint32_t w, uint32_t h, const char *title, uint32_
         };
     strncpy(win_params.title, title, WIN_PARAMS_TITLE_SIZE - 1);
 
-    return syscall(19, (uint64_t)&win_params, 0, 0);
+    return syscall(19, (uint64_t)&win_params, 0, 0, 0, 0, 0);
 }
 
 /* ======= STRING, MEMORY FUNCTIONS =======*/
@@ -292,7 +323,7 @@ char *strchr(const char *haystack, const char needle)
 
 void *sbrk(int64_t incr_payload)
 {
-    return (void *)syscall(12, (uint64_t)incr_payload, 0, 0);
+    return (void *)syscall(12, (uint64_t)incr_payload, 0, 0, 0, 0, 0);
 }
 
 typedef struct block_meta
@@ -458,23 +489,23 @@ void srand(unsigned int seed)
 /*======= PROCESS/SYSCALL =======*/
 int exec(const char *path, char *const argv[])
 {
-    return (int)syscall(7, (uint64_t)path, (uint64_t)argv, 0);
+    return (int)syscall(7, (uint64_t)path, (uint64_t)argv, 0, 0, 0, 0);
 }
 
 int waitpid(int pid, int *status)
 {
-    return (int)syscall(9, (uint64_t)pid, (uint64_t)status, 0);
+    return (int)syscall(9, (uint64_t)pid, (uint64_t)status, 0, 0, 0, 0);
 }
 
 /*======= DIR SYS =======*/
 int chdir(const char *path)
 {
-    return (int)syscall(15, (uint64_t)path, 0, 0);
+    return (int)syscall(15, (uint64_t)path, 0, 0, 0, 0, 0);
 }
 
 char *getcwd(char *buf, size_t size)
 {
-    int ret = (int)syscall(16, (uint64_t)buf, (uint64_t)size, 0);
+    int ret = (int)syscall(16, (uint64_t)buf, (uint64_t)size, 0, 0, 0, 0);
     if (ret < 0)
     {
         return NULL;
@@ -485,7 +516,7 @@ char *getcwd(char *buf, size_t size)
 
 void list_files(char *list, uint64_t max_len)
 {
-    syscall(5, (uint64_t)list, max_len, 0);
+    syscall(5, (uint64_t)list, max_len, 0, 0, 0, 0);
 }
 
 /*======= OTHERS =======*/
@@ -546,7 +577,7 @@ void move_cursor(int row, int col)
 
 int get_key(void)
 {
-    return (int)syscall(14, 0, 0, 0);
+    return (int)syscall(14, 0, 0, 0, 0, 0, 0);
 }
 
 void sleep(uint64_t loop_cnt)

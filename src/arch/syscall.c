@@ -16,8 +16,10 @@
 #include "gui/terminal.h"
 #include "kern_defs.h"
 #include "include/syscall_args.h"
+#include "include/stat.h"
 #include "fs/pipe.h"
 #include "utils/asm_instrs.h"
+#include "ipc/shm.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -30,7 +32,6 @@
 #define INT_FLAGS 0x200
 #define REBOOT_PORT 0x64
 
-extern uint64_t hhdm_offset;
 extern void syscall_entry(void);
 int8_t find_free_fd(Task *task);
 extern void switch_to_task(uint64_t *prev_rsp_ptr, uint64_t next_rsp, uint8_t *prev_fpu, uint8_t *next_fpu);
@@ -317,30 +318,30 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         sti();
 
         uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
-        uint64_t phys_usr_stk = (uint64_t)pmm_alloc_frame() - hhdm_offset;
+        uint64_t phys_usr_stk = vmm_hhdm_to_phys(pmm_alloc_frame());
 
         vmm_map_page(
-            (uint64_t *)(new_pml4 + hhdm_offset),
+            vmm_phys_to_hhdm(new_pml4),
             virt_usr_stk_base,
             phys_usr_stk,
             VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
 
         // copy the argv_buf
         uint64_t offset_buf = start_usr_addr & 0xFFF;
-        void *dest_buf = (void *)(phys_usr_stk + offset_buf + hhdm_offset);
+        void *dest_buf = vmm_phys_to_hhdm(phys_usr_stk + offset_buf);
         memcpy(dest_buf, argv_buf, argv_size);
 
         // copy the argv_list
         uint64_t start_list_addr = start_usr_addr - argv_ptr_size;
         uint64_t offset_list = start_list_addr & 0xFFF;
-        void *dest_list = (void *)(phys_usr_stk + offset_list + hhdm_offset);
+        void *dest_list = vmm_phys_to_hhdm(phys_usr_stk + offset_list);
         memcpy(dest_list, argv_list, argv_ptr_size);
 
         // write argc into the rsp top
         // virt_rsp = start_list_addr - 8
         uint64_t rsp_virt_addr = ((start_list_addr - sizeof(uint64_t)) & ~0xF) - 8;
         uint64_t offset_rsp = rsp_virt_addr & 0xFFF;
-        uint64_t *dest_rsp = (uint64_t *)(phys_usr_stk + offset_rsp + hhdm_offset);
+        uint64_t *dest_rsp = vmm_phys_to_hhdm(phys_usr_stk + offset_rsp);
         *dest_rsp = argc;
 
         kfree(argv_buf);
@@ -363,14 +364,34 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         curr_tsk->heap_end = USER_HEAP_START;
 
-        vmm_free_table((uint64_t *)(old_pml4 + hhdm_offset), 4);
+        vmm_cleanup_task(curr_tsk);
+        VmFreeRegion *vm_free_head = (VmFreeRegion *)kmalloc(sizeof(VmFreeRegion));
+        if (vm_free_head == NULL)
+        {
+            return -1;
+        }
+        vm_free_head->addr = USER_MMAP_START;
+        vm_free_head->size = USER_MMAP_SIZE;
+        vm_free_head->next = NULL;
+
+        curr_tsk->vm_free_head = vm_free_head;
+        curr_tsk->vm_alloc_head = NULL;
+
+        vmm_free_table(vmm_phys_to_hhdm(old_pml4), 4);
 
         if (curr_tsk->term != NULL)
         {
             curr_tsk->term->child_pid = curr_tsk->pid;
         }
 
-        curr_tsk->win = NULL;
+        if (curr_tsk->win != NULL)
+        {
+            if (curr_tsk->win->owner_pid == curr_tsk->pid)
+            {
+                win_close(curr_tsk->win);
+            }
+            curr_tsk->win = NULL;
+        }
 
         task_context_reset(curr_tsk, entry, rsp_virt_addr);
 
@@ -514,10 +535,10 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
             memset(phys_addr_hhdm, 0, PAGE_SIZE); // Security: Clean the page
 
-            uint64_t phys_addr = (uint64_t)phys_addr_hhdm - hhdm_offset;
+            uint64_t phys_addr = vmm_hhdm_to_phys(phys_addr_hhdm);
 
             vmm_map_page(
-                (uint64_t *)(curr_tsk->pml4 + hhdm_offset),
+                vmm_phys_to_hhdm(curr_tsk->pml4),
                 virt_addr,
                 (uint64_t)phys_addr,
                 VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
@@ -884,6 +905,204 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
 
         return vfs_unlink(new_path);
+    }
+    case 25: // sys_shm_open
+    {
+        const char *name = (const char *)arg1;
+        int flags = (int)arg2;
+        int mode = (int)arg3;
+
+        if (!verify_usr_access(arg1, 64))
+        {
+            kprint("SYS_SHM_OPEN: invalid name address space\n");
+            return -1;
+        }
+
+        vfs_node_t *node = shm_create_vfs_node(name, flags);
+
+        file_handle_t *handle = (file_handle_t *)kmalloc(sizeof(file_handle_t));
+        if (handle == NULL)
+        {
+            kprint("SYS_SHM_OPEN failed: OOM\n");
+            kfree(node);
+            ((SharedMem_t *)(node->device_data))->ref_count--;
+            return -1;
+        }
+
+        handle->node = node;
+        handle->offset = 0;
+        handle->mode = mode;
+        handle->ref_count = 1;
+
+        Task *curr_tsk = get_curr_task();
+
+        int8_t fd = find_free_fd(curr_tsk);
+        if (fd < 0)
+        {
+            return -1;
+        }
+
+        curr_tsk->fd_tbl[fd] = handle;
+
+        return fd;
+    }
+    case 26: // sys_ftruncate
+    {
+        int fd = (int)arg1;
+        uint64_t length = arg2;
+
+        Task *curr_tsk = get_curr_task();
+        file_handle_t *fhandle = curr_tsk->fd_tbl[fd];
+        if (fhandle == NULL || fhandle->node == NULL || fhandle->node->ops != &shm_ops)
+        {
+            kprint("SYS_FTRUNCATE: invalid fd or fd is not an SHM\n");
+            return -1;
+        }
+
+        SharedMem_t *shm = (SharedMem_t *)fhandle->node->device_data;
+        if (shm == NULL)
+        {
+            kprint("SYS_FTRUNCATE: invalid fd\n");
+            return -1;
+        }
+
+        return shm_set_size(shm, (uint32_t)length);
+    }
+    case 27: // sys_mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset)
+    {
+        // we'll skipp addr, offset and prot
+        uint64_t length = arg2;
+        int fd = (int)arg5;
+
+        if (fd < 0 || fd >= MAX_OPEN_FILES)
+        {
+            kprint("Invalid FD range\n");
+            return 0;
+        }
+
+        Task *curr_tsk = get_curr_task();
+        file_handle_t *fhandle = curr_tsk->fd_tbl[fd];
+        if (fhandle == NULL || fhandle->node == NULL || fhandle->node->ops != &shm_ops)
+        {
+            return 0;
+        }
+
+        SharedMem_t *shm = (SharedMem_t *)fhandle->node->device_data;
+        if (shm == NULL || shm->page_count == 0)
+        {
+            kprint("SYS_MAP failed: SHM struct null or page_count=0\n");
+            return 0;
+        }
+
+        // find free addresses from virtual space
+        // which is large enough
+        VmFreeRegion **free_head;
+        VmAllocatedList **alloc_head;
+
+        // could've called get `get_vm_ctx(&free_head, &alloc_head);`
+        // but we already have curr_tsk, save a bit of cycles :)))
+        free_head = &curr_tsk->vm_free_head;
+        alloc_head = &curr_tsk->vm_alloc_head;
+
+        size_t aligned_len = (length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+        uint64_t virt_start_addr = find_free_addr(free_head, aligned_len);
+
+        if (virt_start_addr == 0)
+        {
+            kprint("SYS_MMAP failed: OOM\n");
+            return 0;
+        }
+
+        // manually map by unrolling inconsecutive phys pages
+        // to consecutive virt addrs
+        uint64_t *pml4 = vmm_phys_to_hhdm(read_cr3());
+
+        for (uint32_t i = 0; i < shm->page_count; i++)
+        {
+            uint64_t phys_addr = shm->phys_pages[i];
+            uint64_t virt_addr = virt_start_addr + i * PAGE_SIZE;
+            vmm_map_page(
+                pml4,
+                virt_addr,
+                phys_addr,
+                VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+        }
+
+        vmm_add_allocated_mem(alloc_head, virt_start_addr, aligned_len, VMM_FLAG_SHM);
+
+        return virt_start_addr;
+    }
+    case 28: // sys_munmap(void *addr, size_t length)
+    {
+        void *addr = (void *)arg1;
+
+        if (!verify_usr_access((uint64_t)addr, 1))
+        {
+            return -1;
+        }
+
+        vmm_free(addr);
+
+        return 0;
+    }
+    case 29: // sys_fstat(fd, statbuf)
+    {
+        int fd = (int)arg1;
+        stat_t *st = (stat_t *)arg2;
+
+        if (fd < 0 || fd >= MAX_OPEN_FILES)
+        {
+            kprint("SYS_FSTAT failed: invalid fd\n");
+            return -1;
+        }
+
+        Task *curr_tsk = get_curr_task();
+        file_handle_t *fh = curr_tsk->fd_tbl[fd];
+
+        if (fh == NULL || fh->node == NULL)
+        {
+            kprint("SYS_FSTAT failed: invalid file handle\n");
+            return -1;
+        }
+
+        if (!verify_usr_access((uint64_t)st, sizeof(stat_t)))
+        {
+            kprint("SYS_FSTAT failed: invalid stat buffer\n");
+            return -1;
+        }
+
+        memset(st, 0, sizeof(stat_t));
+
+        if (fh->node->ops == &shm_ops)
+        {
+            // Is SharedMem
+            SharedMem_t *shm = (SharedMem_t *)fh->node->device_data;
+            if (shm)
+            {
+                st->st_size = shm->size;
+            }
+            else
+            {
+                st->st_size = 0;
+            }
+            st->st_mode = S_IFCHR | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+        }
+        else if (fh->node->flags == VFS_DIRECTORY)
+        {
+            // Is Directory
+            st->st_size = 0;
+            st->st_mode = S_IFDIR;
+        }
+        else
+        {
+            // normal file
+            st->st_size = fh->node->length;
+            st->st_mode = S_IFREG;
+        }
+
+        st->st_ino = (uint64_t)fh->node;
+
+        return 0;
     }
     default:
     {

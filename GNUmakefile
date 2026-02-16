@@ -188,7 +188,7 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf
+rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf
 	@echo "Creating rootfs.tar..."
 	cp shell.elf rootfs/
 	cp hello.elf rootfs/
@@ -196,6 +196,8 @@ rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf
 	cp test_fork.elf rootfs/
 	cp crash.elf rootfs/
 	cp fpu_test.elf rootfs/
+	cp writer.elf rootfs/
+	cp reader.elf rootfs/
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
 obj/src/libc/crt0.o: src/libc/crt0.asm
@@ -257,6 +259,26 @@ fpu_test.elf: progs/fpu_test.c $(USER_OBJS)
 		obj/progs/fpu_test.c.o \
 		obj/src/libc/libc.c.o \
 		-o fpu_test.elf
+
+writer.elf: progs/writer.c $(USER_OBJS)
+	@echo "Building FPU TEST program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/writer.c -o obj/progs/writer.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/writer.c.o \
+		obj/src/libc/libc.c.o \
+		-o writer.elf
+
+reader.elf: progs/reader.c $(USER_OBJS)
+	@echo "Building FPU TEST program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/reader.c -o obj/progs/reader.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/reader.c.o \
+		obj/src/libc/libc.c.o \
+		-o reader.elf
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
 	mkdir -p "$(dir $@)"

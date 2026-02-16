@@ -44,13 +44,6 @@ static WinDragCtx drag_ctx =
         .off_y = 0,
 };
 
-static inline uint64_t get_rflags(void)
-{
-    uint64_t rflags;
-    asm volatile("pushfq; pop %0" : "=r"(rflags));
-    return rflags;
-}
-
 static void win_stain_list(Window *win)
 {
     while (win != NULL)
@@ -160,6 +153,11 @@ static void init_win_pixels(Window *win)
 
 static uint32_t get_resize_dir(Window *win, int64_t mx, int64_t my)
 {
+    if (!(win->flags & WIN_RESIZABLE))
+    {
+        return RES_NONE;
+    }
+
     int64_t r_left = win->x;
     int64_t r_right = win->x + win->width;
     int64_t r_top = win->y;
@@ -203,7 +201,7 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
 
     // create buf to paint for the window body
     uint64_t pixel_buf_size = height * width * sizeof(Pixel);
-    Pixel *pixel_buf = (Pixel *)vmm_alloc(pixel_buf_size);
+    Pixel *pixel_buf = (Pixel *)vmm_alloc_global(pixel_buf_size);
     if (pixel_buf == NULL)
     {
         kprint("Panic: Failed to kmalloc back buffer for window\n");
@@ -861,10 +859,14 @@ void win_move(Window *win, int64_t new_x, int64_t new_y)
 void win_resize(Window *win, int64_t new_x, int64_t new_y, int64_t new_w, int64_t new_h)
 {
     int64_t new_pixels_size = new_h * new_w * sizeof(Pixel);
-    Pixel *new_pixels = (Pixel *)vmm_realloc(win->pixels, new_pixels_size);
+    Pixel *new_pixels = (Pixel *)vmm_alloc_global(new_pixels_size);
 
     if (new_pixels != NULL)
     {
+        int64_t min_size = (win->pixels_size < new_pixels_size) ? win->pixels_size : new_pixels_size;
+        memcpy(new_pixels, win->pixels, min_size);
+        vmm_free(win->pixels);
+
         video_add_dirty_rect(win->x, win->y, win->width, win->height);
         win->pixels = new_pixels;
         win->pixels_size = new_pixels_size;
