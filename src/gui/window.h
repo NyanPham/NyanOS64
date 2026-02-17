@@ -28,6 +28,10 @@
 #define RES_BOTTOM (1 << 3)
 #define WIN_RESIZE_MARGIN 3
 
+#define WIN_STATE_NORMAL 0
+#define WIN_STATE_MAXIMIZED 1
+#define WIN_STATE_MINIMIZED 2
+
 typedef struct Window
 {
     int64_t x;       // coord x in pixels
@@ -50,6 +54,13 @@ typedef struct Window
     uint32_t flags;
 
     Rect *clip_list;
+
+    uint32_t state;
+    uint32_t pre_state;
+    int64_t pre_x;  // coord x in pixels
+    int64_t pre_y;  // coord y in pixels
+    uint64_t pre_w; // width in pixels
+    uint64_t pre_h; // height in pixels
 } Window;
 
 typedef struct WinDragCtx
@@ -77,5 +88,7 @@ bool is_point_in_rect(int64_t px, int64_t py, int64_t rx, int64_t ry, int64_t rw
 uint8_t rect_intersect(Rect *r1, Rect *r2);
 Rect *clip_rect(Rect *r, Rect *clipper);
 void recalc_clip_list(Window *win);
+static int win_toggle_maximize(Window *win);
+static int win_toggle_minimize(Window *win);
 
 #endif

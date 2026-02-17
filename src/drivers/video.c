@@ -275,12 +275,12 @@ void video_add_dirty_rect(int64_t x, int64_t y, int64_t w, int64_t h)
             return;
         }
 
-        if (r->x >= x && r->y >= y &&
-            (r->x + r->w) <= (x + w) &&
-            (r->y + r->h) <= (y + h))
-        {
-            return;
-        }
+        // if (r->x >= x && r->y >= y &&
+        //     (r->x + r->w) <= (x + w) &&
+        //     (r->y + r->h) <= (y + h))
+        // {
+        //     return;
+        // }
     }
 
     // record the rect as dirty list

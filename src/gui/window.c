@@ -104,17 +104,48 @@ static void init_win_pixels(Window *win)
         title++;
     }
 
-    // draw the close button
     int64_t btn_size = WIN_TITLE_BAR_H;
-    int64_t btn_x = win->width - btn_size;
-    int64_t btn_y = 0;
 
-    for (int64_t r = btn_y; r < btn_y + btn_size; r++)
+    // draw the minimize button
+    if (win->flags & WIN_MINIMIZABLE)
     {
-        for (int64_t c = btn_x; c < btn_x + btn_size; c++)
+        int min_btn_x = win->width - (3 * btn_size);
+        int min_btn_y = 0;
+
+        for (int64_t r = min_btn_y; r < min_btn_y + btn_size; r++)
         {
-            int64_t rel_x = c - btn_x;
-            int64_t rel_y = r - btn_y;
+            for (int64_t c = min_btn_x; c < min_btn_x + btn_size; c++)
+            {
+                win->pixels[r * win->width + c].color = Yellow;
+            }
+        }
+    }
+
+    // draw the maximize button
+    if (win->flags & WIN_RESIZABLE)
+    {
+        int max_btn_x = win->width - (2 * btn_size);
+        int max_btn_y = 0;
+
+        for (int64_t r = max_btn_y; r < max_btn_y + btn_size; r++)
+        {
+            for (int64_t c = max_btn_x; c < max_btn_x + btn_size; c++)
+            {
+                win->pixels[r * win->width + c].color = Green;
+            }
+        }
+    }
+
+    // draw the close button
+    int64_t close_btn_x = win->width - btn_size;
+    int64_t close_btn_y = 0;
+
+    for (int64_t r = close_btn_y; r < close_btn_y + btn_size; r++)
+    {
+        for (int64_t c = close_btn_x; c < close_btn_x + btn_size; c++)
+        {
+            int64_t rel_x = c - close_btn_x;
+            int64_t rel_y = r - close_btn_y;
             bool is_cross = (rel_x == rel_y) || (rel_x + rel_y == btn_size - 1);
             GBA_Color color = Red;
 
@@ -198,6 +229,12 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     win->flags = flags;
     win->cursor_x = 0;
     win->cursor_y = 0;
+    win->state = WIN_STATE_NORMAL;
+    win->pre_state = WIN_STATE_NORMAL;
+    win->pre_x = 0;
+    win->pre_y = 0;
+    win->pre_w = 0;
+    win->pre_h = 0;
 
     // create buf to paint for the window body
     uint64_t pixel_buf_size = height * width * sizeof(Pixel);
@@ -474,6 +511,7 @@ void win_put_char(Window *win, char c)
     }
 }
 
+static uint8_t prev_left_btn = 0;
 void win_update(void)
 {
     cli();
@@ -483,8 +521,9 @@ void win_update(void)
     int64_t my = mouse_get_y();
 
     CursorType nxt_cursor_typ = CURSOR_ARROW;
+    uint8_t is_left_btn = (mstat & 0x01);
+    uint8_t is_just_pressed = is_left_btn && !prev_left_btn;
 
-    bool is_left_btn = (mstat & 0x01);
     if (is_left_btn)
     {
         if (drag_ctx.target != NULL)
@@ -545,6 +584,7 @@ void win_update(void)
                 {
                     win_resize(drag_ctx.target, new_x, new_y, new_w, new_h);
                     win_stain_list(g_win_list);
+                    drag_ctx.target->state = WIN_STATE_NORMAL;
                 }
             }
             else
@@ -552,6 +592,7 @@ void win_update(void)
                 nxt_cursor_typ = CURSOR_MOVE;
                 win_move(drag_ctx.target, mx - drag_ctx.off_x, my - drag_ctx.off_y);
                 win_stain_list(g_win_list);
+                drag_ctx.target->state = WIN_STATE_NORMAL;
             }
         }
         else
@@ -559,35 +600,72 @@ void win_update(void)
             Window *curr_win = get_win_at(mx, my);
             if (curr_win != NULL)
             {
-                win_focus(curr_win);
                 int64_t off_mx = mx - curr_win->x;
                 int64_t off_my = my - curr_win->y;
-                uint32_t res_dir = get_resize_dir(curr_win, mx, my);
-
-                if (res_dir != RES_NONE || check_win_drag(curr_win, mx, my))
-                {
-                    drag_ctx.target = curr_win;
-                    drag_ctx.off_x = off_mx;
-                    drag_ctx.off_y = off_my;
-                    drag_ctx.resize_dir = res_dir;
-                }
-
-                if (res_dir & (RES_LEFT | RES_RIGHT))
-                {
-                    nxt_cursor_typ = CURSOR_RESIZE_H;
-                }
-                else if (res_dir & (RES_TOP | RES_BOTTOM))
-                {
-                    nxt_cursor_typ = CURSOR_RESIZE_V;
-                }
 
                 int64_t btn_size = WIN_TITLE_BAR_H;
-                int64_t btn_x = curr_win->width - btn_size;
-                int64_t btn_y = 0;
+                int64_t close_btn_x = curr_win->width - btn_size;
+                int64_t max_btn_x = curr_win->width - (2 * btn_size);
+                int64_t min_btn_x = curr_win->width - (3 * btn_size);
+                uint8_t btn_clicked = 0;
 
-                if (is_point_in_rect(off_mx, off_my, btn_x, btn_y, btn_size, btn_size))
+                if (is_just_pressed)
                 {
-                    sched_kill(curr_win->owner_pid);
+                    if (is_point_in_rect(off_mx, off_my, close_btn_x, 0, btn_size, btn_size))
+                    {
+                        sched_kill(curr_win->owner_pid);
+                        btn_clicked = 1;
+                    }
+                    else if ((curr_win->flags & WIN_RESIZABLE) && is_point_in_rect(off_mx, off_my, max_btn_x, 0, btn_size, btn_size))
+                    {
+                        win_toggle_maximize(curr_win);
+                        Event e = {
+                            .type = EVENT_WIN_RESIZE,
+                            .resize_event = {
+                                .win_owner_pid = curr_win->owner_pid,
+                            },
+                        };
+                        event_queue_push(&g_event_queue, e);
+                        btn_clicked = 1;
+                    }
+                    else if ((curr_win->flags & WIN_MINIMIZABLE) && is_point_in_rect(off_mx, off_my, min_btn_x, 0, btn_size, btn_size))
+                    {
+                        win_toggle_minimize(curr_win);
+                        Event e = {
+                            .type = EVENT_WIN_RESIZE,
+                            .resize_event = {
+                                .win_owner_pid = curr_win->owner_pid,
+                            },
+                        };
+                        event_queue_push(&g_event_queue, e);
+                        btn_clicked = 1;
+                    }
+                }
+
+                if (!btn_clicked && drag_ctx.target == NULL)
+                {
+                    if (is_just_pressed)
+                    {
+                        win_focus(curr_win);
+                    }
+                    uint32_t res_dir = get_resize_dir(curr_win, mx, my);
+
+                    if (is_just_pressed && (res_dir != RES_NONE || check_win_drag(curr_win, mx, my)))
+                    {
+                        drag_ctx.target = curr_win;
+                        drag_ctx.off_x = off_mx;
+                        drag_ctx.off_y = off_my;
+                        drag_ctx.resize_dir = res_dir;
+                    }
+
+                    if (res_dir & (RES_LEFT | RES_RIGHT))
+                    {
+                        nxt_cursor_typ = CURSOR_RESIZE_H;
+                    }
+                    else if (res_dir & (RES_TOP | RES_BOTTOM))
+                    {
+                        nxt_cursor_typ = CURSOR_RESIZE_V;
+                    }
                 }
 
                 win_stain_list(g_win_list);
@@ -624,6 +702,7 @@ void win_update(void)
         }
     }
 
+    prev_left_btn = is_left_btn;
     cursor_set_shape(nxt_cursor_typ);
 
     Window *curr_win = g_win_list;
@@ -863,8 +942,7 @@ void win_resize(Window *win, int64_t new_x, int64_t new_y, int64_t new_w, int64_
 
     if (new_pixels != NULL)
     {
-        int64_t min_size = (win->pixels_size < new_pixels_size) ? win->pixels_size : new_pixels_size;
-        memcpy(new_pixels, win->pixels, min_size);
+        memset(new_pixels, 0, new_pixels_size);
         vmm_free(win->pixels);
 
         video_add_dirty_rect(win->x, win->y, win->width, win->height);
@@ -878,7 +956,6 @@ void win_resize(Window *win, int64_t new_x, int64_t new_y, int64_t new_w, int64_
         video_add_dirty_rect(new_x, new_y, win->width, win->height);
         win->flags |= WIN_DIRTY;
     }
-    // win_stain_list(g_win_list);
 }
 
 static void init_rect_pool(void)
@@ -916,4 +993,58 @@ void rect_free(Rect *r)
 
     r->next = g_rect_free_list;
     g_rect_free_list = r;
+}
+
+int win_toggle_maximize(Window *win)
+{
+    if (win->state == WIN_STATE_NORMAL)
+    {
+        win->pre_x = win->x;
+        win->pre_y = win->y;
+        win->pre_w = win->width;
+        win->pre_h = win->height;
+        win->state = WIN_STATE_MAXIMIZED;
+        win_resize(win, 0, 0, video_get_width(), video_get_height());
+
+        return 0;
+    }
+
+    if (win->state == WIN_STATE_MAXIMIZED)
+    {
+        win->state = WIN_STATE_NORMAL;
+        win_resize(win, win->pre_x, win->pre_y, win->pre_w, win->pre_h);
+
+        return 0;
+    }
+
+    if (win->state == WIN_STATE_MINIMIZED)
+    {
+        win->state = WIN_STATE_MAXIMIZED;
+        win_resize(win, 0, 0, video_get_width(), video_get_height());
+
+        return 0;
+    }
+
+    return 0;
+}
+
+int win_toggle_minimize(Window *win)
+{
+    if (win->state == WIN_STATE_MINIMIZED)
+    {
+        win->state = win->pre_state;
+        win_resize(win, win->x, win->y, win->width, win->pre_h);
+
+        return 0;
+    }
+
+    win->pre_state = win->state;
+    win->pre_x = win->x;
+    win->pre_y = win->y;
+    win->pre_w = win->width;
+    win->pre_h = win->height;
+    win->state = WIN_STATE_MINIMIZED;
+    win_resize(win, win->x, win->y, win->width, WIN_TITLE_BAR_H);
+
+    return 0;
 }
