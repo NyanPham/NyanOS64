@@ -59,6 +59,7 @@ Task *sched_new_task(void)
     new_tsk->win = NULL;
     new_tsk->term = NULL;
     new_tsk->pending_signals = 0;
+    new_tsk->wait_next = NULL;
     uint8_t *fpu_ptr = get_aligned_fpu_region(new_tsk);
     memset(fpu_ptr, 0, 512);
     *((uint32_t *)(fpu_ptr + 0x18)) = 0x1F80; // set MXCS to avoid exceptions in float math
@@ -242,6 +243,7 @@ void sched_init(void)
     // *(--sp) = 0; // R15
     // kern_task->kern_stk_rsp = (uint64_t)sp;
     kern_task->next = kern_task;
+    kern_task->wait_next = NULL;
     g_head_tsk = kern_task;
     g_curr_tsk = kern_task;
 }

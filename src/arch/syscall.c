@@ -20,6 +20,7 @@
 #include "fs/pipe.h"
 #include "utils/asm_instrs.h"
 #include "ipc/shm.h"
+#include "ipc/mq.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -1103,6 +1104,65 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         st->st_ino = (uint64_t)fh->node;
 
         return 0;
+    }
+    case 30: // sys_mq_open(name, flags)
+    {
+        char *name = (char *)arg1;
+        int flags = (int)arg2;
+
+        if (!verify_usr_access((uint64_t)name, 1))
+        {
+            return 0;
+        }
+
+        return (uint64_t)mq_open(name, flags);
+    }
+    case 31: // sys_mq_send(mq, data, size)
+    {
+        MessageQueue_t *mq = (MessageQueue_t *)arg1;
+        void *data = (void *)arg2;
+        size_t size = (size_t)arg3;
+
+        if (mq == NULL)
+        {
+            return -1;
+        }
+
+        if (!verify_usr_access((uint64_t)data, size))
+        {
+            return -1;
+        }
+
+        return mq_send(mq, data, size);
+    }
+    case 32: // sys_mq_receive(mq, buf, len)
+    {
+        MessageQueue_t *mq = (MessageQueue_t *)arg1;
+        void *buf = (void *)arg2;
+        size_t len = (size_t)arg3;
+
+        if (mq == NULL)
+        {
+            return -1;
+        }
+
+        if (!verify_usr_access((uint64_t)buf, len))
+        {
+            return -1;
+        }
+
+        return mq_receive(mq, buf, len);
+    }
+    case 33: // sys_mq_unlink(name)
+    {
+        char *name = (char *)arg1;
+
+        if (!verify_usr_access((uint64_t)name, 1))
+        {
+            return -1;
+        }
+
+        return mq_unlink(name);
     }
     default:
     {

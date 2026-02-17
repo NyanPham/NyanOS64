@@ -139,6 +139,26 @@ int fstat(int fd, stat_t *statbuf)
     return (int)syscall(29, (uint64_t)fd, (uint64_t)statbuf, 0, 0, 0, 0);
 }
 
+mqd_t mq_open(const char *name, int flags)
+{
+    return (mqd_t)syscall(30, (uint64_t)name, (uint64_t)flags, 0, 0, 0, 0);
+}
+
+int mq_send(mqd_t mqd, const void *data, size_t size)
+{
+    return (int)syscall(31, (uint64_t)mqd, (uint64_t)data, (uint64_t)size, 0, 0, 0);
+}
+
+int mq_receive(mqd_t mqd, void *buf, size_t len)
+{
+    return (int)syscall(32, (uint64_t)mqd, (uint64_t)buf, (uint64_t)len, 0, 0, 0);
+}
+
+int mq_unlink(const char *name)
+{
+    return (int)syscall(33, (uint64_t)name, 0, 0, 0, 0, 0);
+}
+
 int win_create(WinParams_t *win_params)
 {
     return (int)syscall(17, (uint64_t)win_params, 0, 0, 0, 0, 0);

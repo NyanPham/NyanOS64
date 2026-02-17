@@ -188,7 +188,7 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf
+rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf
 	@echo "Creating rootfs.tar..."
 	cp shell.elf rootfs/
 	cp hello.elf rootfs/
@@ -198,6 +198,8 @@ rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf w
 	cp fpu_test.elf rootfs/
 	cp writer.elf rootfs/
 	cp reader.elf rootfs/
+	cp mq_sender.elf rootfs/
+	cp mq_receiver.elf rootfs/
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
 obj/src/libc/crt0.o: src/libc/crt0.asm
@@ -279,6 +281,26 @@ reader.elf: progs/reader.c $(USER_OBJS)
 		obj/progs/reader.c.o \
 		obj/src/libc/libc.c.o \
 		-o reader.elf
+
+mq_sender.elf: progs/mq_sender.c $(USER_OBJS)
+	@echo "Building FPU TEST program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/mq_sender.c -o obj/progs/mq_sender.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/mq_sender.c.o \
+		obj/src/libc/libc.c.o \
+		-o mq_sender.elf
+
+mq_receiver.elf: progs/mq_receiver.c $(USER_OBJS)
+	@echo "Building FPU TEST program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/mq_receiver.c -o obj/progs/mq_receiver.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/mq_receiver.c.o \
+		obj/src/libc/libc.c.o \
+		-o mq_receiver.elf
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
 	mkdir -p "$(dir $@)"

@@ -42,6 +42,8 @@ typedef struct Task
     uint32_t pending_signals;
 
     uint8_t fpu_regs[512 + 16];
+
+    struct Task *wait_next;
 } Task;
 
 Task *sched_new_task(void);
