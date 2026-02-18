@@ -21,6 +21,7 @@ extern EventBuf g_event_queue;
 
 static Window *g_win_list = NULL; // Bottom / Head of lis
 static Window *g_win_top = NULL;  // Top / Tail of List to focus
+Window *g_desktop_win;
 
 /*
 Window uses Rects a lot, especially when win_stain_list runs.
@@ -1068,19 +1069,19 @@ void win_draw_string(Window *win, int x, int y, char *str, uint32_t fg_color, ui
 
 void init_desktop()
 {
-    Window *desktop = win_create(0, 0, video_get_width(), video_get_height(), NULL, WIN_BORDERLESS);
+    g_desktop_win = win_create(0, 0, video_get_width(), video_get_height(), NULL, WIN_BORDERLESS);
 
-    for (int64_t y = 0; y < desktop->height; y++)
+    for (int64_t y = 0; y < g_desktop_win->height; y++)
     {
-        for (int64_t x = 0; x < desktop->width; x++)
+        for (int64_t x = 0; x < g_desktop_win->width; x++)
         {
             bool is_dark = ((x / 4) + (y / 4)) % 2;
-            desktop->pixels[y * desktop->width + x].color = is_dark ? Teal : DarkTeal;
+            g_desktop_win->pixels[y * g_desktop_win->width + x].color = is_dark ? Teal : DarkTeal;
         }
     }
 
-    win_draw_string(desktop, 10, 10, "Welcome to NyanOS kernel!", White, Teal);
-    win_draw_string(desktop, 10, 20, "Press `Ctrl + Alt + T` to run a Terminal!", White, Teal);
+    win_draw_string(g_desktop_win, 10, 10, "Welcome to NyanOS kernel!", White, Teal);
+    win_draw_string(g_desktop_win, 10, 20, "Press `Ctrl + Alt + T` to run a Terminal!", White, Teal);
 
-    desktop->flags |= WIN_DIRTY;
+    g_desktop_win->flags |= WIN_DIRTY;
 }

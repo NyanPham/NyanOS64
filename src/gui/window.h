@@ -90,6 +90,7 @@ uint8_t rect_intersect(Rect *r1, Rect *r2);
 Rect *clip_rect(Rect *r, Rect *clipper);
 void recalc_clip_list(Window *win);
 void init_desktop(void);
+void win_draw_string(Window *win, int x, int y, char *str, uint32_t fg_color, uint32_t bg_color);
 
 static int win_toggle_maximize(Window *win);
 static int win_toggle_minimize(Window *win);

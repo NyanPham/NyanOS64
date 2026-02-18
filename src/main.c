@@ -17,6 +17,7 @@
 #include "drivers/legacy/pic.h"
 #include "drivers/video.h"
 #include "drivers/ata.h"
+#include "drivers/rtc.h"
 #include "sched/sched.h"
 #include "fs/dev.h"
 #include "elf.h"
@@ -66,6 +67,7 @@ extern uint64_t *kern_pml4;
 extern uint64_t kern_stk_ptr;
 extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
 extern EventBuf g_event_queue;
+extern Window *g_desktop_win;
 
 static inline void spawn_shell()
 {
@@ -277,6 +279,40 @@ void test_fat32(vfs_node_t *fat_root)
     }
 }
 
+static uint64_t prev_tick = 0;
+void update_clock(int clock_x, int clock_y)
+{
+    uint64_t tick = timer_get_ticks();
+    if (tick - prev_tick >= 100)
+    {
+        prev_tick = tick;
+        Time_t *t = rtc_get_time();
+        if (t)
+        {
+            uint8_t vn_hrs = (t->hrs + 7) % 24;
+            char time_str[9];
+
+            time_str[0] = (vn_hrs / 10) + '0';
+            time_str[1] = (vn_hrs % 10) + '0';
+            time_str[2] = ':';
+            time_str[3] = (t->mins / 10) + '0';
+            time_str[4] = (t->mins % 10) + '0';
+            time_str[5] = ':';
+            time_str[6] = (t->secs / 10) + '0';
+            time_str[7] = (t->secs % 10) + '0';
+            time_str[8] = '\0';
+
+            if (g_desktop_win)
+            {
+                win_draw_string(g_desktop_win, clock_x, clock_y, "        ", White, Teal);
+                win_draw_string(g_desktop_win, clock_x, clock_y, time_str, White, Teal);
+                video_add_dirty_rect(clock_x, clock_y, 8 * 8, 8);
+            }
+            kfree(t);
+        }
+    }
+}
+
 void kmain(void)
 {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false)
@@ -350,12 +386,16 @@ void kmain(void)
 
     test_fat32(fat_root);
 
+    cursor_init();
+
     // test kprint
     // if we reach here, at least the inits above,
     // if not working, don't crash our OS :)))
     kprint("Hello from the kernel side!\n");
 
-    cursor_init();
+    int clock_x = (int)video_get_width() - 80;
+    int clock_y = (int)video_get_height() - 80;
+
     while (true)
     {
         // Event Loop
@@ -453,6 +493,7 @@ void kmain(void)
         }
 
         cursor_erase();
+        update_clock(clock_x, clock_y);
         win_update();
 
         term_paint();
