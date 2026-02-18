@@ -4,6 +4,10 @@
 #include "kern_defs.h"
 
 static CursorType curr_cursor_type = CURSOR_ARROW;
+static uint32_t mouse_bg_buff[18 * 12];
+
+static void cursor_save_bg(int x, int y);
+static void cursor_restore_bg(int x, int y);
 
 static const uint8_t bitmap_arrow[CURSOR_H][CURSOR_W] = {
     {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
@@ -94,6 +98,12 @@ static int64_t prev_my = 0;
 void cursor_init()
 {
     curr_cursor_type = CURSOR_ARROW;
+
+    int64_t mx = mouse_get_x();
+    int64_t my = mouse_get_y();
+    prev_mx = mx;
+    prev_my = my;
+    cursor_save_bg(mx, my);
 }
 
 void cursor_set_shape(CursorType type)
@@ -101,10 +111,17 @@ void cursor_set_shape(CursorType type)
     curr_cursor_type = type;
 }
 
-void draw_mouse()
+void cursor_erase(void)
+{
+    cursor_restore_bg(prev_mx, prev_my);
+    video_add_dirty_rect(prev_mx, prev_my, CURSOR_W, CURSOR_H);
+}
+
+void cursor_paint(void)
 {
     int64_t mx = mouse_get_x();
     int64_t my = mouse_get_y();
+    cursor_save_bg(mx, my);
 
     const uint8_t (*curr_bitmap)[CURSOR_W];
 
@@ -136,8 +153,31 @@ void draw_mouse()
             video_plot_pixel(mx + x, my + y, color);
         }
     }
-    video_add_dirty_rect(prev_mx, prev_my, CURSOR_W, CURSOR_H);
     video_add_dirty_rect(mx, my, CURSOR_W, CURSOR_H);
     prev_mx = mx;
     prev_my = my;
+}
+
+void cursor_save_bg(int x, int y)
+{
+    for (int dy = 0; dy < CURSOR_H; dy++)
+    {
+        for (int dx = 0; dx < CURSOR_W; dx++)
+        {
+            uint64_t buff_idx = dy * CURSOR_W + dx;
+            mouse_bg_buff[buff_idx] = video_get_pixel(x + dx, y + dy);
+        }
+    }
+}
+
+void cursor_restore_bg(int x, int y)
+{
+    for (int dy = 0; dy < CURSOR_H; dy++)
+    {
+        for (int dx = 0; dx < CURSOR_W; dx++)
+        {
+            uint64_t buff_idx = dy * CURSOR_W + dx;
+            video_plot_pixel(x + dx, y + dy, mouse_bg_buff[buff_idx]);
+        }
+    }
 }

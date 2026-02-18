@@ -14,6 +14,7 @@ typedef enum
 
 void cursor_init(void);
 void cursor_set_shape(CursorType type);
-void draw_mouse(void);
+void cursor_erase(void);
+void cursor_paint(void);
 
 #endif

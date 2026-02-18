@@ -85,83 +85,87 @@ static void win_draw(Window *win)
  */
 static void init_win_pixels(Window *win)
 {
-    /* TITLE BAR */
-    // init the title bar
-    for (int64_t r = 0; r < WIN_TITLE_BAR_H; r++)
+    if (!(win->flags & WIN_BORDERLESS))
     {
-        for (int64_t c = 0; c < win->width; c++)
+        /* TITLE BAR */
+        // init the title bar
+        for (int64_t r = 0; r < WIN_TITLE_BAR_H; r++)
         {
-            win->pixels[r * win->width + c].color = Blue;
-        }
-    }
-
-    // draw the title
-    char *title = win->title;
-    for (int64_t x = 5; (x < win->width - 15 && *title); x += CHAR_W)
-    {
-        // y is always 5
-        win_draw_char_at(win, *title, x, 5, White, Blue);
-        title++;
-    }
-
-    int64_t btn_size = WIN_TITLE_BAR_H;
-
-    // draw the minimize button
-    if (win->flags & WIN_MINIMIZABLE)
-    {
-        int min_btn_x = win->width - (3 * btn_size);
-        int min_btn_y = 0;
-
-        for (int64_t r = min_btn_y; r < min_btn_y + btn_size; r++)
-        {
-            for (int64_t c = min_btn_x; c < min_btn_x + btn_size; c++)
+            for (int64_t c = 0; c < win->width; c++)
             {
-                win->pixels[r * win->width + c].color = Yellow;
+                win->pixels[r * win->width + c].color = Blue;
             }
         }
-    }
 
-    // draw the maximize button
-    if (win->flags & WIN_RESIZABLE)
-    {
-        int max_btn_x = win->width - (2 * btn_size);
-        int max_btn_y = 0;
-
-        for (int64_t r = max_btn_y; r < max_btn_y + btn_size; r++)
+        // draw the title
+        char *title = win->title;
+        for (int64_t x = 5; (x < win->width - 15 && *title); x += CHAR_W)
         {
-            for (int64_t c = max_btn_x; c < max_btn_x + btn_size; c++)
-            {
-                win->pixels[r * win->width + c].color = Green;
-            }
+            // y is always 5
+            win_draw_char_at(win, *title, x, 5, White, Blue);
+            title++;
         }
-    }
 
-    // draw the close button
-    int64_t close_btn_x = win->width - btn_size;
-    int64_t close_btn_y = 0;
+        int64_t btn_size = WIN_TITLE_BAR_H;
 
-    for (int64_t r = close_btn_y; r < close_btn_y + btn_size; r++)
-    {
-        for (int64_t c = close_btn_x; c < close_btn_x + btn_size; c++)
+        // draw the minimize button
+        if (win->flags & WIN_MINIMIZABLE)
         {
-            int64_t rel_x = c - close_btn_x;
-            int64_t rel_y = r - close_btn_y;
-            bool is_cross = (rel_x == rel_y) || (rel_x + rel_y == btn_size - 1);
-            GBA_Color color = Red;
+            int min_btn_x = win->width - (3 * btn_size);
+            int min_btn_y = 0;
 
-            if (is_cross)
+            for (int64_t r = min_btn_y; r < min_btn_y + btn_size; r++)
             {
-                if (rel_x > 2 && rel_x < btn_size - 3)
+                for (int64_t c = min_btn_x; c < min_btn_x + btn_size; c++)
                 {
-                    color = White;
+                    win->pixels[r * win->width + c].color = Yellow;
                 }
             }
-            win->pixels[r * win->width + c].color = color;
+        }
+
+        // draw the maximize button
+        if (win->flags & WIN_RESIZABLE)
+        {
+            int max_btn_x = win->width - (2 * btn_size);
+            int max_btn_y = 0;
+
+            for (int64_t r = max_btn_y; r < max_btn_y + btn_size; r++)
+            {
+                for (int64_t c = max_btn_x; c < max_btn_x + btn_size; c++)
+                {
+                    win->pixels[r * win->width + c].color = Green;
+                }
+            }
+        }
+
+        // draw the close button
+        int64_t close_btn_x = win->width - btn_size;
+        int64_t close_btn_y = 0;
+
+        for (int64_t r = close_btn_y; r < close_btn_y + btn_size; r++)
+        {
+            for (int64_t c = close_btn_x; c < close_btn_x + btn_size; c++)
+            {
+                int64_t rel_x = c - close_btn_x;
+                int64_t rel_y = r - close_btn_y;
+                bool is_cross = (rel_x == rel_y) || (rel_x + rel_y == btn_size - 1);
+                GBA_Color color = Red;
+
+                if (is_cross)
+                {
+                    if (rel_x > 2 && rel_x < btn_size - 3)
+                    {
+                        color = White;
+                    }
+                }
+                win->pixels[r * win->width + c].color = color;
+            }
         }
     }
 
     /* CONTENT BACKGROUND */
-    for (int64_t r = WIN_TITLE_BAR_H; r < win->height; r++)
+    int64_t start_r = (win->flags & WIN_BORDERLESS) ? 0 : WIN_TITLE_BAR_H;
+    for (int64_t r = start_r; r < win->height; r++)
     {
         for (int64_t c = 0; c < win->width; c++)
         {
@@ -170,15 +174,18 @@ static void init_win_pixels(Window *win)
     }
 
     /* BORDERS */
-    for (int c = 0; c < win->width; c++)
+    if (!(win->flags & WIN_BORDERLESS))
     {
-        win->pixels[c].color = White;
-        win->pixels[c + (win->width * (win->height - 1))].color = Black;
-    }
-    for (int r = 0; r < win->height; r++)
-    {
-        win->pixels[r * win->width].color = White;
-        win->pixels[(r * win->width) + win->width - 1].color = Black;
+        for (int c = 0; c < win->width; c++)
+        {
+            win->pixels[c].color = White;
+            win->pixels[c + (win->width * (win->height - 1))].color = Black;
+        }
+        for (int r = 0; r < win->height; r++)
+        {
+            win->pixels[r * win->width].color = White;
+            win->pixels[(r * win->width) + win->width - 1].color = Black;
+        }
     }
 }
 
@@ -306,6 +313,7 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     rect->next = NULL;
 
     win->clip_list = rect;
+    win->flags |= WIN_DIRTY;
 
     return win;
 }
@@ -313,6 +321,8 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
 void init_win_manager(void)
 {
     init_rect_pool();
+    init_desktop();
+    win_paint();
     kprint("Window manager inited!\n");
 }
 
@@ -328,7 +338,12 @@ void win_paint()
     Window *curr = g_win_list;
     while (curr != NULL)
     {
-        win_draw(curr);
+        if (curr->flags & WIN_DIRTY)
+        {
+            recalc_clip_list(curr);
+            win_draw(curr);
+            curr->flags &= ~WIN_DIRTY;
+        }
         curr = curr->next;
     }
     if (rflags & (1 << 9))
@@ -361,7 +376,7 @@ Window *get_win_at(int64_t mx, int64_t my)
  */
 void win_focus(Window *win)
 {
-    if (win == g_win_top)
+    if ((win->flags & WIN_BORDERLESS) || (win == g_win_top))
     {
         return;
     }
@@ -483,6 +498,8 @@ void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color fg_
                                          : (uint32_t)bg_color;
         }
     }
+
+    win->flags |= WIN_DIRTY;
 }
 
 void win_put_char(Window *win, char c)
@@ -584,7 +601,10 @@ void win_update(void)
                 {
                     win_resize(drag_ctx.target, new_x, new_y, new_w, new_h);
                     win_stain_list(g_win_list);
-                    drag_ctx.target->state = WIN_STATE_NORMAL;
+                    if (drag_ctx.target->state != WIN_STATE_MINIMIZED)
+                    {
+                        drag_ctx.target->state = WIN_STATE_NORMAL;
+                    }
                 }
             }
             else
@@ -592,7 +612,10 @@ void win_update(void)
                 nxt_cursor_typ = CURSOR_MOVE;
                 win_move(drag_ctx.target, mx - drag_ctx.off_x, my - drag_ctx.off_y);
                 win_stain_list(g_win_list);
-                drag_ctx.target->state = WIN_STATE_NORMAL;
+                if (drag_ctx.target->state != WIN_STATE_MINIMIZED)
+                {
+                    drag_ctx.target->state = WIN_STATE_NORMAL;
+                }
             }
         }
         else
@@ -644,7 +667,7 @@ void win_update(void)
 
                 if (!btn_clicked && drag_ctx.target == NULL)
                 {
-                    if (is_just_pressed)
+                    if (is_just_pressed && !(curr_win->flags & WIN_BORDERLESS))
                     {
                         win_focus(curr_win);
                     }
@@ -668,7 +691,7 @@ void win_update(void)
                     }
                 }
 
-                win_stain_list(g_win_list);
+                // win_stain_list(g_win_list);
             }
         }
     }
@@ -704,17 +727,6 @@ void win_update(void)
 
     prev_left_btn = is_left_btn;
     cursor_set_shape(nxt_cursor_typ);
-
-    Window *curr_win = g_win_list;
-    while (curr_win != NULL)
-    {
-        if (curr_win->flags & WIN_DIRTY)
-        {
-            recalc_clip_list(curr_win);
-            curr_win->flags &= ~WIN_DIRTY;
-        }
-        curr_win = curr_win->next;
-    }
 
     sti();
 }
@@ -1005,26 +1017,19 @@ int win_toggle_maximize(Window *win)
         win->pre_h = win->height;
         win->state = WIN_STATE_MAXIMIZED;
         win_resize(win, 0, 0, video_get_width(), video_get_height());
-
-        return 0;
     }
-
-    if (win->state == WIN_STATE_MAXIMIZED)
+    else if (win->state == WIN_STATE_MAXIMIZED)
     {
         win->state = WIN_STATE_NORMAL;
         win_resize(win, win->pre_x, win->pre_y, win->pre_w, win->pre_h);
-
-        return 0;
     }
-
-    if (win->state == WIN_STATE_MINIMIZED)
+    else if (win->state == WIN_STATE_MINIMIZED)
     {
         win->state = WIN_STATE_MAXIMIZED;
         win_resize(win, 0, 0, video_get_width(), video_get_height());
-
-        return 0;
     }
 
+    win_stain_list(g_win_list);
     return 0;
 }
 
@@ -1034,17 +1039,48 @@ int win_toggle_minimize(Window *win)
     {
         win->state = win->pre_state;
         win_resize(win, win->x, win->y, win->width, win->pre_h);
-
-        return 0;
+    }
+    else
+    {
+        win->pre_state = win->state;
+        win->pre_x = win->x;
+        win->pre_y = win->y;
+        win->pre_w = win->width;
+        win->pre_h = win->height;
+        win->state = WIN_STATE_MINIMIZED;
+        win_resize(win, win->x, win->y, win->width, WIN_TITLE_BAR_H);
     }
 
-    win->pre_state = win->state;
-    win->pre_x = win->x;
-    win->pre_y = win->y;
-    win->pre_w = win->width;
-    win->pre_h = win->height;
-    win->state = WIN_STATE_MINIMIZED;
-    win_resize(win, win->x, win->y, win->width, WIN_TITLE_BAR_H);
-
+    win_stain_list(g_win_list);
     return 0;
+}
+
+void win_draw_string(Window *win, int x, int y, char *str, uint32_t fg_color, uint32_t bg_color)
+{
+    int curr_x = x;
+    while (*str)
+    {
+        win_draw_char_at(win, *str, curr_x, y, fg_color, bg_color);
+        curr_x += 8;
+        str++;
+    }
+}
+
+void init_desktop()
+{
+    Window *desktop = win_create(0, 0, video_get_width(), video_get_height(), NULL, WIN_BORDERLESS);
+
+    for (int64_t y = 0; y < desktop->height; y++)
+    {
+        for (int64_t x = 0; x < desktop->width; x++)
+        {
+            bool is_dark = ((x / 4) + (y / 4)) % 2;
+            desktop->pixels[y * desktop->width + x].color = is_dark ? Teal : DarkTeal;
+        }
+    }
+
+    win_draw_string(desktop, 10, 10, "Welcome to NyanOS kernel!", White, Teal);
+    win_draw_string(desktop, 10, 20, "Press `Ctrl + Alt + T` to run a Terminal!", White, Teal);
+
+    desktop->flags |= WIN_DIRTY;
 }

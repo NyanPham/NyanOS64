@@ -23,6 +23,15 @@ typedef enum
     White = 0xFFFFFF,
     Yellow = 0xFFFF00,
     Slate = 0x708090,
+    Gray = 0x808080,
+    LightGray = 0xD3D3D3,
+    DarkGray = 0xA9A9A9,
+    Orange = 0xFFA500,
+    Pink = 0xFFC0CB,
+    Purple = 0x800080,
+    Teal = 0x008080,
+    DarkTeal = 0x006666,
+    Navy = 0x000080,
 } GBA_Color;
 
 #define CHAR_W 8 // based on the font.h

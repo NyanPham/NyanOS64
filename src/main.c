@@ -304,7 +304,6 @@ void kmain(void)
     keyboard_init();
     mouse_init();
     timer_init();
-    init_win_manager();
 
     syscall_init();
     dev_init_stdio();
@@ -321,6 +320,7 @@ void kmain(void)
     }
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
     video_init(fb);
+    init_win_manager();
 
     /*=========== Test the initramfs ===========*/
     if (module_request.response == NULL || module_request.response->module_count < 1)
@@ -452,16 +452,13 @@ void kmain(void)
             }
         }
 
+        cursor_erase();
         win_update();
-
-        video_clear();
-        video_draw_string(10, 10, "Welcome to NyanOS kernel!", White);
-        video_draw_string(10, 20, "Press `Ctrl + Alt + T` to run a Terminal!", White);
 
         term_paint();
         term_blink_active();
         win_paint();
-        draw_mouse();
+        cursor_paint();
         video_swap();
 
         hlt();

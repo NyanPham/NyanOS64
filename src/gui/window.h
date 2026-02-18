@@ -18,6 +18,7 @@
 #define WIN_MOVABLE (1 << 0)
 #define WIN_RESIZABLE (1 << 1)
 #define WIN_MINIMIZABLE (1 << 2)
+#define WIN_BORDERLESS (1 << 3)
 #define WIN_DIRTY (1U << 31)
 
 // resize directions
@@ -88,6 +89,8 @@ bool is_point_in_rect(int64_t px, int64_t py, int64_t rx, int64_t ry, int64_t rw
 uint8_t rect_intersect(Rect *r1, Rect *r2);
 Rect *clip_rect(Rect *r, Rect *clipper);
 void recalc_clip_list(Window *win);
+void init_desktop(void);
+
 static int win_toggle_maximize(Window *win);
 static int win_toggle_minimize(Window *win);
 
