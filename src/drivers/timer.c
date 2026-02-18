@@ -14,6 +14,7 @@ static void timer_handler(void *regs)
     g_ticks++;
 
     lapic_send_eoi();
+    sched_check_sleeping_tasks();
     schedule();
 }
 

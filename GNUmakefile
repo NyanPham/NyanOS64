@@ -188,7 +188,7 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf
+rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf
 	@echo "Creating rootfs.tar..."
 	cp shell.elf rootfs/
 	cp hello.elf rootfs/
@@ -200,6 +200,7 @@ rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf w
 	cp reader.elf rootfs/
 	cp mq_sender.elf rootfs/
 	cp mq_receiver.elf rootfs/
+	cp clock_digital.elf rootfs/
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
 obj/src/libc/crt0.o: src/libc/crt0.asm
@@ -263,7 +264,7 @@ fpu_test.elf: progs/fpu_test.c $(USER_OBJS)
 		-o fpu_test.elf
 
 writer.elf: progs/writer.c $(USER_OBJS)
-	@echo "Building FPU TEST program..."
+	@echo "Building WRITER program..."
 	mkdir -p obj/progs
 	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/writer.c -o obj/progs/writer.c.o
 	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
@@ -273,7 +274,7 @@ writer.elf: progs/writer.c $(USER_OBJS)
 		-o writer.elf
 
 reader.elf: progs/reader.c $(USER_OBJS)
-	@echo "Building FPU TEST program..."
+	@echo "Building READER program..."
 	mkdir -p obj/progs
 	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/reader.c -o obj/progs/reader.c.o
 	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
@@ -283,7 +284,7 @@ reader.elf: progs/reader.c $(USER_OBJS)
 		-o reader.elf
 
 mq_sender.elf: progs/mq_sender.c $(USER_OBJS)
-	@echo "Building FPU TEST program..."
+	@echo "Building MQ_SENDER program..."
 	mkdir -p obj/progs
 	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/mq_sender.c -o obj/progs/mq_sender.c.o
 	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
@@ -293,7 +294,7 @@ mq_sender.elf: progs/mq_sender.c $(USER_OBJS)
 		-o mq_sender.elf
 
 mq_receiver.elf: progs/mq_receiver.c $(USER_OBJS)
-	@echo "Building FPU TEST program..."
+	@echo "Building MQ_RECEIVER program..."
 	mkdir -p obj/progs
 	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/mq_receiver.c -o obj/progs/mq_receiver.c.o
 	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
@@ -301,6 +302,17 @@ mq_receiver.elf: progs/mq_receiver.c $(USER_OBJS)
 		obj/progs/mq_receiver.c.o \
 		obj/src/libc/libc.c.o \
 		-o mq_receiver.elf
+
+clock_digital.elf: progs/clock_digital.c $(USER_OBJS)
+	@echo "Building CLOCK DIGITAL program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/clock_digital.c -o obj/progs/clock_digital.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/clock_digital.c.o \
+		obj/src/libc/libc.c.o \
+		-o clock_digital.elf
+
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
 	mkdir -p "$(dir $@)"

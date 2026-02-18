@@ -17,12 +17,12 @@
 #define NEW_TASK_SS (GDT_OFFSET_USER_DATA | 0x3)
 #define NEW_TASK_CS (GDT_OFFSET_USER_CODE | 0x3)
 #define NEW_TASK_RFLAGS 0x202
-#define KERN_TASK_PID 0x0
+#define KERN_TSK_PID 0x0
 
 // Linked list for Tasks
 static Task *g_head_tsk = NULL;
 static Task *g_curr_tsk = NULL;
-static int g_next_pid = KERN_TASK_PID + 1; // value "0" is our OS kernel
+static int g_next_pid = KERN_TSK_PID + 1; // value "0" is our OS kernel
 
 extern uint64_t *kern_pml4;
 extern void tss_set_stack(uint64_t stk_ptr);
@@ -60,6 +60,7 @@ Task *sched_new_task(void)
     new_tsk->term = NULL;
     new_tsk->pending_signals = 0;
     new_tsk->wait_next = NULL;
+    new_tsk->wake_tick = -1;
     uint8_t *fpu_ptr = get_aligned_fpu_region(new_tsk);
     memset(fpu_ptr, 0, 512);
     *((uint32_t *)(fpu_ptr + 0x18)) = 0x1F80; // set MXCS to avoid exceptions in float math
@@ -214,14 +215,15 @@ void sched_init(void)
     so we need to keep track our OS as Task 0 (Kernel Task).
     */
 
-    Task *kern_task = (Task *)kmalloc(sizeof(Task));
-    kern_task->pid = 0;
-    kern_task->state = TASK_READY;
-    kern_task->pml4 = read_cr3();
+    Task *kern_tsk = (Task *)kmalloc(sizeof(Task));
+    kern_tsk->pid = 0;
+    kern_tsk->state = TASK_READY;
+    kern_tsk->pml4 = read_cr3();
+    kern_tsk->wake_tick = -1;
 
     for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
     {
-        kern_task->fd_tbl[i] = NULL;
+        kern_tsk->fd_tbl[i] = NULL;
     }
 
     void *stk_phys = pmm_alloc_frame();
@@ -230,10 +232,10 @@ void sched_init(void)
         kprint("PANIC: Kernel Task Stack OOM\n");
         hcf();
     }
-    kern_task->kern_stk_top = (uint64_t)stk_phys + PAGE_SIZE;
-    kern_task->kern_stk_rsp = 0;
+    kern_tsk->kern_stk_top = (uint64_t)stk_phys + PAGE_SIZE;
+    kern_tsk->kern_stk_rsp = 0;
 
-    // uint64_t* sp = (uint64_t*)kern_task->kern_stk_top;
+    // uint64_t* sp = (uint64_t*)kern_tsk->kern_stk_top;
     // *(--sp) = (uint64_t)task_idle;
     // *(--sp) = 0; // RBX
     // *(--sp) = 0; // RBP
@@ -241,11 +243,11 @@ void sched_init(void)
     // *(--sp) = 0; // R13
     // *(--sp) = 0; // R14
     // *(--sp) = 0; // R15
-    // kern_task->kern_stk_rsp = (uint64_t)sp;
-    kern_task->next = kern_task;
-    kern_task->wait_next = NULL;
-    g_head_tsk = kern_task;
-    g_curr_tsk = kern_task;
+    // kern_tsk->kern_stk_rsp = (uint64_t)sp;
+    kern_tsk->next = kern_tsk;
+    kern_tsk->wait_next = NULL;
+    g_head_tsk = kern_tsk;
+    g_curr_tsk = kern_tsk;
 }
 
 void task_idle(void)
@@ -644,4 +646,26 @@ static void inline sched_clean_fds(Task *tsk)
             tsk->fd_tbl[i] = NULL;
         }
     }
+}
+
+void sched_check_sleeping_tasks()
+{
+    if (g_head_tsk == NULL)
+    {
+        return;
+    }
+
+    int64_t curr_tick = timer_get_ticks();
+
+    Task *t = g_head_tsk;
+    do
+    {
+        if (t->state == TASK_SLEEPING && curr_tick >= t->wake_tick)
+        {
+            t->state = TASK_READY;
+            t->wake_tick = -1;
+        }
+
+        t = t->next;
+    } while (t != g_head_tsk);
 }

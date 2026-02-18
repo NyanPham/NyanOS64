@@ -35,7 +35,7 @@ void main()
             print("MQ Writer: Sent OK.\n");
         }
 
-        sleep(10000000);
+        sleep(1000);
     }
 
     print("MQ Writer: Done.\n");

@@ -3,6 +3,7 @@
 
 #include "syscall_args.h"
 #include "stat.h"
+#include "../include/time.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -50,6 +51,9 @@ mqd_t mq_open(const char *name, int flags);
 int mq_send(mqd_t mqd, const void *data, size_t size);
 int mq_receive(mqd_t mqd, void *buf, size_t len);
 int mq_unlink(const char *name);
+int sys_get_time(Time_t *t);
+int draw_rect(int x, int y, int w, int h, uint32_t color);
+void sleep(uint64_t ms);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);
@@ -85,7 +89,6 @@ int waitpid(int pid, int *status);
 /* Others */
 void move_cursor(int row, int col);
 int get_key(void);
-void sleep(uint64_t loop_cnt);
 int win_create(WinParams_t *win_params);
 int create_term(int x, int y, uint32_t w, uint32_t h, const char *title, uint32_t win_flags);
 

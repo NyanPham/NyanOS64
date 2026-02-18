@@ -4,6 +4,8 @@
 #include "drivers/video.h"
 #include "drivers/keyboard.h"
 #include "drivers/serial.h" // debugging
+#include "drivers/rtc.h"
+#include "drivers/timer.h"
 #include "../io.h"
 #include "fs/tar.h"
 #include "./string.h"
@@ -1163,6 +1165,64 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
 
         return mq_unlink(name);
+    }
+    case 34: // sys_get_time(usr_time_ptr)
+    {
+        Time_t *u_time = (Time_t *)arg1;
+
+        if (!verify_usr_access((uint64_t)u_time, sizeof(Time_t)))
+        {
+            kprint("SYS_GET_TIME: Invalid memory access\n");
+            return -1;
+        }
+
+        Time_t *k_time = rtc_get_time();
+        if (k_time == NULL)
+        {
+            return -1;
+        }
+
+        memcpy(u_time, k_time, sizeof(Time_t));
+        kfree(k_time);
+
+        return 0;
+    }
+    case 35: // sys_draw_rect(x, y, w, h, color)
+    {
+        int x = (int)arg1;
+        int y = (int)arg2;
+        int w = (int)arg3;
+        int h = (int)arg4;
+        uint32_t color = (uint32_t)arg5;
+
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk->win == NULL)
+        {
+            return -1;
+        }
+
+        win_fill_rect(curr_tsk->win, x, y, w, h, color);
+
+        return 0;
+    }
+    case 36: // sys_sleep(uint64_t ms)
+    {
+        uint64_t ms = arg1;
+
+        Task *curr_tsk = get_curr_task();
+
+        uint64_t ticks_to_wait = ms / 10;
+        if (ticks_to_wait == 0)
+        {
+            ticks_to_wait = 1;
+        }
+
+        curr_tsk->wake_tick = timer_get_ticks() + (int64_t)ticks_to_wait;
+        curr_tsk->state = TASK_SLEEPING;
+
+        schedule();
+
+        return 0;
     }
     default:
     {

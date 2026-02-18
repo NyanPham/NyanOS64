@@ -313,6 +313,50 @@ void update_clock(int clock_x, int clock_y)
     }
 }
 
+static inline void spawn_clock()
+{
+    kprint("Spawning Digital Clock App...\n");
+
+    Task *clock_task = sched_new_task();
+    clock_task->win = NULL;
+    clock_task->term = NULL;
+    memset(clock_task->fpu_regs, 0, 528);
+    uint64_t curr_pml4 = read_cr3();
+    write_cr3(clock_task->pml4);
+
+    uint64_t entry = elf_load("/clock_digital.elf");
+
+    if (entry != 0)
+    {
+        uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
+        uint64_t phys_usr_stk = vmm_hhdm_to_phys(pmm_alloc_frame());
+
+        vmm_map_page(
+            vmm_phys_to_hhdm(clock_task->pml4),
+            virt_usr_stk_base,
+            phys_usr_stk,
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+
+        uint64_t *kern_view_stk = vmm_phys_to_hhdm(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t));
+        *kern_view_stk = 0;
+
+        uint64_t user_rsp = USER_STACK_TOP - sizeof(uint64_t);
+
+        write_cr3(curr_pml4);
+
+        task_context_setup(clock_task, entry, user_rsp);
+        sched_register_task(clock_task);
+
+        kprint("Clock App Spawned!\n");
+    }
+    else
+    {
+        write_cr3(curr_pml4);
+        kprint("Failed to load /clock.elf!\n");
+        sched_destroy_task(clock_task);
+    }
+}
+
 void kmain(void)
 {
     if (LIMINE_BASE_REVISION_SUPPORTED(limine_base_revision) == false)
@@ -393,8 +437,10 @@ void kmain(void)
     // if not working, don't crash our OS :)))
     kprint("Hello from the kernel side!\n");
 
-    int clock_x = (int)video_get_width() - 80;
-    int clock_y = (int)video_get_height() - 80;
+    spawn_clock();
+
+    // int clock_x = (int)video_get_width() - 80;
+    // int clock_y = (int)video_get_height() - 80;
 
     while (true)
     {
@@ -493,7 +539,7 @@ void kmain(void)
         }
 
         cursor_erase();
-        update_clock(clock_x, clock_y);
+        // update_clock(clock_x, clock_y);
         win_update();
 
         term_paint();

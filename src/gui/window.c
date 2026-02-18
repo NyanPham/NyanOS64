@@ -1085,3 +1085,35 @@ void init_desktop()
 
     g_desktop_win->flags |= WIN_DIRTY;
 }
+
+void win_fill_rect(Window *win, int x, int y, int w, int h, uint32_t color)
+{
+    if (x >= (int)win->width || y >= (int)win->height)
+    {
+        return;
+    }
+
+    int draw_w = w;
+    int draw_h = h;
+
+    if (x + draw_w > (int)win->width)
+    {
+        draw_w = win->width - x;
+    }
+
+    if (y + draw_h > (int)win->height)
+    {
+        draw_h = win->height - y;
+    }
+
+    for (int r = 0; r < draw_h; r++)
+    {
+        for (int c = 0; c < draw_w; c++)
+        {
+            uint64_t idx = (y + r) * win->width + (x + c);
+            win->pixels[idx].color = color;
+        }
+    }
+
+    win->flags |= WIN_DIRTY;
+}

@@ -159,6 +159,21 @@ int mq_unlink(const char *name)
     return (int)syscall(33, (uint64_t)name, 0, 0, 0, 0, 0);
 }
 
+int sys_get_time(Time_t *t)
+{
+    return (int)syscall(34, (uint64_t)t, 0, 0, 0, 0, 0);
+}
+
+int draw_rect(int x, int y, int w, int h, uint32_t color)
+{
+    return (int)syscall(35, (uint64_t)x, (uint64_t)y, (uint64_t)w, (uint64_t)h, (uint64_t)color, 0);
+}
+
+void sleep(uint64_t ms)
+{
+    syscall(36, ms, 0, 0, 0, 0, 0);
+}
+
 int win_create(WinParams_t *win_params)
 {
     return (int)syscall(17, (uint64_t)win_params, 0, 0, 0, 0, 0);
@@ -598,12 +613,4 @@ void move_cursor(int row, int col)
 int get_key(void)
 {
     return (int)syscall(14, 0, 0, 0, 0, 0, 0);
-}
-
-void sleep(uint64_t loop_cnt)
-{
-    for (volatile uint64_t i = 0; i < loop_cnt; i++)
-    {
-        asm volatile("nop");
-    }
 }

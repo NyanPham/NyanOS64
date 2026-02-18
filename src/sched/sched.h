@@ -5,6 +5,7 @@
 #define TASK_WAITING 0x1
 #define TASK_DEAD 0x2
 #define TASK_ZOMBIE 0x3
+#define TASK_SLEEPING 0x4
 
 #include "mem/vmm.h"
 #include "fs/vfs.h"
@@ -44,6 +45,7 @@ typedef struct Task
     uint8_t fpu_regs[512 + 16];
 
     struct Task *wait_next;
+    int64_t wake_tick;
 } Task;
 
 Task *sched_new_task(void);
@@ -66,6 +68,7 @@ void sched_send_signal(int pid, uint32_t sig_code);
 void sched_register_task(Task *task);
 Task *task_factory_create(uint64_t entry, uint64_t rsp);
 Task *task_factory_fork(Task *parent);
+void sched_check_sleeping_tasks(void);
 
 static void inline sched_clean_gui(Task *tsk);
 static void inline sched_clean_fds(Task *tsk);
