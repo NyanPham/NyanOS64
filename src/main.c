@@ -366,6 +366,7 @@ void kmain(void)
 
     gdt_init();
     idt_init();
+    enable_sse();
 
     /*=========== Check for memmap response and HHDM response ===========*/
     if (memmap_request.response == NULL || hhdm_request.response == NULL)
@@ -391,7 +392,6 @@ void kmain(void)
     ata_identify(1);
     sti();
     ata_fs_init();
-    enable_sse();
 
     // check if we have the framebuffer to render on screen
     if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1)

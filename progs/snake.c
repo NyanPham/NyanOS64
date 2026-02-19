@@ -4,7 +4,7 @@
 #define WIDTH 40
 #define HEIGHT 20
 #define MAX_LEN 1000
-#define DELAY 5000000
+#define DELAY 100
 
 // Snake body (circular buffer)
 int *snake_x = NULL;

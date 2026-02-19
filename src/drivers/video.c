@@ -135,7 +135,7 @@ void video_init_buf()
         {
             return;
         }
-        memset(page_virt_hhdm, 0, PAGE_SIZE);
+        memset_sse(page_virt_hhdm, 0, PAGE_SIZE);
 
         uint64_t phys_addr = (uint64_t)page_virt_hhdm - hhdm_offset;
         uint64_t buf_virt_addr = (uint64_t)buf + (i * PAGE_SIZE);
@@ -165,7 +165,7 @@ void video_init(struct limine_framebuffer *fb)
     g_ansi_ctx.state = ANSI_NORMAL;
     g_ansi_ctx.color = White;
     g_ansi_ctx.idx = 0;
-    memset(g_ansi_ctx.buf, 0, ANSI_BUF_SIZE);
+    memset_sse(g_ansi_ctx.buf, 0, ANSI_BUF_SIZE);
 
     video_init_buf();
     video_clear();
@@ -217,7 +217,7 @@ void video_draw_string(uint64_t x, uint64_t y, const char *str, uint32_t color)
 
 void video_draw_pixel_line(uint64_t x, uint64_t y, uint32_t *colors, uint64_t size)
 {
-    memcpy(&g_back_buf[y * g_pitch32 + x], colors, size);
+    memcpy_sse(&g_back_buf[y * g_pitch32 + x], colors, size);
 }
 
 void video_add_dirty_rect(int64_t x, int64_t y, int64_t w, int64_t h)
@@ -345,8 +345,8 @@ void video_refresh()
 
 void video_clear()
 {
-    memset(g_back_buf, 0, g_pitch32 * g_fb_height * sizeof(uint32_t));
-    memset(buf, 0, 75 * PAGE_SIZE);
+    memset_sse(g_back_buf, 0, g_pitch32 * g_fb_height * sizeof(uint32_t));
+    memset_sse(buf, 0, 75 * PAGE_SIZE);
 
     g_cursor_x = 0;
     g_cursor_y = 0;
@@ -407,7 +407,7 @@ void video_swap()
     if (g_force_full_refresh)
     {
         uint64_t row_size = g_fb_width * sizeof(uint32_t);
-        memcpy(g_fb_ptr, g_back_buf, g_fb_height * g_pitch32 * sizeof(uint32_t));
+        memcpy_sse(g_fb_ptr, g_back_buf, g_fb_height * g_pitch32 * sizeof(uint32_t));
         g_force_full_refresh = 0;
         g_rect_count = 0;
         return;
@@ -419,7 +419,7 @@ void video_swap()
         for (uint64_t r = 0; r < curr_rect->h; r++)
         {
             size_t idx = (r + curr_rect->y) * g_pitch32 + curr_rect->x;
-            memcpy(&g_fb_ptr[idx], &g_back_buf[idx], curr_rect->w * sizeof(uint32_t));
+            memcpy_sse(&g_fb_ptr[idx], &g_back_buf[idx], curr_rect->w * sizeof(uint32_t));
         }
     }
 

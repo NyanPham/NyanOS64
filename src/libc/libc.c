@@ -263,63 +263,261 @@ int strcmp(const char *s1, const char *s2)
     return *(unsigned char *)s1 - *(unsigned char *)s2;
 }
 
-void *memset(void *s, int c, size_t n)
-{
-    unsigned char *p = s;
-    while (n--)
-    {
-        *p++ = (unsigned char)c;
-    }
-    return s;
-}
-
-void *memcpy(void *restrict dest, const void *restrict src, size_t n)
+__attribute__((target("sse,sse2"))) void *memcpy(void *dest, const void *src, size_t n)
 {
     uint8_t *restrict pdest = (uint8_t *restrict)dest;
     const uint8_t *restrict psrc = (const uint8_t *restrict)src;
 
-    for (size_t i = 0; i < n; i++)
+    // HEAD: Copy each byte until pdest to ensure alignment
+    size_t i = 0;
+    while (((uint64_t)(&pdest[i]) & 0x7) != 0 && i < n)
     {
-        pdest[i] = psrc[i];
+        *(uint8_t *restrict)(&pdest[i]) = *(uint8_t *restrict)(&psrc[i]);
+        i += 1;
+    }
+
+    // BODY
+    // Loop unrolling for 64-bytes at a time
+    while (i + 64 <= n)
+    {
+        asm volatile(
+            "movdqu 0(%1), %%xmm0\n\t"
+            "movdqu 16(%1), %%xmm1\n\t"
+            "movdqu 32(%1), %%xmm2\n\t"
+            "movdqu 48(%1), %%xmm3\n\t"
+            "movdqu %%xmm0, 0(%0)\n\t"
+            "movdqu %%xmm1, 16(%0)\n\t"
+            "movdqu %%xmm2, 32(%0)\n\t"
+            "movdqu %%xmm3, 48(%0)\n\t"
+            :
+            : "r"(&pdest[i]), "r"(&psrc[i])
+            : "memory", "xmm0", "xmm1", "xmm2", "xmm3");
+        i += 64;
+    }
+
+    // Loop unrolling for 32-bytes at a time
+    while (i + 32 <= n)
+    {
+        asm volatile(
+            "movdqu 0(%1), %%xmm0\n\t"
+            "movdqu 16(%1), %%xmm1\n\t"
+            "movdqu %%xmm0, 0(%0)\n\t"
+            "movdqu %%xmm1, 16(%0)\n\t"
+            :
+            : "r"(&pdest[i]), "r"(&psrc[i])
+            : "memory", "xmm0", "xmm1");
+        i += 32;
+    }
+
+    // Loop unrolling for 16-bytes at a time
+    while (i + 16 <= n)
+    {
+        asm volatile(
+            "movdqu 0(%1), %%xmm0\n\t"
+            "movdqu %%xmm0, 0(%0)\n\t"
+            :
+            : "r"(&pdest[i]), "r"(&psrc[i])
+            : "memory", "xmm0");
+        i += 16;
+    }
+
+    // Binary Decomposition
+    while (i + 8 <= n)
+    {
+        *(uint64_t *restrict)(&pdest[i]) = *(uint64_t *restrict)(&psrc[i]);
+        i += 8;
+    }
+
+    while (i + 4 <= n)
+    {
+        *(uint32_t *restrict)(&pdest[i]) = *(uint32_t *restrict)(&psrc[i]);
+        i += 4;
+    }
+
+    while (i + 2 <= n)
+    {
+        *(uint16_t *restrict)(&pdest[i]) = *(uint16_t *restrict)(&psrc[i]);
+        i += 2;
+    }
+
+    // TAIL
+    while (i < n)
+    {
+        *(uint8_t *restrict)(&pdest[i]) = *(uint8_t *restrict)(&psrc[i]);
+        i += 1;
     }
 
     return dest;
 }
 
-void *memmove(void *dest, const void *src, size_t n)
+__attribute__((target("sse,sse2"))) void *memset(void *s, int c, size_t n)
+{
+    uint8_t *restrict pdest = (uint8_t *restrict)s;
+    uint64_t c64 = (uint64_t)(uint8_t)c * 0x0101010101010101ULL;
+
+    size_t i = 0;
+    while (((uint64_t)(&pdest[i]) & 0x7) != 0 && i < n)
+    {
+        *(uint8_t *restrict)(&pdest[i]) = (uint8_t)c;
+        i += 1;
+    }
+
+    // BODY
+    // Loop unrolling for 64-bytes at a time
+    while (i + 64 <= n)
+    {
+        asm volatile(
+            "movq %1, %%xmm0\n\t"
+            "punpcklqdq %%xmm0, %%xmm0\n\t" // Unpack and Interleave Low Quadwords
+            "movdqu %%xmm0, 0(%0)\n\t"
+            "movdqu %%xmm0, 16(%0)\n\t"
+            "movdqu %%xmm0, 32(%0)\n\t"
+            "movdqu %%xmm0, 48(%0)\n\t"
+            :
+            : "r"(&pdest[i]), "r"(c64)
+            : "memory", "xmm0");
+        i += 64;
+    }
+
+    // Loop unrolling for 32-bytes at a time
+    while (i + 32 <= n)
+    {
+        asm volatile(
+            "movq %1, %%xmm0\n\t"
+            "punpcklqdq %%xmm0, %%xmm0\n\t"
+            "movdqu %%xmm0, 0(%0)\n\t"
+            "movdqu %%xmm0, 16(%0)\n\t"
+            :
+            : "r"(&pdest[i]), "r"(c64)
+            : "memory", "xmm0");
+        i += 32;
+    }
+
+    // Loop unrolling for 16-bytes at a time
+    while (i + 16 <= n)
+    {
+        asm volatile(
+            "movq %1, %%xmm0\n\t"
+            "punpcklqdq %%xmm0, %%xmm0\n\t"
+            "movdqu %%xmm0, 0(%0)\n\t"
+            :
+            : "r"(&pdest[i]), "r"(c64)
+            : "memory", "xmm0");
+        i += 16;
+    }
+
+    // Binary Decomposition
+    while (i + 8 <= n)
+    {
+        *(uint64_t *restrict)(&pdest[i]) = c64;
+        i += 8;
+    }
+
+    while (i + 4 <= n)
+    {
+        *(uint32_t *restrict)(&pdest[i]) = (uint32_t)c64;
+        i += 4;
+    }
+
+    while (i + 2 <= n)
+    {
+        *(uint16_t *restrict)(&pdest[i]) = (uint16_t)c64;
+        i += 2;
+    }
+
+    // TAIL
+    while (i < n)
+    {
+        *(uint8_t *restrict)(&pdest[i]) = *(uint8_t *restrict)c64;
+        i += 1;
+    }
+
+    return s;
+}
+
+__attribute__((target("sse,sse2"))) void *memmove(void *dest, const void *src, size_t n)
 {
     uint8_t *pdest = (uint8_t *)dest;
     const uint8_t *psrc = (const uint8_t *)src;
 
-    if (src > dest)
+    if (pdest == psrc || n == 0)
     {
-        for (size_t i = 0; i < n; i++)
+        return dest;
+    }
+
+    if (pdest < psrc)
+    {
+        return memcpy(dest, src, n);
+    }
+    else
+    {
+        size_t i = n;
+
+        while (i % 16 != 0)
         {
+            i--;
             pdest[i] = psrc[i];
         }
-    }
-    else if (src < dest)
-    {
-        for (size_t i = n; i > 0; i--)
-        {
-            pdest[i - 1] = psrc[i - 1];
-        }
-    }
 
-    return dest;
+        while (i >= 16)
+        {
+            i -= 16;
+            asm volatile(
+                "movdqu 0(%1), %%xmm0\n\t"
+                "movdqu %%xmm0, 0(%0)\n\t"
+                :
+                : "r"(&pdest[i]), "r"(&psrc[i])
+                : "memory", "xmm0");
+        }
+        return dest;
+    }
 }
 
-int memcmp(const void *s1, const void *s2, size_t n)
+__attribute__((target("sse,sse2"))) int memcmp(const void *s1, const void *s2, size_t n)
 {
     const uint8_t *p1 = (const uint8_t *)s1;
     const uint8_t *p2 = (const uint8_t *)s2;
+    size_t i = 0;
 
-    for (size_t i = 0; i < n; i++)
+    while (i + 16 <= n)
+    {
+        /*
+        pcmpeqb (Packed Compare for Equal Bytes)
+        compares each byte position between 2 xmm registers.
+        For each position, if equal -> 0xFF, otherwise -> 0x00
+
+        pmovmskb (Packed Move Mask to Integer) extracts the most significant big (MSG) of each byte in a reg,
+        and stores the results somewhere else.
+        In this case it's the variable `mask`.
+
+        So `mask` has 16 bits, representing 16 bytes of comparisons.
+        If `mask` is not -1, then we know there is at least 1 difference in
+        the 16 bytes.
+        */
+        uint32_t mask;
+        asm volatile(
+            "movdqu 0(%1), %%xmm0\n\t"
+            "movdqu 0(%2), %%xmm1\n\t"
+            "pcmpeqb %%xmm1, %%xmm0\n\t"
+            "pmovmskb %%xmm0, %0\n\t"
+            : "=r"(mask)
+            : "r"(&p1[i]), "r"(&p2[i])
+            : "memory", "xmm0", "xmm1");
+
+        if (mask != 0xFFFF)
+        {
+            break;
+        }
+        i += 16;
+    }
+
+    while (i < n)
     {
         if (p1[i] != p2[i])
         {
             return p1[i] < p2[i] ? -1 : 1;
         }
+        i++;
     }
 
     return 0;

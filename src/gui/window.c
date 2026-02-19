@@ -255,7 +255,7 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
         return NULL;
     }
 
-    memset(pixel_buf, 0, pixel_buf_size);
+    memset_sse(pixel_buf, 0, pixel_buf_size);
     win->pixels = pixel_buf;
     win->pixels_size = pixel_buf_size;
     init_win_pixels(win);
@@ -955,7 +955,7 @@ void win_resize(Window *win, int64_t new_x, int64_t new_y, int64_t new_w, int64_
 
     if (new_pixels != NULL)
     {
-        memset(new_pixels, 0, new_pixels_size);
+        memset_sse(new_pixels, 0, new_pixels_size);
         vmm_free(win->pixels);
 
         video_add_dirty_rect(win->x, win->y, win->width, win->height);
@@ -1142,7 +1142,7 @@ void win_draw_bitmap(Window *win, int x, int y, int w, int h, uint32_t *buf)
     {
         uint64_t win_idx = (y + r) * win->width + x;
         uint64_t buf_idx = r * w;
-        memcpy(&win->pixels[win_idx], &buf[buf_idx], draw_w * sizeof(uint32_t));
+        memcpy_sse(&win->pixels[win_idx], &buf[buf_idx], draw_w * sizeof(uint32_t));
     }
 
     win->flags |= WIN_DIRTY;

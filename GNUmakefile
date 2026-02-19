@@ -170,7 +170,7 @@ clean:
 
 USER_CFLAGS := -Wall -Wextra -std=gnu11 -ffreestanding \
 	-fno-stack-protector -fno-stack-check -fno-lto -fno-PIC \
-	-m64 -march=x86-64 -mabi=sysv -mno-80387 -mno-mmx \
+	-m64 -march=x86-64 -mabi=sysv \
 	-mcmodel=small \
 	-Isrc/include
 
