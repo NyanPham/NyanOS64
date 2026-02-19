@@ -88,7 +88,7 @@ static inline void spawn_shell()
 
     write_cr3(shell_task->pml4);
 
-    uint64_t shell_entry = elf_load("/shell.elf");
+    uint64_t shell_entry = elf_load("/bin/shell.elf");
 
     if (shell_entry != 0)
     {
@@ -313,7 +313,7 @@ void update_clock(int clock_x, int clock_y)
     }
 }
 
-static inline void spawn_clock()
+static inline void spawn_digital_clock()
 {
     kprint("Spawning Digital Clock App...\n");
 
@@ -324,7 +324,7 @@ static inline void spawn_clock()
     uint64_t curr_pml4 = read_cr3();
     write_cr3(clock_task->pml4);
 
-    uint64_t entry = elf_load("/clock_digital.elf");
+    uint64_t entry = elf_load("/bin/clock_digital.elf");
 
     if (entry != 0)
     {
@@ -352,7 +352,7 @@ static inline void spawn_clock()
     else
     {
         write_cr3(curr_pml4);
-        kprint("Failed to load /clock.elf!\n");
+        kprint("Failed to load /bin/clock.elf!\n");
         sched_destroy_task(clock_task);
     }
 }
@@ -437,7 +437,7 @@ void kmain(void)
     // if not working, don't crash our OS :)))
     kprint("Hello from the kernel side!\n");
 
-    spawn_clock();
+    spawn_digital_clock();
 
     // int clock_x = (int)video_get_width() - 80;
     // int clock_y = (int)video_get_height() - 80;

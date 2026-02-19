@@ -54,6 +54,7 @@ int mq_unlink(const char *name);
 int sys_get_time(Time_t *t);
 int draw_rect(int x, int y, int w, int h, uint32_t color);
 void sleep(uint64_t ms);
+int blit(int x, int y, int w, int h, uint32_t *buf);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);
@@ -91,5 +92,6 @@ void move_cursor(int row, int col);
 int get_key(void);
 int win_create(WinParams_t *win_params);
 int create_term(int x, int y, uint32_t w, uint32_t h, const char *title, uint32_t win_flags);
+void print_dec(int num);
 
 #endif

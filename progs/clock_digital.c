@@ -53,8 +53,8 @@ void draw_colon(int ox, int oy, int tick)
 void main(int argc, char **argv)
 {
     WinParams_t params;
-    params.x = 400;
-    params.y = 200;
+    params.x = 700;
+    params.y = 400;
     params.width = 240;
     params.height = 80 + TITLE_BAR_H;
     params.flags = WIN_MOVABLE;

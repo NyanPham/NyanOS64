@@ -174,6 +174,11 @@ void sleep(uint64_t ms)
     syscall(36, ms, 0, 0, 0, 0, 0);
 }
 
+int blit(int x, int y, int w, int h, uint32_t *buf)
+{
+    return (int)syscall(37, (uint64_t)x, (uint64_t)y, (uint64_t)w, (uint64_t)h, (uint64_t)buf, 0);
+}
+
 int win_create(WinParams_t *win_params)
 {
     return (int)syscall(17, (uint64_t)win_params, 0, 0, 0, 0, 0);
@@ -613,4 +618,40 @@ void move_cursor(int row, int col)
 int get_key(void)
 {
     return (int)syscall(14, 0, 0, 0, 0, 0, 0);
+}
+
+void print_dec(int num)
+{
+    char buf[32];
+    int i = 0;
+
+    if (num == 0)
+    {
+        print("0");
+        return;
+    }
+
+    int is_neg = 0;
+    if (num < 0)
+    {
+        is_neg = 1;
+        num = -num;
+    }
+
+    while (num > 0)
+    {
+        buf[i++] = (num % 10) + '0';
+        num /= 10;
+    }
+
+    if (is_neg)
+    {
+        print("-");
+    }
+
+    while (i > 0)
+    {
+        char tmp[2] = {buf[--i], 0};
+        print(tmp);
+    }
 }

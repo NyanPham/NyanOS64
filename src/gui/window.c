@@ -1117,3 +1117,33 @@ void win_fill_rect(Window *win, int x, int y, int w, int h, uint32_t color)
 
     win->flags |= WIN_DIRTY;
 }
+
+void win_draw_bitmap(Window *win, int x, int y, int w, int h, uint32_t *buf)
+{
+    if (x >= (int)win->width || y >= (int)win->height)
+    {
+        return;
+    }
+
+    int draw_w = w;
+    int draw_h = h;
+
+    if (x + draw_w > (int)win->width)
+    {
+        draw_w = win->width - x;
+    }
+
+    if (h + draw_h > (int)win->height)
+    {
+        draw_h = win->height - y;
+    }
+
+    for (int r = 0; r < draw_h; r++)
+    {
+        uint64_t win_idx = (y + r) * win->width + x;
+        uint64_t buf_idx = r * w;
+        memcpy(&win->pixels[win_idx], &buf[buf_idx], draw_w * sizeof(uint32_t));
+    }
+
+    win->flags |= WIN_DIRTY;
+}

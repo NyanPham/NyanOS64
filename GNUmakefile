@@ -188,19 +188,28 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf
+rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf view_bmp.elf
 	@echo "Creating rootfs.tar..."
-	cp shell.elf rootfs/
-	cp hello.elf rootfs/
-	cp snake.elf rootfs/
-	cp test_fork.elf rootfs/
-	cp crash.elf rootfs/
-	cp fpu_test.elf rootfs/
-	cp writer.elf rootfs/
-	cp reader.elf rootfs/
-	cp mq_sender.elf rootfs/
-	cp mq_receiver.elf rootfs/
-	cp clock_digital.elf rootfs/
+	mkdir -p rootfs/bin
+	mkdir -p rootfs/assets
+	mkdir -p rootfs/bin/tests
+	
+	rm -f rootfs/*.elf rootfs/*.txt
+
+	cp shell.elf rootfs/bin
+	cp snake.elf rootfs/bin
+	cp clock_digital.elf rootfs/bin
+	cp view_bmp.elf rootfs/bin
+
+	cp hello.elf rootfs/bin/tests
+	cp test_fork.elf rootfs/bin/tests
+	cp crash.elf rootfs/bin/tests
+	cp reader.elf rootfs/bin/tests
+	cp writer.elf rootfs/bin/tests
+	cp mq_receiver.elf rootfs/bin/tests
+	cp mq_sender.elf rootfs/bin/tests
+	cp fpu_test.elf rootfs/bin/tests
+
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
 obj/src/libc/crt0.o: src/libc/crt0.asm
@@ -313,6 +322,15 @@ clock_digital.elf: progs/clock_digital.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		-o clock_digital.elf
 
+view_bmp.elf: progs/view_bmp.c $(USER_OBJS)
+	@echo "Building CLOCK DIGITAL program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/view_bmp.c -o obj/progs/view_bmp.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/view_bmp.c.o \
+		obj/src/libc/libc.c.o \
+		-o view_bmp.elf
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
 	mkdir -p "$(dir $@)"

@@ -281,6 +281,13 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
 
         uint64_t start_usr_addr = (USER_STACK_TOP - argv_size) & ~0xF; // address to store the argv content in the new stack
+        uint64_t tentative_list_addr = start_usr_addr - argv_ptr_size;
+
+        if ((tentative_list_addr & 0xF) == 0)
+        {
+            start_usr_addr -= 8;
+        }
+
         uint64_t *argv_list = (uint64_t *)kmalloc(argv_ptr_size);
 
         size_t curr_off = 0;
@@ -342,7 +349,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         // write argc into the rsp top
         // virt_rsp = start_list_addr - 8
-        uint64_t rsp_virt_addr = ((start_list_addr - sizeof(uint64_t)) & ~0xF) - 8;
+        uint64_t rsp_virt_addr = start_list_addr - sizeof(uint64_t);
         uint64_t offset_rsp = rsp_virt_addr & 0xFFF;
         uint64_t *dest_rsp = vmm_phys_to_hhdm(phys_usr_stk + offset_rsp);
         *dest_rsp = argc;
@@ -1222,6 +1229,29 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         schedule();
 
+        return 0;
+    }
+    case 37: // sys_blit(x, y, w, h, buf)
+    {
+        int x = (int)arg1;
+        int y = (int)arg2;
+        int w = (int)arg3;
+        int h = (int)arg4;
+        uint32_t *buf = (uint32_t *)arg5;
+
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk->win == NULL)
+        {
+            return -1;
+        }
+
+        if (!verify_usr_access((uint64_t)buf, w * h * sizeof(uint32_t)))
+        {
+            kprint("SYS_BLIT: Invalid buffer access\n");
+            return -1;
+        }
+
+        win_draw_bitmap(curr_tsk->win, x, y, w, h, buf);
         return 0;
     }
     default:
