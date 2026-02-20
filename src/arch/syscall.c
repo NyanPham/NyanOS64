@@ -327,14 +327,21 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         curr_tsk->pml4 = new_pml4;
         sti();
 
-        uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
-        uint64_t phys_usr_stk = vmm_hhdm_to_phys(pmm_alloc_frame());
+        uint64_t virt_usr_stk_base = USER_STACK_TOP - (PAGE_SIZE * USER_STACK_PAGES);
+        uint64_t *new_pml4_hhdm = vmm_phys_to_hhdm(new_pml4);
 
-        vmm_map_page(
-            vmm_phys_to_hhdm(new_pml4),
-            virt_usr_stk_base,
-            phys_usr_stk,
-            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+        for (int i = 0; i < USER_STACK_PAGES; i++)
+        {
+            uint64_t phys_usr_stk_frame = vmm_hhdm_to_phys(pmm_alloc_frame());
+
+            vmm_map_page(
+                new_pml4_hhdm,
+                virt_usr_stk_base + (PAGE_SIZE * i),
+                phys_usr_stk_frame,
+                VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+        }
+
+        uint64_t phys_usr_stk = vmm_virt2phys(new_pml4_hhdm, start_usr_addr) & ~0xFFF;
 
         // copy the argv_buf
         uint64_t offset_buf = start_usr_addr & 0xFFF;

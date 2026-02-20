@@ -14,6 +14,7 @@
 #include "pmm.h"
 #include "kern_defs.h"
 #include "vmm.h"
+#include "../string.h"
 
 #include <limine.h>
 #include <stddef.h>
@@ -22,11 +23,14 @@
 
 uint64_t hhdm_offset = 0; // the begin of the virtual address provided by limine, this is a shared by other components as well
 static uint8_t *bitmap = NULL;
+static uint32_t *ref_counts = NULL;
 static uint64_t highest_addr = 0;
 static size_t bitmap_size = 0;
 static size_t bitmap_page_count = 0;
 static size_t total_pages = 0;
 static size_t last_free_page = 0; // speed up allocation searches
+static size_t ref_counts_size = 0;
+static size_t ref_counts_page_count = 0;
 
 /**
  * @brief Sets a bit in the bitmap to mark a page is used
@@ -95,13 +99,18 @@ void pmm_init(struct limine_memmap_response *memmap_resp, struct limine_hhdm_res
     bitmap_size = total_pages / 8;
     bitmap_page_count = (bitmap_size + PAGE_SIZE - 1) / PAGE_SIZE;
 
+    // compute the size of the ref_count map.
+    ref_counts_size = total_pages * sizeof(uint32_t);
+    ref_counts_page_count = (ref_counts_size + PAGE_SIZE - 1) / PAGE_SIZE;
+
     // find a chunk of PM that is large enough to store the bitmap
     for (uint64_t i = 0; i < memmap_entries_cnt; i++)
     {
         struct limine_memmap_entry *entry = memmap[i];
-        if (entry->type == LIMINE_MEMMAP_USABLE && entry->length >= (bitmap_page_count * PAGE_SIZE))
+        if (entry->type == LIMINE_MEMMAP_USABLE && entry->length >= ((bitmap_page_count * PAGE_SIZE) + (ref_counts_page_count * PAGE_SIZE)))
         {
             bitmap = (uint8_t *)vmm_phys_to_hhdm(entry->base);
+            ref_counts = (uint32_t *)(bitmap + bitmap_size);
             break;
         }
     }
@@ -135,7 +144,7 @@ void pmm_init(struct limine_memmap_response *memmap_resp, struct limine_hhdm_res
     }
 
     // remember we store bitmap in the usable memory? we mark the page to be used as well.
-    for (size_t i = 0; i < bitmap_page_count; i++)
+    for (size_t i = 0; i < bitmap_page_count + ref_counts_page_count; i++)
     {
         bitmap_set((vmm_hhdm_to_phys((uint64_t *)bitmap) / PAGE_SIZE) + i);
     }
@@ -145,6 +154,8 @@ void pmm_init(struct limine_memmap_response *memmap_resp, struct limine_hhdm_res
     {
         bitmap_set(i);
     }
+
+    memset(ref_counts, 0, ref_counts_size);
 }
 
 /**
@@ -159,6 +170,7 @@ void *pmm_alloc_frame()
         if (!bitmap_test(i))
         { // page is free?
             bitmap_set(i);
+            ref_counts[i] = 1;
             last_free_page = i + 1;
             return (void *)vmm_phys_to_hhdm(i * PAGE_SIZE); // convert to a virtual address.
         }
@@ -170,6 +182,7 @@ void *pmm_alloc_frame()
         if (!bitmap_test(i))
         {
             bitmap_set(i);
+            ref_counts[i] = 1;
             last_free_page = i + 1;
             return (void *)vmm_phys_to_hhdm(i * PAGE_SIZE);
         }
@@ -180,19 +193,43 @@ void *pmm_alloc_frame()
 
 /**
  * @brief Frees a previously allocated physical memory frame.
- * @param frame_address The virtual address of the frame to free.
+ * @param frame_addr The virtual address of the frame to free.
  */
-void pmm_free_frame(void *frame_address)
+void pmm_free_frame(void *frame_addr)
 {
     // convert back from VM addr to PM addr, and compute the bit index in the bitmap
-    size_t bit = vmm_hhdm_to_phys(frame_address) / PAGE_SIZE;
+    size_t bit = vmm_hhdm_to_phys(frame_addr) / PAGE_SIZE;
     if (bitmap_test(bit))
     {
         // mark it as free
-        bitmap_clear(bit);
-        if (bit < last_free_page)
+        ref_counts[bit] -= 1;
+        if (ref_counts[bit] == 0)
         {
-            last_free_page = bit;
+            bitmap_clear(bit);
+            if (bit < last_free_page)
+            {
+                last_free_page = bit;
+            }
         }
     }
+}
+
+/**
+ * @brief Increases the ref_count of a physical frame by 1.
+ * Used when a child process is forked and shares memory pages with its parent.
+ */
+void pmm_inc_ref(void *frame_addr)
+{
+    size_t idx = vmm_hhdm_to_phys(frame_addr) / PAGE_SIZE;
+    ref_counts[idx] += 1;
+}
+
+/**
+ * @brief Get ref_count of tasks/processes sharing the same physical frame.
+ * Used by the VMM to determine if a shared page needs to be copied (Copy-on-Write).
+ */
+uint32_t pmm_get_ref_count(void *frame_addr)
+{
+    size_t idx = vmm_hhdm_to_phys(frame_addr) / PAGE_SIZE;
+    return ref_counts[idx];
 }

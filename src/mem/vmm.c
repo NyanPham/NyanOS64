@@ -105,7 +105,7 @@ uint64_t pte_get_flags(uint64_t page_tab_entry)
     return page_tab_entry & (uint64_t)(0xFFF);
 }
 
-static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, bool create_if_missing)
+static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, uint8_t create_if_missing)
 {
     size_t pml4_idx = (virt_addr >> PML4_INDEX) & 0x1FF; // PML4
     size_t pdpt_idx = (virt_addr >> PDPT_INDEX) & 0x1FF; // Page Directory Pointer Table
@@ -215,7 +215,7 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, bool c
 
 uint64_t vmm_virt2phys(uint64_t *pml4, uint64_t virt_addr)
 {
-    uint64_t *pte = vmm_walk_to_pte(pml4, virt_addr, false);
+    uint64_t *pte = vmm_walk_to_pte(pml4, virt_addr, 0);
     if (pte == NULL)
     {
         return 0;
@@ -226,7 +226,7 @@ uint64_t vmm_virt2phys(uint64_t *pml4, uint64_t virt_addr)
 
 void vmm_map_page(uint64_t *pml4_virt, uint64_t virt_addr, uint64_t phys_addr, uint64_t flags)
 {
-    uint64_t *pte = vmm_walk_to_pte(pml4_virt, virt_addr, true);
+    uint64_t *pte = vmm_walk_to_pte(pml4_virt, virt_addr, 1);
 
     if (pte == NULL)
     {
@@ -240,7 +240,7 @@ void vmm_map_page(uint64_t *pml4_virt, uint64_t virt_addr, uint64_t phys_addr, u
 
 void vmm_unmap_page(uint64_t *pml4, uint64_t virt_addr)
 {
-    uint64_t *pte = vmm_walk_to_pte(pml4, virt_addr, false);
+    uint64_t *pte = vmm_walk_to_pte(pml4, virt_addr, 0);
 
     if (pte == NULL)
     {
@@ -650,18 +650,16 @@ uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
                 continue;
             }
 
-            void *child_virt_hhdm = pmm_alloc_frame();
-            memset(child_virt_hhdm, 0, PAGE_SIZE);
-
             uint64_t parent_phys = pte_get_addr(entry);
             void *parent_virt_hhdm = vmm_phys_to_hhdm(parent_phys);
 
-            memcpy(child_virt_hhdm, parent_virt_hhdm, 512 * sizeof(uint64_t));
-            uint64_t child_phys = vmm_hhdm_to_phys(child_virt_hhdm);
-            child_tbl_virt[i] = child_phys | pte_get_flags(entry);
+            parent_tbl_virt[i] &= ~VMM_FLAG_WRITABLE;
+            child_tbl_virt[i] = parent_tbl_virt[i];
+            pmm_inc_ref(parent_virt_hhdm);
         }
     }
 
+    write_cr3(read_cr3());
     return child_tbl_phys;
 }
 
@@ -786,6 +784,43 @@ void vmm_cleanup_task(Task *tsk)
     }
 
     tsk->vm_free_head = NULL;
+}
+
+/**
+ * @brief Handles #PF caused by the Copy-on-Write (CoW).
+ * Checks the page's ref_count.
+ * If > 1, it allocates a new physical frame,
+ * copies the data, updates the PTE with WRITABLE permission, and frees the old frame.
+ * If == 0, just turns on the WRITABLE flag for the address.
+ */
+int vmm_handle_cow(uint64_t fault_addr)
+{
+    uint64_t *pml4 = vmm_phys_to_hhdm(pte_get_addr(read_cr3()));
+    uint64_t *pte = vmm_walk_to_pte(pml4, fault_addr, 0);
+
+    if (pte == NULL)
+    {
+        return -1;
+    }
+
+    uint64_t *virt_addr = vmm_phys_to_hhdm(pte_get_addr(*pte));
+    uint32_t ref_count = pmm_get_ref_count(virt_addr);
+
+    if (ref_count == 1)
+    {
+        *pte |= VMM_FLAG_WRITABLE;
+    }
+    else if (ref_count > 1)
+    {
+        void *hhdm_addr = pmm_alloc_frame();
+        memcpy(hhdm_addr, virt_addr, PAGE_SIZE);
+        uint64_t flags = pte_get_flags(*pte) | VMM_FLAG_WRITABLE;
+        *pte = vmm_hhdm_to_phys(hhdm_addr) | (flags & 0xFFF);
+        pmm_free_frame(virt_addr);
+    }
+
+    asm volatile("invlpg %0" : : "m"(*(char *)fault_addr) : "memory");
+    return 0;
 }
 
 /*

@@ -8,8 +8,10 @@
 struct limine_memmap_response;
 struct limine_hhdm_response;
 
-void pmm_init(struct limine_memmap_response* memmap_resp, struct limine_hhdm_response* hhdm_resp);
-void* pmm_alloc_frame();
-void pmm_free_frame(void* frame_address);
+void pmm_init(struct limine_memmap_response *memmap_resp, struct limine_hhdm_response *hhdm_resp);
+void *pmm_alloc_frame();
+void pmm_free_frame(void *frame_address);
+void pmm_inc_ref(void *frame_addr);
+uint32_t pmm_get_ref_count(void *frame_addr);
 
 #endif

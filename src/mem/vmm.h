@@ -153,6 +153,8 @@ VmFreeRegion *vmm_copy_free_list(VmFreeRegion *node);
  */
 void vmm_cleanup_task(struct Task *tsk);
 
+int vmm_handle_cow(uint64_t fault_addr);
+
 static inline uint64_t *vmm_phys_to_hhdm(uint64_t phys_addr)
 {
     return (uint64_t *)(phys_addr + hhdm_offset);

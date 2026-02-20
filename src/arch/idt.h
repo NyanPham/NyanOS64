@@ -17,15 +17,15 @@
  * The CPU uses this information to transfer control to the appropriate
  * Interrupt Service Routine (ISR) when an interrupt occurs.
  */
-typedef struct 
+typedef struct
 {
-    uint16_t isr_low;       // The lower 16 bits of the ISR's address.
-    uint16_t kernel_cs;     // The GDT segment selector that the CPU will load into CS before calling the ISR.
-    uint8_t  ist;           // Interrupt Stack Table offset. 0 for not using a separate stack.
-    uint8_t  attributes;    // Type and attributes of the descriptor (e.g., present, DPL, gate type).
-    uint16_t isr_mid;       // The middle 16 bits (16-31) of the ISR's address.
-    uint32_t isr_high;      // The upper 32 bits (32-63) of the ISR's address.
-    uint32_t reserved;      // Reserved, must be set to 0.
+    uint16_t isr_low;   // The lower 16 bits of the ISR's address.
+    uint16_t kernel_cs; // The GDT segment selector that the CPU will load into CS before calling the ISR.
+    uint8_t ist;        // Interrupt Stack Table offset. 0 for not using a separate stack.
+    uint8_t attributes; // Type and attributes of the descriptor (e.g., present, DPL, gate type).
+    uint16_t isr_mid;   // The middle 16 bits (16-31) of the ISR's address.
+    uint32_t isr_high;  // The upper 32 bits (32-63) of the ISR's address.
+    uint32_t reserved;  // Reserved, must be set to 0.
 } __attribute__((packed)) idt_entry_t;
 
 /**
@@ -46,7 +46,7 @@ typedef struct
 {
     uint64_t rax, rbx, rcx, rdx, rsi, rdi, rbp;
     uint64_t r8, r9, r10, r11, r12, r13, r14, r15;
-    
+
     uint64_t int_no;
     uint64_t err_code;
 
@@ -59,11 +59,10 @@ typedef struct
 
 // A generic, simple exception handler that halts the CPU.
 // This is used as a default for unhandled exceptions to prevent triple faults.
-__attribute__((noreturn))
 void exception_handler(registers_t *regs);
 
 // Sets a descriptor (gate) in the IDT for an interrupt vector.
-void idt_set_descriptor(uint8_t vector, void* isr, uint8_t flags);
+void idt_set_descriptor(uint8_t vector, void *isr, uint8_t flags);
 
 void idt_init(void);
 
