@@ -513,11 +513,18 @@ void kmain(void)
                     if (top_win != NULL && top_win->owner_pid != -1)
                     {
                         Task *tsk = sched_find_task(top_win->owner_pid);
-                        if (tsk && tsk->term)
+                        if (tsk != NULL)
                         {
-                            term_process_input(tsk->term, e.key);
+                            if (tsk->term != NULL && tsk->term->win == top_win)
+                            {
+                                term_process_input(tsk->term, e.key);
+                            }
+                            else if (tsk->event_queue != NULL)
+                            {
+                                event_queue_push(tsk->event_queue, e);
+                            }
+                            sched_wake_pid(top_win->owner_pid);
                         }
-                        sched_wake_pid(top_win->owner_pid);
                     }
                 }
                 break;
@@ -526,10 +533,19 @@ void kmain(void)
             {
                 int pid = e.resize_event.win_owner_pid;
                 Task *tsk = sched_find_task(pid);
-                if (tsk != NULL && tsk->term != NULL)
+                if (tsk != NULL)
                 {
-                    term_resize(tsk->term, tsk->term->win->width, tsk->term->win->height);
+                    if (tsk->term != NULL && tsk->term->win->owner_pid == pid)
+                    {
+                        term_resize(tsk->term, tsk->term->win->width, tsk->term->win->height);
+                    }
+                    else if (tsk->event_queue != NULL)
+                    {
+                        event_queue_push(tsk->event_queue, e);
+                    }
+                    sched_wake_pid(pid);
                 }
+                break;
             }
             default:
             {

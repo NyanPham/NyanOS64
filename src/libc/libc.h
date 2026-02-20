@@ -4,6 +4,7 @@
 #include "syscall_args.h"
 #include "stat.h"
 #include "../include/time.h"
+#include "../include/event.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -18,6 +19,8 @@
 
 #define VFS_FILE 0x01
 #define VFS_DIRECTORY 0x02
+
+#define O_NONBLOCK 0x1
 
 typedef struct dirent
 {
@@ -55,6 +58,7 @@ int sys_get_time(Time_t *t);
 int draw_rect(int x, int y, int w, int h, uint32_t color);
 void sleep(uint64_t ms);
 int blit(int x, int y, int w, int h, uint32_t *buf);
+int get_event(Event *event, uint32_t flags);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);

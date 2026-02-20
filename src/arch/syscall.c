@@ -23,6 +23,7 @@
 #include "utils/asm_instrs.h"
 #include "ipc/shm.h"
 #include "ipc/mq.h"
+#include "event/event.h"
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -1260,6 +1261,37 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         win_draw_bitmap(curr_tsk->win, x, y, w, h, buf);
         return 0;
+    }
+    case 38: // sys_get_event(Event *user_event, uint32_t flags)
+    {
+        Event *user_event = (Event *)arg1;
+        uint32_t flags = (uint32_t)arg2;
+
+        if (!verify_usr_access((uint64_t)user_event, sizeof(Event)))
+        {
+            kprint("SYS_GET_EVENT: Invalid memory access\n");
+            return -1;
+        }
+
+        Task *curr_tsk = get_curr_task();
+        Event e;
+
+        while (1)
+        {
+            if (event_queue_pop(curr_tsk->event_queue, &e) == 1)
+            {
+                break;
+            }
+
+            if (flags & O_NONBLOCK)
+            {
+                return 0;
+            }
+            sched_block();
+        }
+
+        memcpy(user_event, &e, sizeof(Event));
+        return 1;
     }
     default:
     {

@@ -9,6 +9,7 @@
 
 #include "mem/vmm.h"
 #include "fs/vfs.h"
+#include "event/event.h"
 #include <stdint.h>
 
 #define MAX_OPEN_FILES 0x10 // each task has at most 16 files open
@@ -46,6 +47,7 @@ typedef struct Task
 
     struct Task *wait_next;
     int64_t wake_tick;
+    EventBuf *event_queue;
 } Task;
 
 Task *sched_new_task(void);

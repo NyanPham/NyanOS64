@@ -12,6 +12,8 @@
 #define USER_MMAP_SIZE 0x40000000
 #define USER_STACK_PAGES 0x2
 
+#define O_NONBLOCK 0x1
+
 typedef enum
 {
     Black = 0x000000,

@@ -166,6 +166,14 @@ clean:
 	@rm -f hello.o hello.elf
 	@rm -f snake.o snake.elf
 	@rm -f test_fork.o test_fork.elf
+	@rm -f crash.o crash.elf
+	@rm -f fpu_test.o fpu_test.elf
+	@rm -f mq_receiver.o mq_receiver.elf
+	@rm -f mq_sender.o mq_sender.elf
+	@rm -f reader.o reader.elf
+	@rm -f writer.o writer.elf
+	@rm -f view_bmp.o view_bmp.elf
+	@rm -f test_event_queue.o test_event_queue.elf
 	@rm -f rootfs.tar
 
 USER_CFLAGS := -Wall -Wextra -std=gnu11 -ffreestanding \
@@ -188,7 +196,7 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf view_bmp.elf
+rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf view_bmp.elf test_event_queue.elf
 	@echo "Creating rootfs.tar..."
 	mkdir -p rootfs/bin
 	mkdir -p rootfs/assets
@@ -209,6 +217,7 @@ rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf w
 	cp mq_receiver.elf rootfs/bin/tests
 	cp mq_sender.elf rootfs/bin/tests
 	cp fpu_test.elf rootfs/bin/tests
+	cp test_event_queue.elf rootfs/bin/tests
 
 	cd rootfs && tar -cvf ../rootfs.tar -H ustar *
 
@@ -331,6 +340,16 @@ view_bmp.elf: progs/view_bmp.c $(USER_OBJS)
 		obj/progs/view_bmp.c.o \
 		obj/src/libc/libc.c.o \
 		-o view_bmp.elf
+
+test_event_queue.elf: progs/test_event_queue.c $(USER_OBJS)
+	@echo "Building CLOCK DIGITAL program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/test_event_queue.c -o obj/progs/test_event_queue.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/test_event_queue.c.o \
+		obj/src/libc/libc.c.o \
+		-o test_event_queue.elf
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile
 	mkdir -p "$(dir $@)"

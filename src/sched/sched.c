@@ -71,11 +71,22 @@ Task *sched_new_task(void)
         kprint("SCHED_NEW_TASK failed: OOM\n");
         return NULL;
     }
+
     new_tsk->vm_free_head = vm_free_head;
     new_tsk->vm_free_head->addr = USER_MMAP_START;
     new_tsk->vm_free_head->size = USER_MMAP_SIZE;
     new_tsk->vm_free_head->next = NULL;
     new_tsk->vm_alloc_head = NULL;
+
+    EventBuf *event_queue = (EventBuf *)vmm_alloc_global(sizeof(EventBuf));
+    if (event_queue == NULL)
+    {
+        kprint("SCHED_NEW_TASK failed: OOM\n");
+        kfree(vm_free_head);
+        return NULL;
+    }
+    new_tsk->event_queue = event_queue;
+    event_queue_init(new_tsk->event_queue);
 
     if (g_curr_tsk != NULL) // has parent -> copy dir from him
     {
@@ -220,6 +231,15 @@ void sched_init(void)
     kern_tsk->state = TASK_READY;
     kern_tsk->pml4 = read_cr3();
     kern_tsk->wake_tick = -1;
+
+    EventBuf *event_queue = (EventBuf *)vmm_alloc_global(sizeof(EventBuf));
+    if (event_queue == NULL)
+    {
+        kprint("PANIC: Kernel Task Stack for EVENT_QUEUE: OOM\n");
+        hcf();
+    }
+    kern_tsk->event_queue = event_queue;
+    event_queue_init(kern_tsk->event_queue);
 
     for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
     {

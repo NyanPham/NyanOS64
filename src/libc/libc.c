@@ -179,6 +179,11 @@ int blit(int x, int y, int w, int h, uint32_t *buf)
     return (int)syscall(37, (uint64_t)x, (uint64_t)y, (uint64_t)w, (uint64_t)h, (uint64_t)buf, 0);
 }
 
+int get_event(Event *event, uint32_t flags)
+{
+    return (int)syscall(38, (uint64_t)event, (uint64_t)flags, 0, 0, 0, 0);
+}
+
 int win_create(WinParams_t *win_params)
 {
     return (int)syscall(17, (uint64_t)win_params, 0, 0, 0, 0, 0);
