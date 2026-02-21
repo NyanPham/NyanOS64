@@ -397,10 +397,10 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         vmm_free_table(vmm_phys_to_hhdm(old_pml4), 4);
 
-        if (curr_tsk->term != NULL)
-        {
-            curr_tsk->term->child_pid = curr_tsk->pid;
-        }
+        // if (curr_tsk->term != NULL)
+        // {
+        //     curr_tsk->term->child_pid = curr_tsk->pid;
+        // }
 
         if (curr_tsk->win != NULL)
         {
@@ -1292,6 +1292,17 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         memcpy(user_event, &e, sizeof(Event));
         return 1;
+    }
+    case 39: // sys_set_fg(pid)
+    {
+        int pid = (int)arg1;
+
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk->term != NULL)
+        {
+            curr_tsk->term->child_pid = pid;
+        }
+        return 0;
     }
     default:
     {

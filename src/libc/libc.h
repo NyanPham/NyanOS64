@@ -59,6 +59,7 @@ int draw_rect(int x, int y, int w, int h, uint32_t color);
 void sleep(uint64_t ms);
 int blit(int x, int y, int w, int h, uint32_t *buf);
 int get_event(Event *event, uint32_t flags);
+void set_fg(int pid);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);

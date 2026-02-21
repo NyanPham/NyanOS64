@@ -665,6 +665,13 @@ int main()
 
         int stdout_bk = setup_redir(argv);
 
+        int amper_idx = find_char(argv, "&");
+        if (amper_idx != -1)
+        {
+            argv[amper_idx] = NULL;
+            argc -= 1;
+        }
+
         if (!exec_cmd(argc, argv))
         {
             /* --- EXTERNAL PROGS --- */
@@ -680,8 +687,17 @@ int main()
             }
             else
             {
-                int stat;
-                waitpid(pid, &stat);
+                if (amper_idx == -1)
+                {
+                    set_fg(pid);
+                    int stat;
+                    waitpid(pid, &stat);
+                    set_fg(-1);
+                }
+                else
+                {
+                    set_fg(-1);
+                }
             }
         }
 

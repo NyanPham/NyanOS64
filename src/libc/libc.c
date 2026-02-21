@@ -184,6 +184,11 @@ int get_event(Event *event, uint32_t flags)
     return (int)syscall(38, (uint64_t)event, (uint64_t)flags, 0, 0, 0, 0);
 }
 
+void set_fg(int pid)
+{
+    syscall(39, (uint64_t)pid, 0, 0, 0, 0, 0);
+}
+
 int win_create(WinParams_t *win_params)
 {
     return (int)syscall(17, (uint64_t)win_params, 0, 0, 0, 0, 0);
