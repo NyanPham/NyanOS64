@@ -350,7 +350,7 @@ void sched_block()
 void sched_wake_pid(int pid)
 {
     Task *t = sched_find_task(pid);
-    if (t == NULL)
+    if (t == NULL || t->state == TASK_ZOMBIE || t->state == TASK_DEAD)
     {
         return;
     }

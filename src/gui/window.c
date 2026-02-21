@@ -90,7 +90,7 @@ static void init_win_pixels(Window *win)
     {
         /* TITLE BAR */
         // init the title bar
-        for (int64_t r = 0; r < WIN_TITLE_BAR_H; r++)
+        for (int64_t r = 0; r < WIN_TITLE_BAR_HEIGHT; r++)
         {
             for (int64_t c = 0; c < win->width; c++)
             {
@@ -107,7 +107,7 @@ static void init_win_pixels(Window *win)
             title++;
         }
 
-        int64_t btn_size = WIN_TITLE_BAR_H;
+        int64_t btn_size = WIN_TITLE_BAR_HEIGHT;
 
         // draw the minimize button
         if (win->flags & WIN_MINIMIZABLE)
@@ -115,11 +115,19 @@ static void init_win_pixels(Window *win)
             int min_btn_x = win->width - (3 * btn_size);
             int min_btn_y = 0;
 
+            int left_margin = 4;
+            int right_margin = btn_size - 4;
+            int line_y = btn_size - 5;
+
             for (int64_t r = min_btn_y; r < min_btn_y + btn_size; r++)
             {
+                int64_t rel_y = r - min_btn_y;
                 for (int64_t c = min_btn_x; c < min_btn_x + btn_size; c++)
                 {
-                    win->pixels[r * win->width + c].color = Yellow;
+                    int64_t rel_x = c - min_btn_x;
+                    uint8_t is_line = (rel_y == line_y && rel_x >= left_margin && rel_x < right_margin) ? 1 : 0;
+
+                    win->pixels[r * win->width + c].color = is_line ? Black : Yellow;
                 }
             }
         }
@@ -130,11 +138,21 @@ static void init_win_pixels(Window *win)
             int max_btn_x = win->width - (2 * btn_size);
             int max_btn_y = 0;
 
+            int left_margin = 5;
+            int right_margin = btn_size - 5;
+            int top_margin = 5;
+            int bot_margin = btn_size - 5;
+
             for (int64_t r = max_btn_y; r < max_btn_y + btn_size; r++)
             {
+                int64_t rel_y = r - max_btn_y;
                 for (int64_t c = max_btn_x; c < max_btn_x + btn_size; c++)
                 {
-                    win->pixels[r * win->width + c].color = Green;
+                    int64_t rel_x = c - max_btn_x;
+                    uint8_t is_square_border = ((rel_y == top_margin || rel_y == bot_margin) && rel_x >= left_margin && rel_x < right_margin) ||
+                                               ((rel_x == left_margin || rel_x == right_margin - 1) && (rel_y >= top_margin && rel_y < bot_margin));
+
+                    win->pixels[r * win->width + c].color = is_square_border ? Black : Green;
                 }
             }
         }
@@ -165,7 +183,7 @@ static void init_win_pixels(Window *win)
     }
 
     /* CONTENT BACKGROUND */
-    int64_t start_r = (win->flags & WIN_BORDERLESS) ? 0 : WIN_TITLE_BAR_H;
+    int64_t start_r = (win->flags & WIN_BORDERLESS) ? 0 : WIN_TITLE_BAR_HEIGHT;
     for (int64_t r = start_r; r < win->height; r++)
     {
         for (int64_t c = 0; c < win->width; c++)
@@ -180,12 +198,12 @@ static void init_win_pixels(Window *win)
         for (int c = 0; c < win->width; c++)
         {
             win->pixels[c].color = White;
-            win->pixels[c + (win->width * (win->height - 1))].color = Black;
+            win->pixels[c + (win->width * (win->height - 1))].color = White;
         }
         for (int r = 0; r < win->height; r++)
         {
             win->pixels[r * win->width].color = White;
-            win->pixels[(r * win->width) + win->width - 1].color = Black;
+            win->pixels[(r * win->width) + win->width - 1].color = White;
         }
     }
 }
@@ -244,8 +262,14 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     win->pre_w = 0;
     win->pre_h = 0;
 
+    if (!(flags & WIN_BORDERLESS))
+    {
+        win->width += WIN_BORDER_SIZE * 2;
+        win->height += WIN_TITLE_BAR_HEIGHT + WIN_BORDER_SIZE * 2;
+    }
+
     // create buf to paint for the window body
-    uint64_t pixel_buf_size = height * width * sizeof(Pixel);
+    uint64_t pixel_buf_size = win->height * win->width * sizeof(Pixel);
     Pixel *pixel_buf = (Pixel *)vmm_alloc_global(pixel_buf_size);
     if (pixel_buf == NULL)
     {
@@ -293,6 +317,7 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     {
         tsk->win = win;
         tsk->win->owner_pid = tsk->pid;
+        tsk->term = NULL;
     }
 
     Rect *rect = rect_alloc();
@@ -329,7 +354,7 @@ void init_win_manager(void)
 
 bool check_win_drag(Window *win, int64_t mouse_x, int64_t mouse_y)
 {
-    return (win->flags & WIN_MOVABLE) && is_point_in_rect(mouse_x, mouse_y, win->x, win->y, win->width, WIN_TITLE_BAR_H);
+    return (win->flags & WIN_MOVABLE) && is_point_in_rect(mouse_x, mouse_y, win->x, win->y, win->width, WIN_TITLE_BAR_HEIGHT);
 }
 
 void win_paint()
@@ -513,7 +538,7 @@ void win_put_char(Window *win, char c)
     else
     {
         int64_t scrn_x = win->x + WIN_BORDER_SIZE + win->cursor_x;
-        // int64_t scrn_y = win->y + WIN_TITLE_BAR_H + win->cursor_y;
+        // int64_t scrn_y = win->y + WIN_TITLE_BAR_HEIGHT + win->cursor_y;
 
         if (scrn_x >= win->x + win->width - WIN_BORDER_SIZE)
         {
@@ -521,10 +546,10 @@ void win_put_char(Window *win, char c)
             win->cursor_y += CHAR_H;
 
             scrn_x = win->x + WIN_BORDER_SIZE + win->cursor_x;
-            // scrn_y = win->y + WIN_TITLE_BAR_H + win->cursor_y;
+            // scrn_y = win->y + WIN_TITLE_BAR_HEIGHT + win->cursor_y;
         }
 
-        win_draw_char_at(win, c, win->cursor_x + WIN_BORDER_SIZE, win->cursor_y + WIN_TITLE_BAR_H, Black, Slate);
+        win_draw_char_at(win, c, win->cursor_x + WIN_BORDER_SIZE, win->cursor_y + WIN_TITLE_BAR_HEIGHT, Black, Slate);
         win->cursor_x += CHAR_W;
     }
 }
@@ -627,7 +652,7 @@ void win_update(void)
                 int64_t off_mx = mx - curr_win->x;
                 int64_t off_my = my - curr_win->y;
 
-                int64_t btn_size = WIN_TITLE_BAR_H;
+                int64_t btn_size = WIN_TITLE_BAR_HEIGHT;
                 int64_t close_btn_x = curr_win->width - btn_size;
                 int64_t max_btn_x = curr_win->width - (2 * btn_size);
                 int64_t min_btn_x = curr_win->width - (3 * btn_size);
@@ -1049,7 +1074,7 @@ int win_toggle_minimize(Window *win)
         win->pre_w = win->width;
         win->pre_h = win->height;
         win->state = WIN_STATE_MINIMIZED;
-        win_resize(win, win->x, win->y, win->width, WIN_TITLE_BAR_H);
+        win_resize(win, win->x, win->y, win->width, WIN_TITLE_BAR_HEIGHT);
     }
 
     win_stain_list(g_win_list);
@@ -1086,9 +1111,28 @@ void init_desktop()
     g_desktop_win->flags |= WIN_DIRTY;
 }
 
-void win_fill_rect(Window *win, int x, int y, int w, int h, uint32_t color)
+void win_fill_rect(Window *win, int client_x, int client_y, int w, int h, uint32_t color)
 {
-    if (x >= (int)win->width || y >= (int)win->height)
+    int x = client_x;
+    int y = client_y;
+    int l_lim = 0;
+    int r_lim = (int)win->width;
+    int t_lim = 0;
+    int b_lim = (int)win->height;
+    int buf_off_x = 0;
+    int buf_off_y = 0;
+
+    if (!(win->flags & WIN_BORDERLESS))
+    {
+        x += WIN_BORDER_SIZE;
+        y += WIN_TITLE_BAR_HEIGHT + WIN_BORDER_SIZE;
+        l_lim += WIN_BORDER_SIZE;
+        r_lim -= WIN_BORDER_SIZE;
+        t_lim += WIN_TITLE_BAR_HEIGHT + WIN_BORDER_SIZE;
+        b_lim -= WIN_BORDER_SIZE;
+    }
+
+    if (x >= r_lim || y >= b_lim)
     {
         return;
     }
@@ -1096,52 +1140,96 @@ void win_fill_rect(Window *win, int x, int y, int w, int h, uint32_t color)
     int draw_w = w;
     int draw_h = h;
 
-    if (x + draw_w > (int)win->width)
+    if (x + draw_w > r_lim)
     {
-        draw_w = win->width - x;
+        draw_w = r_lim - x;
     }
 
-    if (y + draw_h > (int)win->height)
+    if (y + draw_h > b_lim)
     {
-        draw_h = win->height - y;
+        draw_h = b_lim - y;
     }
 
-    for (int r = 0; r < draw_h; r++)
+    if (x < l_lim)
     {
-        for (int c = 0; c < draw_w; c++)
-        {
-            uint64_t idx = (y + r) * win->width + (x + c);
-            win->pixels[idx].color = color;
-        }
+        buf_off_x = l_lim - x;
+        draw_w -= buf_off_x;
+        x = l_lim;
     }
 
-    win->flags |= WIN_DIRTY;
-}
-
-void win_draw_bitmap(Window *win, int x, int y, int w, int h, uint32_t *buf)
-{
-    if (x >= (int)win->width || y >= (int)win->height)
+    if (y < t_lim)
     {
-        return;
-    }
-
-    int draw_w = w;
-    int draw_h = h;
-
-    if (x + draw_w > (int)win->width)
-    {
-        draw_w = win->width - x;
-    }
-
-    if (h + draw_h > (int)win->height)
-    {
-        draw_h = win->height - y;
+        buf_off_y = t_lim - y;
+        draw_h -= buf_off_y;
+        y = t_lim;
     }
 
     for (int r = 0; r < draw_h; r++)
     {
         uint64_t win_idx = (y + r) * win->width + x;
-        uint64_t buf_idx = r * w;
+        memset32_sse(&win->pixels[win_idx], color, draw_w);
+    }
+
+    win->flags |= WIN_DIRTY;
+}
+
+void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint32_t *buf)
+{
+    int x = client_x;
+    int y = client_y;
+    int l_lim = 0;
+    int r_lim = (int)win->width;
+    int t_lim = 0;
+    int b_lim = (int)win->height;
+    int buf_off_x = 0;
+    int buf_off_y = 0;
+
+    if (!(win->flags & WIN_BORDERLESS))
+    {
+        x += WIN_BORDER_SIZE;
+        y += WIN_TITLE_BAR_HEIGHT + WIN_BORDER_SIZE;
+        l_lim += WIN_BORDER_SIZE;
+        r_lim -= WIN_BORDER_SIZE;
+        t_lim += WIN_TITLE_BAR_HEIGHT + WIN_BORDER_SIZE;
+        b_lim -= WIN_BORDER_SIZE;
+    }
+
+    if (x >= r_lim || y >= b_lim)
+    {
+        return;
+    }
+
+    int draw_w = w;
+    int draw_h = h;
+
+    if (x + draw_w > r_lim)
+    {
+        draw_w = r_lim - x;
+    }
+
+    if (y + draw_h > b_lim)
+    {
+        draw_h = b_lim - y;
+    }
+
+    if (x < l_lim)
+    {
+        buf_off_x = l_lim - x;
+        draw_w -= buf_off_x;
+        x = l_lim;
+    }
+
+    if (y < t_lim)
+    {
+        buf_off_y = t_lim - y;
+        draw_h -= buf_off_y;
+        y = t_lim;
+    }
+
+    for (int r = 0; r < draw_h; r++)
+    {
+        uint64_t win_idx = (y + r) * win->width + x;
+        uint64_t buf_idx = (r + buf_off_y) * w + buf_off_x;
         memcpy_sse(&win->pixels[win_idx], &buf[buf_idx], draw_w * sizeof(uint32_t));
     }
 

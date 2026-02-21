@@ -75,9 +75,9 @@ static inline void spawn_shell()
 
     Task *shell_task = sched_new_task();
     Terminal *console = term_create(
-        100, 100,
-        370, 270,
-        700, "Shell",
+        136, 136,
+        613, 361,
+        1839, "Shell",
         WIN_MOVABLE | WIN_RESIZABLE | WIN_MINIMIZABLE);
     shell_task->term = console;
     shell_task->win = console->win;

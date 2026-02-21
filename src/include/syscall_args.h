@@ -8,8 +8,6 @@
 #define WIN_RESIZABLE (1 << 1)
 #define WIN_MINIMIZABLE (1 << 2)
 
-#define WIN_TITLE_BAR_H 0x14
-
 typedef struct WinParams
 {
     int64_t x;

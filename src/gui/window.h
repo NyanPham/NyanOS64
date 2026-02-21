@@ -9,10 +9,10 @@
 
 #define WIN_W 700
 #define WIN_H 350
-#define WIN_TITLE_BAR_H 20
+#define WIN_TITLE_BAR_HEIGHT 20
 #define WIN_BORDER_SIZE 1
 #define WIN_MIN_W 70
-#define WIN_MIN_H (WIN_TITLE_BAR_H * 2)
+#define WIN_MIN_H (WIN_TITLE_BAR_HEIGHT * 2)
 
 // flags
 #define WIN_MOVABLE (1 << 0)
@@ -91,8 +91,8 @@ Rect *clip_rect(Rect *r, Rect *clipper);
 void recalc_clip_list(Window *win);
 void init_desktop(void);
 void win_draw_string(Window *win, int x, int y, char *str, uint32_t fg_color, uint32_t bg_color);
-void win_fill_rect(Window *win, int x, int y, int w, int h, uint32_t color);
-void win_draw_bitmap(Window *win, int x, int y, int w, int h, uint32_t *buf);
+void win_fill_rect(Window *win, int client_x, int client_y, int w, int h, uint32_t color);
+void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint32_t *buf);
 
 static int win_toggle_maximize(Window *win);
 static int win_toggle_minimize(Window *win);

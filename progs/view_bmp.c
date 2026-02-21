@@ -68,7 +68,7 @@ int main(int argc, char **argv)
     win_params.x = 100;
     win_params.y = 100;
     win_params.width = bmp_header.width;
-    win_params.height = bmp_header.height + WIN_TITLE_BAR_H;
+    win_params.height = bmp_header.height;
     win_params.flags = WIN_MOVABLE;
     strcpy(win_params.title, fname);
 
@@ -95,7 +95,7 @@ int main(int argc, char **argv)
     uint8_t *row_buf = malloc(row_size);
     uint32_t *img_buf = malloc(bmp_header.width * bmp_header.height * sizeof(uint32_t));
 
-    int content_start_y = WIN_TITLE_BAR_H;
+    int content_start_y = 0;
 
     for (int y = bmp_header.height - 1; y >= 0; y--)
     {
@@ -117,7 +117,7 @@ int main(int argc, char **argv)
     free(row_buf);
     close(fd);
 
-    blit(0, 20, bmp_header.width, bmp_header.height, img_buf);
+    blit(0, 0, bmp_header.width, bmp_header.height, img_buf);
     free(img_buf);
 
     while (1)

@@ -6,7 +6,6 @@
 
 #define SEG_THICK 4
 #define SEG_LEN 15
-#define TITLE_BAR_H 20
 
 /*
       A
@@ -56,7 +55,7 @@ void main(int argc, char **argv)
     params.x = 700;
     params.y = 400;
     params.width = 240;
-    params.height = 80 + TITLE_BAR_H;
+    params.height = 80;
     params.flags = WIN_MOVABLE;
     strcpy(params.title, "Digital Clock");
 
@@ -66,7 +65,7 @@ void main(int argc, char **argv)
     Time_t t;
     int prev_sec = -1;
 
-    draw_rect(0, TITLE_BAR_H, params.width, params.height - TITLE_BAR_H, COLOR_BG);
+    draw_rect(0, 0, params.width, params.height, COLOR_BG);
 
     while (1)
     {
@@ -79,10 +78,10 @@ void main(int argc, char **argv)
             uint8_t s = t.secs;
 
             int start_x = 10;
-            int start_y = 20 + TITLE_BAR_H;
+            int start_y = 20;
             int spacing = 30;
 
-            draw_rect(0, TITLE_BAR_H, params.width, params.height - TITLE_BAR_H, COLOR_BG);
+            draw_rect(0, 0, params.width, params.height, COLOR_BG);
 
             // hrs
             draw_digit(start_x, start_y, h / 10);
@@ -105,7 +104,7 @@ void main(int argc, char **argv)
             prev_sec = s;
         }
 
-        sleep(1000);
+        sleep(136);
     }
 
     exit(0);

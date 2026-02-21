@@ -515,6 +515,67 @@ __attribute__((target("sse,sse2"))) int memcmp_sse(const void *s1, const void *s
     return 0;
 }
 
+__attribute__((target("sse,sse2"))) void *memset32_sse(void *s, uint32_t color, size_t n)
+{
+    uint32_t *restrict pdest = (uint32_t *restrict)s;
+    uint64_t c64 = ((uint64_t)color << 32) | (uint64_t)color;
+
+    size_t i = 0;
+
+    while (i + 16 <= n)
+    {
+        asm volatile(
+            "movq %1, %%xmm0\n\t"
+            "punpcklqdq %%xmm0, %%xmm0\n\t"
+            "movdqu %%xmm0, 0(%0)\n\t"
+            "movdqu %%xmm0, 16(%0)\n\t"
+            "movdqu %%xmm0, 32(%0)\n\t"
+            "movdqu %%xmm0, 48(%0)\n\t"
+            :
+            : "r"(&pdest[i]), "r"(c64)
+            : "memory", "xmm0");
+        i += 16;
+    }
+
+    while (i + 8 <= n)
+    {
+        asm volatile(
+            "movq %1, %%xmm0\n\t"
+            "punpcklqdq %%xmm0, %%xmm0\n\t"
+            "movdqu %%xmm0, 0(%0)\n\t"
+            "movdqu %%xmm0, 16(%0)\n\t"
+            :
+            : "r"(&pdest[i]), "r"(c64)
+            : "memory", "xmm0");
+        i += 8;
+    }
+
+    while (i + 4 <= n)
+    {
+        asm volatile(
+            "movq %1, %%xmm0\n\t"
+            "punpcklqdq %%xmm0, %%xmm0\n\t"
+            "movdqu %%xmm0, 0(%0)\n\t"
+            :
+            : "r"(&pdest[i]), "r"(c64)
+            : "memory", "xmm0");
+        i += 4;
+    }
+
+    while (i + 2 <= n)
+    {
+        *(uint64_t *restrict)(&pdest[i]) = c64;
+        i += 2;
+    }
+
+    if (i < n)
+    {
+        pdest[i] = color;
+    }
+
+    return s;
+}
+
 char *strstr(const char *haystack, const char *needle)
 {
     while (*haystack != '\0')

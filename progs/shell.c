@@ -35,7 +35,7 @@ int cmd_exit()
 
 int cmd_clear()
 {
-    print("\033[2J\033[1;1H");
+    print("\033[32m\033[40m\033[2J\033[1;1H");
 }
 
 int cmd_ls(int argc, char **argv)
@@ -71,11 +71,11 @@ int cmd_ls(int argc, char **argv)
     {
         if (entry.type == VFS_DIRECTORY)
         {
-            print("\033[36m[DIR] \033[0m");
+            print("\033[36m[DIR ] \033[32m");
         }
         else
         {
-            print("[FILE] ");
+            print("\033[37m[FILE] \033[32m");
         }
 
         print(entry.name);
@@ -512,6 +512,7 @@ int main()
     char *argv[16];
 
     // start the shell
+    print("\033[32m\033[40m");
     print("\033[2J\033[1;1H");
     print("Welcome to NyanOS Shell!\n");
     print("Type 'help' to list available commands: hi, reboot, exit, clear, ls, pwd, cd, cat, help, <program>.\n\n");
@@ -521,13 +522,13 @@ int main()
         // show the prompt: "NyanOS /curr/path>"
         if (getcwd(cwd, 128) != NULL)
         {
-            print("\033[36mNyanOS "); // cyan
+            print("\033[33mNyanOS "); // yellow
             print(cwd);
-            print("> \033[0m"); // reset color
+            print("> \033[32m"); // reset color
         }
         else
         {
-            print("NyanOS \?\?\?>");
+            print("\033[33mNyanOS \?\?\?> \033[32m");
         }
 
         // use blocking i/o to get the input

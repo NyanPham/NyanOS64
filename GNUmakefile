@@ -196,7 +196,7 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf view_bmp.elf test_event_queue.elf
+rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf clock_analog.elf view_bmp.elf test_event_queue.elf
 	@echo "Creating rootfs.tar..."
 	mkdir -p rootfs/bin
 	mkdir -p rootfs/assets
@@ -207,6 +207,7 @@ rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf w
 	cp shell.elf rootfs/bin
 	cp snake.elf rootfs/bin
 	cp clock_digital.elf rootfs/bin
+	cp clock_analog.elf rootfs/bin
 	cp view_bmp.elf rootfs/bin
 
 	cp hello.elf rootfs/bin/tests
@@ -330,6 +331,16 @@ clock_digital.elf: progs/clock_digital.c $(USER_OBJS)
 		obj/progs/clock_digital.c.o \
 		obj/src/libc/libc.c.o \
 		-o clock_digital.elf
+
+clock_analog.elf: progs/clock_analog.c $(USER_OBJS)
+	@echo "Building CLOCK DIGITAL program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/clock_analog.c -o obj/progs/clock_analog.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/clock_analog.c.o \
+		obj/src/libc/libc.c.o \
+		-o clock_analog.elf
 
 view_bmp.elf: progs/view_bmp.c $(USER_OBJS)
 	@echo "Building CLOCK DIGITAL program..."

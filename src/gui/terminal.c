@@ -65,7 +65,7 @@ static void term_driver_put_char(void *ctx, char c)
             term->cur_col--;
             uint64_t idx = term_get_idx(term, term->cur_row, term->cur_col);
             term->text_buf[idx].glyph = ' ';
-            term->text_buf[idx].color = Slate;
+            term->text_buf[idx].color = term->fg_color;
         }
     }
     else
@@ -93,7 +93,7 @@ static void term_driver_put_char(void *ctx, char c)
     }
 
     // handle the scroll in the view
-    uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_H) / CHAR_H;
+    uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_HEIGHT) / CHAR_H;
     uint8_t view_changed = 0;
     if (term->cur_row >= term->scroll_idx + win_rows)
     {
@@ -147,17 +147,18 @@ static void term_driver_clear(void *ctx, int mode)
         term->cur_col = 0;
         term->start_line_idx = 0;
         term->scroll_idx = 0;
-        term->ansi_ctx.color = White;
+        term->ansi_ctx.color = term->fg_color;
         uint64_t n_cells = term->n_rows * term->n_cols;
         for (uint64_t i = 0; i < n_cells; i++)
         {
             term->text_buf[i].glyph = 0;
-            term->text_buf[i].color = Slate;
+            term->text_buf[i].color = term->fg_color;
         }
+        win_fill_rect(term->win, 0, 0, term->win->width, term->win->height, term->bg_color);
 
         term_stain_row(term, term->scroll_idx);
         term_stain_row(term, uint64_min(
-                                 term->scroll_idx + (term->win->height - WIN_TITLE_BAR_H) / CHAR_H,
+                                 term->scroll_idx + (term->win->height - WIN_TITLE_BAR_HEIGHT) / CHAR_H,
                                  term->n_rows - 1));
         term->flags |= TERM_DIRTY;
     }
@@ -202,6 +203,10 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
     // View
     Terminal *term = (Terminal *)kmalloc(sizeof(Terminal));
     term->win = win_create(x, y, w, h, title, win_flags);
+    term->fg_color = White;
+    term->bg_color = Black;
+
+    win_fill_rect(term->win, 0, 0, w, h, term->bg_color);
 
     // Data Model
     term->n_rows = max_rows;
@@ -236,7 +241,7 @@ Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max
 
     rb_init(&term->input_buf);
 
-    term->ansi_ctx.color = Black;
+    term->ansi_ctx.color = term->fg_color;
     term->ansi_ctx.state = ANSI_NORMAL;
     term->ansi_ctx.idx = 0;
     memset(term->ansi_ctx.buf, 0, ANSI_BUF_SIZE);
@@ -300,7 +305,7 @@ static void draw_text_cursor(Terminal *term, uint64_t win_rows)
     if (visual_row >= 0 && visual_row < win_rows)
     {
         int64_t px = term->cur_col * CHAR_W + WIN_BORDER_SIZE;
-        int64_t py = visual_row * CHAR_H + WIN_TITLE_BAR_H;
+        int64_t py = visual_row * CHAR_H + WIN_TITLE_BAR_HEIGHT;
         for (int y = 0; y < CHAR_H; y++)
         {
             for (int x = 0; x < CHAR_W; x++)
@@ -309,7 +314,9 @@ static void draw_text_cursor(Terminal *term, uint64_t win_rows)
                 if (pix_idx < term->win->pixels_size / sizeof(Pixel))
                 {
                     uint32_t curr_color = term->win->pixels[pix_idx].color;
-                    term->win->pixels[pix_idx].color = curr_color == Slate ? White : Black;
+                    term->win->pixels[pix_idx].color = (curr_color == term->bg_color)
+                                                           ? term->fg_color
+                                                           : term->bg_color;
                 }
             }
         }
@@ -319,7 +326,7 @@ static void draw_text_cursor(Terminal *term, uint64_t win_rows)
 static void term_redraw_cursor_cell(Terminal *term)
 {
     // is the cursor within the view?
-    uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_H) / CHAR_H;
+    uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_HEIGHT) / CHAR_H;
     int64_t visual_row = term->cur_row - term->scroll_idx;
 
     if (visual_row < 0 || visual_row >= win_rows)
@@ -333,12 +340,12 @@ static void term_redraw_cursor_cell(Terminal *term)
 
     // compute the cell coords in pixels
     int64_t px = term->cur_col * CHAR_W + WIN_BORDER_SIZE;
-    int64_t py = visual_row * CHAR_H + WIN_TITLE_BAR_H;
+    int64_t py = visual_row * CHAR_H + WIN_TITLE_BAR_HEIGHT;
 
     // which color
     char ch = (cell.glyph == 0) ? ' ' : cell.glyph;
-    uint32_t fg_color = (cell.color == 0) ? Black : cell.color;
-    uint32_t bg_color = Slate;
+    uint32_t fg_color = (cell.color == 0) ? term->fg_color : cell.color;
+    uint32_t bg_color = term->bg_color;
 
     // paint the background at the cursor first
     win_draw_char_at(term->win, ch, px, py, fg_color, bg_color);
@@ -372,9 +379,9 @@ void term_refresh(Terminal *term)
 
     // viewport is identified with scroll_idx
     uint64_t content_h = 0;
-    if (term->win->height > (WIN_TITLE_BAR_H + WIN_BORDER_SIZE))
+    if (term->win->height > (WIN_TITLE_BAR_HEIGHT + WIN_BORDER_SIZE))
     {
-        content_h = term->win->height - WIN_TITLE_BAR_H - WIN_BORDER_SIZE;
+        content_h = term->win->height - WIN_TITLE_BAR_HEIGHT - WIN_BORDER_SIZE;
     }
 
     uint64_t win_rows = content_h / CHAR_H;
@@ -396,9 +403,9 @@ void term_refresh(Terminal *term)
             uint64_t py = (r - term->scroll_idx) * CHAR_H; // convert to pixel y
 
             char ch = (cell.glyph == 0) ? ' ' : cell.glyph;
-            uint32_t color = (cell.color == 0) ? Black : cell.color;
+            uint32_t color = (cell.color == 0) ? term->fg_color : cell.color;
 
-            win_draw_char_at(term->win, ch, px + WIN_BORDER_SIZE, py + WIN_TITLE_BAR_H, color, Slate);
+            win_draw_char_at(term->win, ch, px + WIN_BORDER_SIZE, py + WIN_TITLE_BAR_HEIGHT, color, term->bg_color);
         }
     }
 
@@ -543,7 +550,7 @@ size_t term_read(Terminal *term, char *buf, size_t count)
 void term_scroll(Terminal *term, int32_t delta)
 {
     int64_t new_idx = (int64_t)term->scroll_idx + delta;
-    uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_H) / CHAR_H;
+    uint64_t win_rows = (term->win->height - WIN_TITLE_BAR_HEIGHT) / CHAR_H;
 
     // Clamping
     if (new_idx < 0)
@@ -565,7 +572,7 @@ void term_scroll(Terminal *term, int32_t delta)
         term->scroll_idx = new_idx;
         term_stain_row(term, term->scroll_idx);
         term_stain_row(term, uint64_min(
-                                 term->scroll_idx + (term->win->height - WIN_TITLE_BAR_H) / CHAR_H,
+                                 term->scroll_idx + (term->win->height - WIN_TITLE_BAR_HEIGHT) / CHAR_H,
                                  term->n_rows - 1));
         term->flags |= TERM_DIRTY;
     }
@@ -704,9 +711,11 @@ Terminal *term_resize(Terminal *term, uint64_t w, uint64_t h)
         term_scroll_data(term);
     }
 
+    win_fill_rect(term->win, 0, 0, term->win->width, term->win->height, term->bg_color);
+
     term_stain_row(term, term->scroll_idx);
     term_stain_row(term, uint64_min(
-                             term->scroll_idx + (term->win->height - WIN_TITLE_BAR_H) / CHAR_H,
+                             term->scroll_idx + (term->win->height - WIN_TITLE_BAR_HEIGHT) / CHAR_H,
                              term->n_rows - 1));
     term->flags |= TERM_DIRTY;
 
@@ -773,4 +782,26 @@ void term_paint()
 
     term_refresh(curr_term);
     curr_term->flags &= ~TERM_DIRTY;
+}
+
+void term_set_theme(Terminal *term, uint32_t fg_color, uint32_t bg_color)
+{
+    if (term == NULL)
+    {
+        return;
+    }
+
+    term->fg_color = fg_color;
+    term->bg_color = bg_color;
+
+    uint64_t n_cells = term->n_rows * term->n_cols;
+    for (uint64_t i = 0; i < n_cells; i++)
+    {
+        term->text_buf[i].color = fg_color;
+    }
+    win_fill_rect(term->win, 0, 0, term->win->width, term->win->height, bg_color);
+
+    term_stain_row(term, 0);
+    term_stain_row(term, term->n_rows - 1);
+    term->flags |= TERM_DIRTY;
 }

@@ -20,6 +20,7 @@ void *memcpy_sse(void *restrict dest, const void *restrict src, size_t n);
 void *memset_sse(void *s, int c, size_t n);
 void *memmove_sse(void *dest, const void *src, size_t n);
 int memcmp_sse(const void *s1, const void *s2, size_t n);
+void *memset32_sse(void *s, uint32_t c, size_t n);
 
 char *strstr(const char *haystack, const char *needle);
 char *strchr(const char *haystack, const char needle);

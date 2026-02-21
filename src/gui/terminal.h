@@ -56,6 +56,9 @@ typedef struct Terminal
     int waiting_pid;
 
     uint32_t flags;
+
+    uint32_t fg_color;
+    uint32_t bg_color;
 } Terminal;
 
 Terminal *term_create(int64_t x, int64_t y, uint64_t w, uint64_t h, uint64_t max_rows, const char *title, uint32_t win_flags);
@@ -69,5 +72,6 @@ void term_blink_active(void);
 void term_paint(void);
 static Terminal *get_curr_term(void);
 void term_process_input(Terminal *term, char c);
+void term_set_theme(Terminal *term, uint32_t fg_color, uint32_t bg_color);
 
 #endif
