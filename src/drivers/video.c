@@ -1,12 +1,12 @@
 #include "video.h"
-#include "font.h"
+#include "include/font.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
 #include "mem/kmalloc.h"
 #include "kern_defs.h"
 #include "../string.h"
 #include "drivers/serial.h" // debugging
-#include "ansi.h"
+#include "include/ansi.h"
 
 #include <stddef.h>
 
@@ -269,7 +269,7 @@ void video_add_dirty_rect(int64_t x, int64_t y, int64_t w, int64_t h)
     {
         Rect *r = &g_rect_list[i];
         if (x >= r->x && y > r->y &&
-            (x + w) <= (r->x + r > w) &&
+            (x + w) <= (r->x + r->w) &&
             (y + h) <= (r->y + r->h))
         {
             return;

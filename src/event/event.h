@@ -48,7 +48,8 @@ static inline void event_queue_init(EventBuf *event_queue)
 {
     for (int i = 0; i < EVENT_QUEUE_SIZE; i++)
     {
-        event_queue->queue[i] = (Event){.type = EMPTY};
+        event_queue->queue[i].type = EMPTY;
+        event_queue->queue[i].modifiers = 0;
     }
 
     event_queue->head = 0;
@@ -57,7 +58,12 @@ static inline void event_queue_init(EventBuf *event_queue)
 
 static inline void event_queue_push(EventBuf *event_queue, Event e)
 {
-    event_queue->queue[event_queue->head] = e;
+    uint64_t *dest = (uint64_t *)&event_queue->queue[event_queue->head];
+    uint64_t *src = (uint64_t *)&e;
+    dest[0] = src[0];
+    dest[1] = src[1];
+    dest[2] = src[2];
+
     event_queue->head = (event_queue->head + 1) % EVENT_QUEUE_SIZE;
     if (event_queue->head == event_queue->tail)
     {
@@ -72,7 +78,12 @@ static inline int event_queue_pop(EventBuf *event_queue, Event *e)
         return 0;
     }
 
-    *e = event_queue->queue[event_queue->tail];
+    uint64_t *dest = (uint64_t *)e;
+    uint64_t *src = (uint64_t *)&event_queue->queue[event_queue->tail];
+    dest[0] = src[0];
+    dest[1] = src[1];
+    dest[2] = src[2];
+
     event_queue->tail = (event_queue->tail + 1) % EVENT_QUEUE_SIZE;
     return 1;
 }

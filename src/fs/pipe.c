@@ -37,16 +37,21 @@ uint64_t pipe_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *bu
             // so the RingBuf is just temporarily empty.
             // Let's wait for more input
 
+            if (read_count > 0)
+            {
+                sti();
+                return read_count;
+            }
+
             Task *curr_tsk = get_curr_task();
             if (curr_tsk == NULL)
             {
-                kprint("ALERT: no task running\n");
+                kprint("ALERT: no task running while reading pipe.\n");
                 sti();
                 return read_count;
             }
             pipe->reader_pid = curr_tsk->pid;
             sched_block();
-            sti();
         }
         else
         {
@@ -140,6 +145,31 @@ uint64_t pipe_close_writer(vfs_node_t *node)
     return 0;
 }
 
+int pipe_check_ready(struct vfs_node *node)
+{
+    Pipe *pipe = (Pipe *)node->device_data;
+    cli();
+    if (!rb_is_empty(&pipe->buf))
+    {
+        sti();
+        return 1;
+    }
+    if (!(pipe->flags & WRITE_OPEN))
+    {
+        sti();
+        return 1;
+    }
+
+    Task *curr_tsk = get_curr_task();
+    if (curr_tsk)
+    {
+        pipe->reader_pid = curr_tsk->pid;
+    }
+
+    sti();
+    return 0;
+}
+
 vfs_fs_ops_t pipe_read_ops = {
     .read = pipe_read,
     .write = NULL,
@@ -147,6 +177,7 @@ vfs_fs_ops_t pipe_read_ops = {
     .open = NULL,
     .finddir = NULL,
     .create = NULL,
+    .check_ready = pipe_check_ready,
 };
 
 vfs_fs_ops_t pipe_write_ops = {

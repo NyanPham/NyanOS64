@@ -37,6 +37,7 @@ typedef struct vfs_fs_ops
     struct vfs_node *(*create)(struct vfs_node *parent, const char *name, uint32_t flags);
     int (*readdir)(struct vfs_node *node, uint32_t index, struct dirent *out);
     void (*unlink)(struct vfs_node *node);
+    int (*check_ready)(struct vfs_node *node);
 } vfs_fs_ops_t;
 
 typedef struct vfs_node

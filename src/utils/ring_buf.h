@@ -50,4 +50,9 @@ static inline int rb_is_full(RingBuf *rb)
     return ((rb->head + 1) % RING_BUF_SIZE) == rb->tail;
 }
 
+static inline int rb_is_empty(RingBuf *rb)
+{
+    return (rb->head == rb->tail);
+}
+
 #endif

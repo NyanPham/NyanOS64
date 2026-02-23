@@ -184,7 +184,7 @@ USER_CFLAGS := -Wall -Wextra -std=gnu11 -ffreestanding \
 
 USER_LDFLAGS := -m elf_x86_64 -nostdlib -static -z max-page-size=0x1000
 
-USER_OBJS := obj/src/libc/crt0.o obj/src/libc/libc.c.o
+USER_OBJS := obj/src/libc/crt0.o obj/src/libc/libc.c.o obj/src/libc/ansi.c.o
 
 shell.elf: progs/shell.c $(USER_OBJS)
 	@echo "Building Shell..."
@@ -194,9 +194,10 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/shell.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf clock_analog.elf view_bmp.elf test_event_queue.elf
+rootfs.tar: shell.elf terminal.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf clock_analog.elf view_bmp.elf test_event_queue.elf
 	@echo "Creating rootfs.tar..."
 	mkdir -p rootfs/bin
 	mkdir -p rootfs/assets
@@ -205,6 +206,7 @@ rootfs.tar: shell.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf w
 	rm -f rootfs/*.elf rootfs/*.txt
 
 	cp shell.elf rootfs/bin
+	cp terminal.elf rootfs/bin
 	cp snake.elf rootfs/bin
 	cp clock_digital.elf rootfs/bin
 	cp clock_analog.elf rootfs/bin
@@ -236,7 +238,19 @@ hello.elf: progs/hello.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/hello.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o hello.elf
+
+terminal.elf: progs/terminal.c $(USER_OBJS)
+	@echo "Building TERMINAL program..."
+	mkdir -p obj/progs
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/terminal.c -o obj/progs/terminal.c.o
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/terminal.c.o \
+		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
+		-o terminal.elf
 
 snake.elf: progs/snake.c $(USER_OBJS)
 	@echo "Building snake game..."
@@ -248,6 +262,7 @@ snake.elf: progs/snake.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/snake.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o snake.elf
 
 test_fork.elf: progs/test_fork.c $(USER_OBJS)
@@ -260,6 +275,7 @@ test_fork.elf: progs/test_fork.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/test_fork.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o test_fork.elf
 
 crash.elf: progs/crash.c $(USER_OBJS)
@@ -270,6 +286,7 @@ crash.elf: progs/crash.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/crash.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o crash.elf
 
 fpu_test.elf: progs/fpu_test.c $(USER_OBJS)
@@ -280,6 +297,7 @@ fpu_test.elf: progs/fpu_test.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/fpu_test.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o fpu_test.elf
 
 writer.elf: progs/writer.c $(USER_OBJS)
@@ -290,6 +308,7 @@ writer.elf: progs/writer.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/writer.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o writer.elf
 
 reader.elf: progs/reader.c $(USER_OBJS)
@@ -300,6 +319,7 @@ reader.elf: progs/reader.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/reader.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o reader.elf
 
 mq_sender.elf: progs/mq_sender.c $(USER_OBJS)
@@ -310,6 +330,7 @@ mq_sender.elf: progs/mq_sender.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/mq_sender.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o mq_sender.elf
 
 mq_receiver.elf: progs/mq_receiver.c $(USER_OBJS)
@@ -320,6 +341,7 @@ mq_receiver.elf: progs/mq_receiver.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/mq_receiver.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o mq_receiver.elf
 
 clock_digital.elf: progs/clock_digital.c $(USER_OBJS)
@@ -330,6 +352,7 @@ clock_digital.elf: progs/clock_digital.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/clock_digital.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o clock_digital.elf
 
 clock_analog.elf: progs/clock_analog.c $(USER_OBJS)
@@ -340,6 +363,7 @@ clock_analog.elf: progs/clock_analog.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/clock_analog.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o clock_analog.elf
 
 view_bmp.elf: progs/view_bmp.c $(USER_OBJS)
@@ -350,6 +374,7 @@ view_bmp.elf: progs/view_bmp.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/view_bmp.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o view_bmp.elf
 
 test_event_queue.elf: progs/test_event_queue.c $(USER_OBJS)
@@ -360,6 +385,7 @@ test_event_queue.elf: progs/test_event_queue.c $(USER_OBJS)
 		obj/src/libc/crt0.o \
 		obj/progs/test_event_queue.c.o \
 		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
 		-o test_event_queue.elf
 
 obj/src/libc/%.c.o: src/libc/%.c GNUmakefile

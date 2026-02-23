@@ -79,6 +79,11 @@ int read(int fd, void *buf, uint64_t count)
     return (int)syscall(0, (uint64_t)fd, (uint64_t)buf, count, 0, 0, 0);
 }
 
+int write(int fd, const void *buf, uint64_t count)
+{
+    return (int)syscall(1, (uint64_t)fd, (uint64_t)buf, count, 0, 0, 0);
+}
+
 void reboot(void)
 {
     syscall(4, 0, 0, 0, 0, 0, 0);
@@ -189,24 +194,23 @@ void set_fg(int pid)
     syscall(39, (uint64_t)pid, 0, 0, 0, 0, 0);
 }
 
+int kill_fg(int shell_pid)
+{
+    (int)syscall(40, (uint64_t)shell_pid, 0, 0, 0, 0, 0);
+}
+
+int await_io(int *fds, int num_fds, int await_gui, int non_block)
+{
+    return (int)syscall(41, (uint64_t)fds, (uint64_t)num_fds, (uint64_t)await_gui, (uint64_t)non_block, 0, 0);
+}
+int win_get_size(int *w, int *h)
+{
+    return (int)syscall(42, (uint64_t)w, (uint64_t)h, 0, 0, 0, 0);
+}
+
 int win_create(WinParams_t *win_params)
 {
     return (int)syscall(17, (uint64_t)win_params, 0, 0, 0, 0, 0);
-}
-
-int create_term(int x, int y, uint32_t w, uint32_t h, const char *title, uint32_t win_flags)
-{
-    WinParams_t win_params =
-        {
-            .x = x,
-            .y = y,
-            .width = w,
-            .height = h,
-            .flags = win_flags,
-        };
-    strncpy(win_params.title, title, WIN_PARAMS_TITLE_SIZE - 1);
-
-    return syscall(19, (uint64_t)&win_params, 0, 0, 0, 0, 0);
 }
 
 /* ======= STRING, MEMORY FUNCTIONS =======*/

@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#define MOD_CTRL (1 << 0)  // 0001
+#define MOD_ALT (1 << 1)   // 0010
+#define MOD_SHIFT (1 << 2) // 0100
+
 typedef enum
 {
     EMPTY,

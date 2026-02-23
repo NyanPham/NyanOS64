@@ -8,7 +8,6 @@
 #include "kern_defs.h"
 #include "fs/dev.h"
 #include "gui/window.h"
-#include "gui/terminal.h"
 #include "include/signal.h"
 #include "utils/asm_instrs.h"
 
@@ -57,10 +56,11 @@ Task *sched_new_task(void)
     new_tsk->parent = g_curr_tsk;
     new_tsk->heap_end = USER_HEAP_START;
     new_tsk->win = NULL;
-    new_tsk->term = NULL;
     new_tsk->pending_signals = 0;
     new_tsk->wait_next = NULL;
     new_tsk->wake_tick = -1;
+    new_tsk->fg_pid = -1;
+
     uint8_t *fpu_ptr = get_aligned_fpu_region(new_tsk);
     memset(fpu_ptr, 0, 512);
     *((uint32_t *)(fpu_ptr + 0x18)) = 0x1F80; // set MXCS to avoid exceptions in float math
@@ -91,8 +91,6 @@ Task *sched_new_task(void)
     if (g_curr_tsk != NULL) // has parent -> copy dir from him
     {
         strcpy(new_tsk->cwd, g_curr_tsk->cwd);
-        new_tsk->win = g_curr_tsk->win;
-        new_tsk->term = g_curr_tsk->term;
     }
     else // else, it's the first task, root is "/"
     {
@@ -231,6 +229,7 @@ void sched_init(void)
     kern_tsk->state = TASK_READY;
     kern_tsk->pml4 = read_cr3();
     kern_tsk->wake_tick = -1;
+    kern_tsk->fg_pid = -1;
 
     EventBuf *event_queue = (EventBuf *)vmm_alloc_global(sizeof(EventBuf));
     if (event_queue == NULL)
@@ -582,7 +581,6 @@ Task *task_factory_fork(Task *parent_tsk)
     child_tsk->parent = parent_tsk;
     child_tsk->state = TASK_READY;
     child_tsk->win = parent_tsk->win;
-    child_tsk->term = parent_tsk->term;
     child_tsk->vm_alloc_head = vmm_copy_alloc_list(parent_tsk->vm_alloc_head);
     child_tsk->vm_free_head = vmm_copy_free_list(parent_tsk->vm_free_head);
 
@@ -638,20 +636,12 @@ Task *task_factory_fork(Task *parent_tsk)
 
 static void inline sched_clean_gui(Task *tsk)
 {
-    // Handle GUI vs CLI
-    if (tsk->term != NULL)
-    {
-        if (tsk->win == tsk->term->win)
-        {
-            tsk->win = NULL;
-        }
-        term_release(tsk->term, tsk->pid);
-        tsk->term = NULL;
-    }
-
     if (tsk->win != NULL)
     {
-        win_close(tsk->win);
+        if (tsk->win->owner_pid == tsk->pid)
+        {
+            win_close(tsk->win);
+        }
         tsk->win = NULL;
     }
 }

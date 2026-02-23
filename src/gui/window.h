@@ -2,7 +2,7 @@
 #define WINDOW_H
 
 #include "kern_defs.h"
-#include "ansi.h"
+#include "include/ansi.h"
 
 #include <stdint.h>
 #include <stdbool.h>

@@ -1,7 +1,6 @@
 #ifndef ANSI_H
 #define ANSI_H
 
-#include "kern_defs.h"
 #include <stdint.h>
 
 typedef enum

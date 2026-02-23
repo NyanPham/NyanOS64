@@ -17,7 +17,6 @@
 
 // Forward declartion, not include window.h to avoid circular dependency
 struct Window;
-struct Terminal;
 
 typedef struct Task
 {
@@ -37,8 +36,7 @@ typedef struct Task
     char cwd[MAX_CWD_LEN];
 
     // GUI & CLI
-    struct Window *win;    // For GUI app
-    struct Terminal *term; // For CLI app (.e.g Shell)
+    struct Window *win; // For GUI app
 
     // Signal
     uint32_t pending_signals;
@@ -48,6 +46,7 @@ typedef struct Task
     struct Task *wait_next;
     int64_t wake_tick;
     EventBuf *event_queue;
+    int fg_pid;
 } Task;
 
 Task *sched_new_task(void);

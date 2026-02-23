@@ -20,6 +20,12 @@ int food_y;
 int score = 0;
 int running = 1;
 
+int poll_stdin()
+{
+    int fds[1] = {0};
+    return await_io(fds, 1, 1, 1);
+}
+
 void print_num(int num)
 {
     char buf[16];
@@ -69,18 +75,27 @@ void game_over(const char *reason)
 
     while (1)
     {
-        int k = get_key();
-        if (k == 'q')
-            break;
+        if (poll_stdin() & 2)
+        {
+            char k;
+            read(0, &k, 1);
+            if (k == 'q')
+            {
+                break;
+            }
+        }
     }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-    // Create the game terminal
-    if (create_term(100, 100, WIDTH * 8 + 16, HEIGHT * 8 + 40, "Snyake", WIN_MOVABLE) < 0)
+    if (argc == 1)
     {
-        return -1;
+        char *args[] = {"terminal.elf", "--fixed", "40", "20", argv[0], "--in-term", NULL};
+        exec("bin/terminal.elf", args);
+        
+        print("Error: Could not launch terminal wrapper!\n");
+        exit(1);
     }
 
     // Allocate memory for snake
@@ -136,9 +151,11 @@ int main(void)
         print(" (WASD to move)   ");
 
         // Handle input
-        while (1)
+        while (poll_stdin() & 2)
         {
-            int key = get_key();
+            char key;
+            read(0, &key, 1);
+
             if (key == 0)
                 break;
             if (key == 'q')

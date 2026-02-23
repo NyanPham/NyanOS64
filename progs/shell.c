@@ -30,6 +30,7 @@ int cmd_reboot()
 
 int cmd_exit()
 {
+    print("\x04");
     exit(0);
 }
 
@@ -556,6 +557,14 @@ int main()
                     break;
                 }
 
+                if (c == '\x03')
+                {
+                    print("^C\n");
+                    i = 0;
+                    line[0] = 0;
+                    break;
+                }
+
                 if (c == '\b')
                 {
                     if (i > 0)
@@ -612,6 +621,25 @@ int main()
                             }
                         }
                     }
+                    continue;
+                }
+
+                if (c == '\x0C')
+                {
+                    print("\033[0m\033[2J\033[1;1H");
+                    if (getcwd(cwd, 128) != NULL)
+                    {
+                        print("\033[33mNyanOS ");
+                        print(cwd);
+                        print("> \033[32m");
+                    }
+                    else
+                    {
+                        print("\033[33mNyanOS \?\?\?> \033[32m");
+                    }
+
+                    line[i] = 0;
+                    print(line);
                     continue;
                 }
 

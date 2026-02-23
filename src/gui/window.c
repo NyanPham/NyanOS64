@@ -6,7 +6,7 @@
 #include "kern_defs.h"
 #include "sched/sched.h"
 #include "../string.h"
-#include "ansi.h"
+#include "include/ansi.h"
 #include "event/event.h"
 #include "drivers/serial.h" // debugging
 #include "kern_defs.h"
@@ -317,7 +317,6 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     {
         tsk->win = win;
         tsk->win->owner_pid = tsk->pid;
-        tsk->term = NULL;
     }
 
     Rect *rect = rect_alloc();
@@ -430,6 +429,9 @@ void win_focus(Window *win)
     win->prev = g_win_top;
     g_win_top->next = win;
     g_win_top = win;
+
+    win->flags |= WIN_DIRTY;
+    video_add_dirty_rect(win->x, win->y, win->width, win->height);
 }
 
 void win_close(Window *win)
@@ -477,7 +479,12 @@ void win_close(Window *win)
 
     if (win->pixels != NULL)
     {
-        vmm_free(win->pixels);
+        vmm_free((void *)win->pixels);
+    }
+
+    if (win->title != NULL)
+    {
+        kfree((void *)win->title);
     }
 
     Rect *r = win->clip_list;
@@ -668,24 +675,20 @@ void win_update(void)
                     else if ((curr_win->flags & WIN_RESIZABLE) && is_point_in_rect(off_mx, off_my, max_btn_x, 0, btn_size, btn_size))
                     {
                         win_toggle_maximize(curr_win);
-                        Event e = {
-                            .type = EVENT_WIN_RESIZE,
-                            .resize_event = {
-                                .win_owner_pid = curr_win->owner_pid,
-                            },
-                        };
+                        Event e;
+                        e.type = EVENT_WIN_RESIZE;
+                        e.modifiers = 0;
+                        e.resize_event.win_owner_pid = curr_win->owner_pid;
                         event_queue_push(&g_event_queue, e);
                         btn_clicked = 1;
                     }
                     else if ((curr_win->flags & WIN_MINIMIZABLE) && is_point_in_rect(off_mx, off_my, min_btn_x, 0, btn_size, btn_size))
                     {
                         win_toggle_minimize(curr_win);
-                        Event e = {
-                            .type = EVENT_WIN_RESIZE,
-                            .resize_event = {
-                                .win_owner_pid = curr_win->owner_pid,
-                            },
-                        };
+                        Event e;
+                        e.type = EVENT_WIN_RESIZE;
+                        e.modifiers = 0;
+                        e.resize_event.win_owner_pid = curr_win->owner_pid;
                         event_queue_push(&g_event_queue, e);
                         btn_clicked = 1;
                     }
@@ -725,12 +728,10 @@ void win_update(void)
     {
         if (drag_ctx.target != NULL && drag_ctx.resize_dir != RES_NONE)
         {
-            Event e = {
-                .type = EVENT_WIN_RESIZE,
-                .resize_event = {
-                    .win_owner_pid = drag_ctx.target->owner_pid,
-                },
-            };
+            Event e;
+            e.type = EVENT_WIN_RESIZE;
+            e.modifiers = 0;
+            e.resize_event.win_owner_pid = drag_ctx.target->owner_pid;
             event_queue_push(&g_event_queue, e);
             init_win_pixels(drag_ctx.target);
             drag_ctx.target->flags |= WIN_DIRTY;
@@ -788,7 +789,11 @@ Rect *clip_rect(Rect *r, Rect *clipper)
         {
             return NULL;
         }
-        *copy = *r;
+        copy->x = r->x;
+        copy->y = r->y;
+        copy->w = r->w;
+        copy->h = r->h;
+
         copy->next = NULL;
         return copy;
     }

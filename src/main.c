@@ -29,7 +29,6 @@
 #include "./string.h"
 #include "gui/window.h"
 #include "gui/cursor.h"
-#include "gui/terminal.h"
 #include "event/event.h"
 #include "kern_defs.h"
 #include "include/signal.h"
@@ -69,36 +68,32 @@ extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
 extern EventBuf g_event_queue;
 extern Window *g_desktop_win;
 
-static inline void spawn_shell()
+static inline void spawn_terminal()
 {
-    kprint("Loading Shell...\n");
+    kprint("Loading Terminal App...\n");
 
-    Task *shell_task = sched_new_task();
-    Terminal *console = term_create(
-        136, 136,
-        613, 361,
-        1839, "Shell",
-        WIN_MOVABLE | WIN_RESIZABLE | WIN_MINIMIZABLE);
-    shell_task->term = console;
-    shell_task->win = console->win;
-    console->win->owner_pid = shell_task->pid;
-    strcpy(shell_task->cwd, "/");
+    Task *term_tsk = sched_new_task();
+    if (term_tsk == NULL)
+    {
+        return;
+    }
+    strcpy(term_tsk->cwd, "/");
 
     uint64_t curr_pml4 = read_cr3(); // this could be kern_pml4, but nah, let's make thing variable :))
 
-    write_cr3(shell_task->pml4);
+    write_cr3(term_tsk->pml4);
 
-    uint64_t shell_entry = elf_load("/bin/shell.elf");
+    uint64_t term_entry = elf_load("/bin/terminal.elf");
 
-    if (shell_entry != 0)
+    if (term_entry != 0)
     {
-        kprint("Loading User Task...\n");
+        kprint("Loading Terminal...\n");
 
         uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
         uint64_t phys_usr_stk = vmm_hhdm_to_phys(pmm_alloc_frame());
 
         vmm_map_page(
-            vmm_phys_to_hhdm(shell_task->pml4),
+            vmm_phys_to_hhdm(term_tsk->pml4),
             virt_usr_stk_base,
             phys_usr_stk,
             VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
@@ -106,18 +101,18 @@ static inline void spawn_shell()
         uint64_t *kern_view_stk = vmm_phys_to_hhdm(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t));
         *kern_view_stk = 0;
 
-        uint64_t shell_rsp = USER_STACK_TOP - sizeof(uint64_t);
+        uint64_t term_rsp = USER_STACK_TOP - sizeof(uint64_t);
 
         write_cr3(curr_pml4);
 
-        task_context_setup(shell_task, shell_entry, shell_rsp);
-        sched_register_task(shell_task);
+        task_context_setup(term_tsk, term_entry, term_rsp);
+        sched_register_task(term_tsk);
     }
     else
     {
         write_cr3(curr_pml4);
-        kprint("Failed to load Shell!\n");
-        sched_destroy_task(shell_task);
+        kprint("Failed to load terminal!\n");
+        sched_destroy_task(term_tsk);
     }
 }
 
@@ -318,8 +313,6 @@ static inline void spawn_digital_clock()
     kprint("Spawning Digital Clock App...\n");
 
     Task *clock_task = sched_new_task();
-    clock_task->win = NULL;
-    clock_task->term = NULL;
     memset(clock_task->fpu_regs, 0, 528);
     uint64_t curr_pml4 = read_cr3();
     write_cr3(clock_task->pml4);
@@ -457,55 +450,9 @@ void kmain(void)
 
                 if (e.key == 't' && is_ctrl && is_alt)
                 {
-                    kprint("Hotkey detected to spawn a shell\n");
+                    kprint("Hotkey detected to spawn a terminal\n");
                     keyboard_get_char(); // consume the pressed "t"
-                    spawn_shell();
-                }
-                else if (e.key == 'c' && is_ctrl)
-                {
-                    kprint("Hotkey detected to kill a process\n");
-                    keyboard_get_char(); // consume the pressed "c"
-                    Window *top_win = win_get_active();
-                    if (top_win != NULL && top_win->owner_pid != -1)
-                    {
-                        int target_pid = top_win->owner_pid;
-                        uint8_t should_kill = 1;
-                        Task *win_owner_tsk = sched_find_task(top_win->owner_pid);
-
-                        if (win_owner_tsk != NULL && win_owner_tsk->term != NULL && win_owner_tsk->term->win == top_win)
-                        {
-                            int child_pid = win_owner_tsk->term->child_pid;
-                            Task *child_tsk = sched_find_task(child_pid);
-
-                            if (child_pid > 0 && child_tsk != NULL && child_tsk->state != TASK_ZOMBIE && child_tsk->state != TASK_DEAD)
-                            {
-                                target_pid = child_pid;
-                            }
-                            else
-                            {
-                                if (win_owner_tsk->parent == NULL || win_owner_tsk->parent->pid == 0)
-                                {
-                                    should_kill = 0;
-                                    term_put_char(win_owner_tsk->term, '^');
-                                    term_put_char(win_owner_tsk->term, 'C');
-                                    term_put_char(win_owner_tsk->term, '\n');
-                                }
-                                else
-                                {
-                                    kprint("Killing User Terminal App (PID > 1).\n");
-                                }
-                            }
-                        }
-                        if (should_kill)
-                        {
-                            sched_send_signal(target_pid, SIGINT);
-                            sched_wake_pid(target_pid);
-                        }
-                    }
-                    else
-                    {
-                        kprint("No active process to kill.\n");
-                    }
+                    spawn_terminal();
                 }
                 else
                 {
@@ -513,16 +460,9 @@ void kmain(void)
                     if (top_win != NULL && top_win->owner_pid != -1)
                     {
                         Task *tsk = sched_find_task(top_win->owner_pid);
-                        if (tsk != NULL)
+                        if (tsk != NULL && tsk->event_queue != NULL)
                         {
-                            if (tsk->term != NULL && tsk->term->win == top_win)
-                            {
-                                term_process_input(tsk->term, e.key);
-                            }
-                            else if (tsk->event_queue != NULL)
-                            {
-                                event_queue_push(tsk->event_queue, e);
-                            }
+                            event_queue_push(tsk->event_queue, e);
                             sched_wake_pid(top_win->owner_pid);
                         }
                     }
@@ -533,16 +473,9 @@ void kmain(void)
             {
                 int pid = e.resize_event.win_owner_pid;
                 Task *tsk = sched_find_task(pid);
-                if (tsk != NULL)
+                if (tsk != NULL && tsk->event_queue != NULL)
                 {
-                    if (tsk->term != NULL && tsk->term->win->owner_pid == pid)
-                    {
-                        term_resize(tsk->term, tsk->term->win->width, tsk->term->win->height);
-                    }
-                    else if (tsk->event_queue != NULL)
-                    {
-                        event_queue_push(tsk->event_queue, e);
-                    }
+                    event_queue_push(tsk->event_queue, e);
                     sched_wake_pid(pid);
                 }
                 break;
@@ -555,11 +488,8 @@ void kmain(void)
         }
 
         cursor_erase();
-        // update_clock(clock_x, clock_y);
         win_update();
 
-        term_paint();
-        term_blink_active();
         win_paint();
         cursor_paint();
         video_swap();

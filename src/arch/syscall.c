@@ -15,10 +15,10 @@
 #include "mem/pmm.h"
 #include "mem/vmm.h"
 #include "gui/window.h"
-#include "gui/terminal.h"
 #include "kern_defs.h"
 #include "include/syscall_args.h"
 #include "include/stat.h"
+#include "include/signal.h"
 #include "fs/pipe.h"
 #include "utils/asm_instrs.h"
 #include "ipc/shm.h"
@@ -133,29 +133,15 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
 
         Task *curr_tsk = get_curr_task();
-        if (curr_tsk->fd_tbl[fd] == NULL)
+        if (curr_tsk == NULL || curr_tsk->fd_tbl[fd] == NULL)
         {
             return -1;
         }
 
-        file_handle_t *fh = curr_tsk->fd_tbl[fd];
-        if (fh == NULL)
-        {
-            return -1;
-        }
-
-        // validate user access
         if (!verify_usr_access((uint64_t)buf, count))
         {
             kprint("SYS_READ: invalid buffer\n");
             return -1;
-        }
-
-        bool is_real_stdin = (fh->node && strcmp(fh->node->name, "stdin") == 0);
-
-        if (fd == 0 && curr_tsk && curr_tsk->term && is_real_stdin)
-        {
-            return term_read(curr_tsk->term, (uint8_t *)buf, count);
         }
 
         // call vfs (if fd > 2, we read the stdin_read)
@@ -176,49 +162,19 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         }
 
         Task *curr_tsk = get_curr_task();
-        if (curr_tsk->fd_tbl[fd] == NULL)
-        {
-            return -1;
-        }
-        file_handle_t *fh = curr_tsk->fd_tbl[fd];
-        if (fd == NULL)
+        if (curr_tsk == NULL || curr_tsk->fd_tbl[fd] == NULL)
         {
             return -1;
         }
 
-        // validate user access
         if (!verify_usr_access((uint64_t)buf, count))
         {
             kprint("SYS_WRITE: invalid buffer\n");
             return -1;
         }
 
-        bool is_real_stdout = (fh->node && strcmp(fh->node->name, "stdout") == 0);
-        bool is_real_stderr = (fh->node && strcmp(fh->node->name, "stderr") == 0);
-
-        if (curr_tsk->term != NULL && (is_real_stdout || is_real_stderr))
-        {
-            for (uint64_t i = 0; i < count; i++)
-            {
-                term_put_char(curr_tsk->term, buf[i]);
-            }
-
-            return count;
-        }
-        else if (curr_tsk->win != NULL && (is_real_stdout || is_real_stderr))
-        {
-            for (uint64_t i = 0; i < count; i++)
-            {
-                win_put_char(curr_tsk->win, buf[i]);
-            }
-
-            return count;
-        }
-        else
-        {
-            // call vfs (if fd == 1, it calls the stdout_write)
-            return vfs_write(curr_tsk->fd_tbl[fd], count, (uint8_t *)buf);
-        }
+        // call vfs (if fd == 1, it calls the stdout_write)
+        return vfs_write(curr_tsk->fd_tbl[fd], count, (uint8_t *)buf);
     }
     case 2:
     {
@@ -650,9 +606,12 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
             return -1;
         }
 
-        char w_title[256];
-        strncpy(w_title, win_params->title, 256);
-        w_title[255] = 0;
+        char *w_title = (char *)kmalloc(256);
+        if (w_title != NULL)
+        {
+            strncpy(w_title, win_params->title, 256);
+            w_title[255] = 0;
+        }
 
         Task *tsk = get_curr_task();
         if (tsk->win != NULL)
@@ -676,43 +635,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
     }
     case 19:
     {
-        // sys_create_term(WinParams_t* win_params)
-        WinParams_t *win_params = (WinParams_t *)arg1;
-
-        if (win_params == NULL)
-        {
-            kprint("Not having window params passed!\n");
-            return -1;
-        }
-
-        if (!verify_usr_access(win_params, sizeof(WinParams_t)))
-        {
-            kprint("Invalid WinParams space!\n");
-            return -1;
-        }
-
-        char w_title[256];
-        strncpy(w_title, win_params->title, 256);
-        w_title[255] = 0;
-
-        Terminal *new_term = term_create(win_params->x, win_params->y, win_params->width, win_params->height, win_params->height * 3, w_title, win_params->flags);
-        if (new_term == NULL)
-        {
-            kprint("Failed to create term in SYSCALL 19\n");
-            return -1;
-        }
-
-        Task *tsk = get_curr_task();
-        if (tsk == NULL)
-        {
-            kprint("No running while trying to creating terms in SYSCALL 19\n");
-            return -1;
-        }
-        tsk->term = new_term;
-        tsk->win = tsk->term->win;
-        tsk->win->owner_pid = tsk->pid;
-
-        return 0;
+        // reserved
     }
     case 20:
     {
@@ -1298,11 +1221,85 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         int pid = (int)arg1;
 
         Task *curr_tsk = get_curr_task();
-        if (curr_tsk->term != NULL)
+        if (curr_tsk != NULL)
         {
-            curr_tsk->term->child_pid = pid;
+            curr_tsk->fg_pid = (int)arg1;
+        }
+
+        return 0;
+    }
+    case 40: // sys_kill_fg(shell_pid)
+    {
+        int shell_pid = (int)arg1;
+        Task *tsk = sched_find_task(shell_pid);
+
+        if (tsk != NULL && tsk->fg_pid != -1)
+        {
+            sched_send_signal(tsk->fg_pid, SIGINT);
+            sched_wake_pid(tsk->fg_pid);
+            return 1;
         }
         return 0;
+    }
+    case 41: // sys_await_io(int* fds, int num_fds, int await_gui, int non_block)
+    {
+        int *fds = (int *)arg1;
+        int num_fds = (int)arg2;
+        int await_gui = (int)arg3;
+        int non_block = (int)arg4;
+
+        Task *curr_tsk = get_curr_task();
+
+        while (1)
+        {
+            int ready_mask = 0;
+
+            if (await_gui && curr_tsk->event_queue->head != curr_tsk->event_queue->tail)
+            {
+                ready_mask |= 1;
+            }
+
+            for (int i = 0; i < num_fds; i++)
+            {
+                int fd = fds[i];
+                if (fd >= 0 && fd < MAX_OPEN_FILES && curr_tsk->fd_tbl[fd] != NULL)
+                {
+                    file_handle_t *fh = curr_tsk->fd_tbl[fd];
+                    if (fh->node && fh->node->ops && fh->node->ops->check_ready)
+                    {
+                        if (fh->node->ops->check_ready(fh->node))
+                        {
+                            ready_mask |= (1 << (i + 1));
+                        }
+                    }
+                }
+            }
+
+            if (ready_mask != 0)
+            {
+                return ready_mask;
+            }
+
+            if (non_block == 1)
+            {
+                return 0;
+            }
+            sched_block();
+        }
+    }
+    case 42: // sys_win_get_size(int *w, int *h)
+    {
+        int *w = (int *)arg1;
+        int *h = (int *)arg2;
+
+        Task *curr_tsk = get_curr_task();
+        if (curr_tsk->win)
+        {
+            *w = curr_tsk->win->width;
+            *h = curr_tsk->win->height;
+            return 0;
+        }
+        return -1;
     }
     default:
     {
