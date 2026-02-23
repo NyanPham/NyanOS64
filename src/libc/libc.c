@@ -84,6 +84,11 @@ int write(int fd, const void *buf, uint64_t count)
     return (int)syscall(1, (uint64_t)fd, (uint64_t)buf, count, 0, 0, 0);
 }
 
+int mkdir(const char *pathname)
+{
+    return (int)syscall(19, (uint64_t)pathname, VFS_DIRECTORY, 0, 0, 0, 0);
+}
+
 void reboot(void)
 {
     syscall(4, 0, 0, 0, 0, 0, 0);

@@ -633,9 +633,73 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         kprint_int(x);
         return 0;
     }
-    case 19:
+    case 19: // sys_mkdir(const char *path, uint32_t flags)
     {
-        // reserved
+        char *path = (char *)arg1;
+        uint32_t flags = (uint32_t)arg2;
+
+        Task *curr_tsk = get_curr_task();
+
+        char cwd[256];
+        if (curr_tsk->cwd[0] == '\0')
+        {
+            strcpy(cwd, "/");
+        }
+        else
+        {
+            strcpy(cwd, curr_tsk->cwd);
+        }
+
+        char full_path[256];
+        resolve_path(cwd, path, full_path);
+
+        if (strlen(full_path) >= 255)
+        {
+            return -1;
+        }
+
+        char parent_path[256];
+        char new_dir_name[128];
+
+        int last_slash = -1;
+        int len = strlen(full_path);
+
+        for (int i = len - 1; i >= 0; i--)
+        {
+            if (full_path[i] == '/')
+            {
+                last_slash = i;
+                break;
+            }
+        }
+
+        if (last_slash == -1)
+        {
+            return -1;
+        }
+
+        strncpy(parent_path, full_path, last_slash);
+        parent_path[last_slash] = '\0';
+        if (last_slash == 0)
+        {
+            strcpy(parent_path, "/");
+        }
+
+        strcpy(new_dir_name, &full_path[last_slash + 1]);
+
+        vfs_node_t *parent_node = vfs_navigate(parent_path);
+
+        if (parent_node != NULL && parent_node->ops != NULL && parent_node->ops->create != NULL)
+        {
+            vfs_node_t *new_node = parent_node->ops->create(parent_node, new_dir_name, flags);
+            vfs_node_t *chk_node = vfs_navigate(full_path);
+            if (chk_node != NULL)
+            {
+                return 0;
+            }
+        }
+
+        return -1;
     }
     case 20:
     {
@@ -828,7 +892,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         return vfs_readdir(fh->node, idx, user_dirent);
     }
-    case 24: // sys_unlink
+    case 24: // sys_unlink(const char *path)
     {
         char *path = (char *)arg1;
         if (!verify_usr_access((uint64_t)path, 1))
@@ -838,8 +902,19 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
 
         Task *curr_tsk = get_curr_task();
 
+        char cwd[256];
+        if (curr_tsk->cwd[0] == '\0')
+        {
+            strcpy(cwd, "/");
+        }
+        else
+        {
+            strcpy(cwd, curr_tsk->cwd);
+        }
+
         char new_path[256];
-        resolve_path(curr_tsk->cwd, path, new_path);
+        resolve_path(cwd, path, new_path);
+
         if (strlen(new_path) >= 255)
         {
             return -1;

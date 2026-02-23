@@ -245,6 +245,119 @@ int cmd_rm(int argc, char **argv)
     return 0;
 }
 
+int cmd_touch(int argc, char **argv)
+{
+    if (argc < 2)
+    {
+        print("Usage: touch <filename>\n");
+        return 1;
+    }
+
+    int fd = open(argv[1], O_CREAT | O_WRONLY);
+    if (fd < 0)
+    {
+        print("[TOUCH]: cannot create file\n");
+        return 1;
+    }
+    close(fd);
+    return 0;
+}
+
+int cmd_cp(int argc, char **argv)
+{
+    if (argc < 3)
+    {
+        print("Usage: cp <source> <destination>\n");
+        return 1;
+    }
+
+    int fd_src = open(argv[1], O_RDONLY);
+    if (fd_src < 0)
+    {
+        print("[CP]: cannot open source file\n");
+        return 1;
+    }
+
+    int fd_dst = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC);
+    if (fd_dst < 0)
+    {
+        print("[CP]: cannot create destination file\n");
+        close(fd_src);
+        return 1;
+    }
+
+    char buf[512];
+    int n;
+    while ((n = read(fd_src, buf, 512)) > 0)
+    {
+        write(fd_dst, buf, n);
+    }
+
+    close(fd_src);
+    close(fd_dst);
+    print("[CP]: File copied successfully!\n");
+
+    return 0;
+}
+
+int cmd_mkdir(int argc, char **argv)
+{
+    if (argc < 2)
+    {
+        print("Usage: mkdir <dirname>\n");
+        return 1;
+    }
+
+    if (mkdir(argv[1]) < 0)
+    {
+        print("[MKDIR]: cannot create directory\n");
+        return 1;
+    }
+    return 0;
+}
+
+int cmd_mv(int argc, char **argv)
+{
+    // We'll do COPY src -> dst, then RM src.
+
+    if (argc < 3)
+    {
+        print("Usage: mv <source> <destination>\n");
+        return 1;
+    }
+    int fd_src = open(argv[1], O_RDONLY);
+    if (fd_src < 0)
+    {
+        print("[MV]: cannot open source file\n");
+        return 1;
+    }
+
+    int fd_dst = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC);
+    if (fd_dst < 0)
+    {
+        print("[MV]: cannot create destination file\n");
+        close(fd_src);
+        return 1;
+    }
+
+    char buf[512];
+    int n;
+    while ((n = read(fd_src, buf, 512)) > 0)
+    {
+        write(fd_dst, buf, n);
+    }
+    close(fd_src);
+    close(fd_dst);
+
+    if (unlink(argv[1]) < 0)
+    {
+        print("[MV]: file copied, but failed to remove the source file\n");
+        return 1;
+    }
+
+    return 0;
+}
+
 int exec_cmd(int argc, char **argv)
 {
     /* --- HI --- */
@@ -324,9 +437,37 @@ int exec_cmd(int argc, char **argv)
         return 1;
     }
 
+    /* --- RM --- */
     else if (strncmp(argv[0], "rm", 3) == 0)
     {
         cmd_rm(argc, argv);
+        return 1;
+    }
+
+    /* --- TOUCH --- */
+    else if (strncmp(argv[0], "touch", 6) == 0)
+    {
+        cmd_touch(argc, argv);
+        return 1;
+    }
+
+    /* --- CP --- */
+    else if (strncmp(argv[0], "cp", 3) == 0)
+    {
+        cmd_cp(argc, argv);
+        return 1;
+    }
+
+    /* --- MKDIR --- */
+    else if (strncmp(argv[0], "mkdir", 6) == 0)
+    {
+        cmd_mkdir(argc, argv);
+        return 1;
+    }
+
+    else if (strncmp(argv[0], "mv", 3) == 0)
+    {
+        cmd_mv(argc, argv);
         return 1;
     }
 

@@ -39,6 +39,7 @@ int open(const char *pathname, uint32_t flags);
 int close(int fd);
 int read(int fd, void *buf, uint64_t count);
 int write(int fd, const void *buf, uint64_t count);
+int mkdir(const char *pathname);
 void reboot(void);
 int fork(void);
 int getpid(void);
