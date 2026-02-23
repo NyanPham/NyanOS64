@@ -165,6 +165,10 @@ clean:
 	@rm -f shell.o shell.elf
 	@rm -f hello.o hello.elf
 	@rm -f snake.o snake.elf
+	@rm -f terminal.o terminal.elf
+	@rm -f clock_digital.o clock_digital.elf
+	@rm -f clock_analog.o clock_analog.elf
+	@rm -f nyanedit.o nyanedit.elf
 	@rm -f test_fork.o test_fork.elf
 	@rm -f crash.o crash.elf
 	@rm -f fpu_test.o fpu_test.elf
@@ -197,7 +201,7 @@ shell.elf: progs/shell.c $(USER_OBJS)
 		obj/src/libc/ansi.c.o \
 		-o shell.elf
 
-rootfs.tar: shell.elf terminal.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf clock_analog.elf view_bmp.elf test_event_queue.elf
+rootfs.tar: shell.elf terminal.elf hello.elf snake.elf test_fork.elf crash.elf fpu_test.elf writer.elf reader.elf mq_sender.elf mq_receiver.elf clock_digital.elf clock_analog.elf view_bmp.elf test_event_queue.elf nyanedit.elf
 	@echo "Creating rootfs.tar..."
 	mkdir -p rootfs/bin
 	mkdir -p rootfs/assets
@@ -208,6 +212,7 @@ rootfs.tar: shell.elf terminal.elf hello.elf snake.elf test_fork.elf crash.elf f
 	cp shell.elf rootfs/bin
 	cp terminal.elf rootfs/bin
 	cp snake.elf rootfs/bin
+	cp nyanedit.elf rootfs/bin
 	cp clock_digital.elf rootfs/bin
 	cp clock_analog.elf rootfs/bin
 	cp view_bmp.elf rootfs/bin
@@ -264,6 +269,19 @@ snake.elf: progs/snake.c $(USER_OBJS)
 		obj/src/libc/libc.c.o \
 		obj/src/libc/ansi.c.o \
 		-o snake.elf
+
+nyanedit.elf: progs/nyanedit.c $(USER_OBJS)
+	@echo "Building NyanEdit editor..."
+	mkdir -p obj/progs
+	
+	$(CC) $(USER_CFLAGS) $(CPPFLAGS) -c progs/nyanedit.c -o obj/progs/nyanedit.c.o
+
+	$(LD) $(USER_LDFLAGS) -Ttext=0x800000 \
+		obj/src/libc/crt0.o \
+		obj/progs/nyanedit.c.o \
+		obj/src/libc/libc.c.o \
+		obj/src/libc/ansi.c.o \
+		-o nyanedit.elf
 
 test_fork.elf: progs/test_fork.c $(USER_OBJS)
 	@echo "Building Fork Test..."

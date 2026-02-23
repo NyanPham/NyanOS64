@@ -175,7 +175,11 @@ void term_refresh()
     }
     if (cur_vis)
     {
-        render_cell_to_fb('_', cur_col, cur_row, White, Black);
+        int buf_row = (start_line_idx + cur_row) % n_rows;
+        TermCell cell = text_buf[buf_row * n_cols + cur_col];
+        char ch = (cell.glyph == 0) ? ' ' : cell.glyph;
+
+        render_cell_to_fb(ch, cur_col, cur_row, Black, White);
     }
     blit(0, 0, win_w, win_h, frame_buf);
 }
@@ -311,8 +315,15 @@ int main(int argc, char **argv)
                     }
                     else
                     {
+                        if (is_ctrl)
+                        {
+                            c &= 0x1F;
+                        }
+
                         if (write(ptm_pipe[1], &c, 1) <= 0)
+                        {
                             exit(0);
+                        }
                     }
                 }
                 else if (e.type == EVENT_WIN_RESIZE)

@@ -36,29 +36,161 @@ static volatile KeyboardDevice kbd_dev;
 #define KEY_ALT_RESLEASED 0xB8
 #define KEY_CTRL_PRESSED 0x1D
 #define KEY_CTRL_RESLEASED 0x9D
-#define KEY_LSHIFT_PRESSED  0x2A
+#define KEY_LSHIFT_PRESSED 0x2A
 #define KEY_LSHIFT_RELEASED 0xAA
-#define KEY_RSHIFT_PRESSED  0x36
+#define KEY_RSHIFT_PRESSED 0x36
 #define KEY_RSHIFT_RELEASED 0xB6
 #define KEY_CAPSLOCK_PRESSED 0x3A
 #define KEY_UP 0x48
 #define KEY_DOWN 0x50
+#define KEY_LEFT 0x4B
+#define KEY_RIGHT 0x4D
 
 // Scancode -> ASCII
 char kbd_tbl[KBD_TBL_SIZE] = {
-    0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-    '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-    0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',   0,
-    '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',   0,   '*',
-    0,  ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0,
+    27,
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    '0',
+    '-',
+    '=',
+    '\b',
+    '\t',
+    'q',
+    'w',
+    'e',
+    'r',
+    't',
+    'y',
+    'u',
+    'i',
+    'o',
+    'p',
+    '[',
+    ']',
+    '\n',
+    0,
+    'a',
+    's',
+    'd',
+    'f',
+    'g',
+    'h',
+    'j',
+    'k',
+    'l',
+    ';',
+    '\'',
+    '`',
+    0,
+    '\\',
+    'z',
+    'x',
+    'c',
+    'v',
+    'b',
+    'n',
+    'm',
+    ',',
+    '.',
+    '/',
+    0,
+    '*',
+    0,
+    ' ',
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
 };
 
 char kbd_tbl_shift[KBD_TBL_SIZE] = {
-    0,  27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
-    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
-    0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',   0,
-    '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?',   0,   '*',
-    0,  ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0,
+    27,
+    '!',
+    '@',
+    '#',
+    '$',
+    '%',
+    '^',
+    '&',
+    '*',
+    '(',
+    ')',
+    '_',
+    '+',
+    '\b',
+    '\t',
+    'Q',
+    'W',
+    'E',
+    'R',
+    'T',
+    'Y',
+    'U',
+    'I',
+    'O',
+    'P',
+    '{',
+    '}',
+    '\n',
+    0,
+    'A',
+    'S',
+    'D',
+    'F',
+    'G',
+    'H',
+    'J',
+    'K',
+    'L',
+    ':',
+    '"',
+    '~',
+    0,
+    '|',
+    'Z',
+    'X',
+    'C',
+    'V',
+    'B',
+    'N',
+    'M',
+    '<',
+    '>',
+    '?',
+    0,
+    '*',
+    0,
+    ' ',
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
 };
 
 /**
@@ -98,7 +230,7 @@ static void keyboard_handler(void *regs)
     case KEY_CTRL_RESLEASED:
         kbd_dev.ctrl_pressed = false;
         break;
-    
+
     // alt
     case KEY_ALT_PRESSED:
         kbd_dev.alt_pressed = true;
@@ -106,7 +238,7 @@ static void keyboard_handler(void *regs)
     case KEY_ALT_RESLEASED:
         kbd_dev.alt_pressed = false;
         break;
-    
+
     // shift
     case KEY_LSHIFT_PRESSED:
     case KEY_RSHIFT_PRESSED:
@@ -116,12 +248,12 @@ static void keyboard_handler(void *regs)
     case KEY_RSHIFT_RELEASED:
         kbd_dev.shift_pressed = false;
         break;
-    
+
     // capslock
     case KEY_CAPSLOCK_PRESSED:
         kbd_dev.caps_lock = !kbd_dev.caps_lock;
         break;
-    
+
     default:
         // fall through, does nothing :/
     }
@@ -158,6 +290,18 @@ static void keyboard_handler(void *regs)
         {
             // send ESC[B
             send_ansi_sequence("\033[B");
+            return;
+        }
+        if (scancode == KEY_RIGHT)
+        {
+            // send ESC[C
+            send_ansi_sequence("\033[C");
+            return;
+        }
+        if (scancode == KEY_LEFT)
+        {
+            // send ESC[D
+            send_ansi_sequence("\033[D");
             return;
         }
 
