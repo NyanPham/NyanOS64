@@ -93,6 +93,7 @@ void init_desktop(void);
 void win_draw_string(Window *win, int x, int y, char *str, uint32_t fg_color, uint32_t bg_color);
 void win_fill_rect(Window *win, int client_x, int client_y, int w, int h, uint32_t color);
 void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint32_t *buf);
+void win_get_client_size(Window *win, int *out_w, int *out_h);
 
 static int win_toggle_maximize(Window *win);
 static int win_toggle_minimize(Window *win);

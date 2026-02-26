@@ -280,6 +280,11 @@ void task_idle(void)
 
 void schedule(void)
 {
+    if (g_head_tsk == NULL)
+    {
+        return;
+    }
+
     Task *next_tsk;
 
     if (g_curr_tsk == NULL)
@@ -289,17 +294,38 @@ void schedule(void)
     else
     {
         next_tsk = g_curr_tsk->next;
+        if (next_tsk == NULL)
+        {
+            next_tsk = g_head_tsk;
+        }
 
+        Task *start_tsk = next_tsk;
         while (next_tsk->state != TASK_READY)
         {
             next_tsk = next_tsk->next;
-        }
+            if (next_tsk == NULL)
+            {
+                next_tsk = g_head_tsk;
+            }
 
-        if (next_tsk == g_curr_tsk)
-        {
-            // kprint("Only 1 task, no switch!\n");
-            return;
+            if (next_tsk == start_tsk)
+            {
+                next_tsk = g_head_tsk;
+                break;
+            }
         }
+    }
+
+    if (next_tsk == NULL)
+    {
+        kprint("[SCHEDULE]: PANIC next_tsk is NULL\n");
+        return;
+    }
+
+    if (next_tsk == g_curr_tsk)
+    {
+        // kprint("Only 1 task, no switch!\n");
+        return;
     }
 
     Task *prev_tsk = g_curr_tsk;
@@ -364,6 +390,8 @@ void sched_exit(int code)
         kprint("Kernel cannot exit!\n");
         return;
     }
+
+    cli();
 
     // unlink it
     Task *task_to_exit = g_curr_tsk;

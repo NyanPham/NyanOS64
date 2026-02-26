@@ -229,13 +229,14 @@ static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, ui
             uint32_t curr_cluster = node_data->first_cluster;
             uint32_t prev_cluster = 0;
             uint32_t cluster_count = 0;
-            while (curr_cluster != EOC)
+            while (curr_cluster >= 2 && curr_cluster < EOC)
             {
                 prev_cluster = curr_cluster;
                 curr_cluster = fat32_read_fat(curr_cluster);
                 cluster_count++;
             }
-            if (prev_cluster == 0 || prev_cluster == EOC)
+
+            if (prev_cluster < 2)
             {
                 kprint("FAT32_WRITE failed: failed trace last cluster of a file\n");
                 return 0;
@@ -949,7 +950,8 @@ void fat32_unlink(vfs_node_t *node)
     kfree(tmp_buf);
 
     uint32_t curr_cluster = node_data->first_cluster;
-    while (curr_cluster != EOC)
+
+    while (curr_cluster >= 2 && curr_cluster < EOC)
     {
         uint32_t next_cluster = fat32_read_fat(curr_cluster);
         fat32_write_fat_entry(curr_cluster, 0);

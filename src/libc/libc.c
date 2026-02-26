@@ -447,7 +447,7 @@ __attribute__((target("sse,sse2"))) void *memset(void *s, int c, size_t n)
     // TAIL
     while (i < n)
     {
-        *(uint8_t *restrict)(&pdest[i]) = *(uint8_t *restrict)c64;
+        *(uint8_t *restrict)(&pdest[i]) = (uint8_t)c;
         i += 1;
     }
 
@@ -645,6 +645,7 @@ void *malloc(size_t size)
     {
         return NULL;
     }
+    size = (size + 7) & ~7;
 
     block_meta *blk;
 
@@ -669,14 +670,24 @@ void *malloc(size_t size)
                 return NULL;
             }
         }
-        else // or, found free one, reuse it
+        else
         {
+            if (blk->size >= size + META_SIZE + 16)
+            {
+                block_meta *new_blk = (block_meta *)((uint8_t *)blk + META_SIZE + size);
+                new_blk->size = blk->size - size - META_SIZE;
+                new_blk->free = 1;
+                new_blk->magic = HEAP_MAGIC;
+                new_blk->next = blk->next;
+
+                blk->size = size;
+                blk->next = new_blk;
+            }
             blk->free = 0;
             blk->magic = HEAP_MAGIC;
         }
     }
-
-    return ((uint64_t)blk + META_SIZE); // we return the address right after the header
+    return (void *)((uint8_t *)blk + META_SIZE); // we return the address right after the header
 }
 
 void free(void *ptr)
@@ -686,8 +697,7 @@ void free(void *ptr)
         return;
     }
 
-    block_meta *blk_ptr = (block_meta *)((uint64_t)ptr - META_SIZE);
-
+    block_meta *blk_ptr = (block_meta *)((uint8_t *)ptr - META_SIZE);
     if (blk_ptr->magic != HEAP_MAGIC)
     {
         print("MALLOC_ERROR: Double free or corruption!\n");
@@ -695,7 +705,22 @@ void free(void *ptr)
     }
 
     blk_ptr->free = 1;
-    // TODO: merge free blocks to avoid fragmentation
+
+    // Coallescing to avoid fragmentation
+
+    block_meta *curr = g_heap_base;
+    while (curr != NULL)
+    {
+        if (curr->free && curr->next != NULL && curr->next->free)
+        {
+            curr->size += META_SIZE + curr->next->size;
+            curr->next = curr->next->next;
+        }
+        else
+        {
+            curr = curr->next;
+        }
+    }
 }
 
 void *realloc(void *ptr, size_t size)
@@ -711,7 +736,7 @@ void *realloc(void *ptr, size_t size)
         return NULL;
     }
 
-    block_meta *blk_ptr = (block_meta *)((uint64_t)ptr - META_SIZE);
+    block_meta *blk_ptr = (block_meta *)((uint8_t *)ptr - META_SIZE);
     if (blk_ptr->size >= size) // still enough room!
     {
         return ptr;

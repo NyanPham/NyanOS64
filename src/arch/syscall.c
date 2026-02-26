@@ -1370,8 +1370,7 @@ uint64_t syscall_handler(uint64_t sys_num, uint64_t arg1, uint64_t arg2, uint64_
         Task *curr_tsk = get_curr_task();
         if (curr_tsk->win)
         {
-            *w = curr_tsk->win->width;
-            *h = curr_tsk->win->height;
+            win_get_client_size(curr_tsk->win, w, h);
             return 0;
         }
         return -1;

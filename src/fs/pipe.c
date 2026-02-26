@@ -52,6 +52,8 @@ uint64_t pipe_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *bu
             }
             pipe->reader_pid = curr_tsk->pid;
             sched_block();
+            sti();
+            continue;
         }
         else
         {
@@ -96,6 +98,8 @@ uint64_t pipe_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *b
                 }
                 pipe->writer_pid = curr_tsk->pid;
                 sched_block();
+                sti();
+                cli();
             }
 
             // RingBuf has space, and read_end is still ON here
@@ -120,6 +124,9 @@ uint64_t pipe_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *b
 uint64_t pipe_close_reader(vfs_node_t *node)
 {
     Pipe *pipe = (Pipe *)node->device_data;
+
+    cli();
+
     pipe->flags &= ~READ_OPEN;
 
     if (pipe->writer_pid != -1)
@@ -128,12 +135,16 @@ uint64_t pipe_close_reader(vfs_node_t *node)
         pipe->writer_pid = -1;
     }
 
+    sti();
     return 0;
 }
 
 uint64_t pipe_close_writer(vfs_node_t *node)
 {
     Pipe *pipe = (Pipe *)node->device_data;
+
+    cli();
+
     pipe->flags &= ~WRITE_OPEN;
 
     if (pipe->reader_pid != -1)
@@ -142,6 +153,7 @@ uint64_t pipe_close_writer(vfs_node_t *node)
         pipe->reader_pid = -1;
     }
 
+    sti();
     return 0;
 }
 

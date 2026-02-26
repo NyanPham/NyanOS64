@@ -1240,3 +1240,34 @@ void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint
 
     win->flags |= WIN_DIRTY;
 }
+
+void win_get_client_size(Window *win, int *out_w, int *out_h)
+{
+    if (win == NULL)
+    {
+        return;
+    }
+
+    if (win->flags & WIN_BORDERLESS)
+    {
+        if (out_w)
+        {
+            *out_w = win->width;
+        }
+        if (out_h)
+        {
+            *out_h = win->height;
+        }
+    }
+    else
+    {
+        if (out_w)
+        {
+            *out_w = win->width - (WIN_BORDER_SIZE * 2);
+        }
+        if (out_h)
+        {
+            *out_h = win->height - (WIN_TITLE_BAR_HEIGHT + WIN_BORDER_SIZE * 2);
+        }
+    }
+}

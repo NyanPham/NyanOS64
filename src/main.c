@@ -224,7 +224,7 @@ void test_fat32(vfs_node_t *fat_root)
     file_handle_t *f_write = vfs_open("/data/test2.txt", 0);
     if (f_write)
     {
-        char *test_str = "Hello NyanOS! FAT32 Write works perfectly!";
+        char *test_str = "Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.";
         uint64_t len = strlen(test_str);
         uint64_t written = vfs_write(f_write, len, (uint8_t *)test_str);
         kprint("Written: ");

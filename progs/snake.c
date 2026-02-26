@@ -91,8 +91,8 @@ int main(int argc, char **argv)
 {
     if (argc == 1)
     {
-        char *args[] = {"terminal.elf", "--fixed", "40", "20", argv[0], "--in-term", NULL};
-        exec("bin/terminal.elf", args);
+        char *args[] = {"terminal.elf", "--fixed", "40", "27", argv[0], "--in-term", NULL};
+        exec("/bin/terminal.elf", args);
         
         print("Error: Could not launch terminal wrapper!\n");
         exit(1);
