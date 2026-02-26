@@ -1,162 +1,104 @@
-<a id="readme-top"></a>
+# 🐱 NyanOS64
 
-<!-- PROJECT SHIELDS -->
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![MIT License][license-shield]][license-url]
+![C](https://img.shields.io/badge/c-%2300599C.svg?style=for-the-badge&logo=c&logoColor=white)
+![Assembly](https://img.shields.io/badge/assembly-%231572B6.svg?style=for-the-badge&logo=assembly&logoColor=white)
+![QEMU](https://img.shields.io/badge/QEMU-%23FF6600.svg?style=for-the-badge&logo=qemu&logoColor=white)
 
+NyanOS64 is my hobby OS built from the very scratch (well except for the bootloader which is Limine). It's a 64-bit OS with preemptive multitasking feature, including a custom window manager, a virtual file system, and a suite of userland applications.
 
-<!-- PROJECT LOGO -->
-<br />
-<div align="center">
-  <h3 align="center">NyanOS</h3>
-  <p align="center">
-    A 64-bit hobby operating system for the x86-64 architecture, built for learning and experimentation.
-    <br />
-    <br />
-    <a href="https://github.com/NyanPham/NyanOS64/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
-    ·
-    <a href="https://github.com/NyanPham/NyanOS64/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
-  </p>
-</div>
+This project has filled my last 6 months with pressure, stress, uncertainty, yet curiosity and joy in systems programming.
 
+## 📸 Showcase
 
-<!-- TABLE OF CONTENTS -->
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#about-the-project">About The Project</a>
-      <ul>
-        <li><a href="#built-with">Built With</a></li>
-      </ul>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#building-and-running">Building and Running</a></li>
-      </ul>
-    </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
-  </ol>
-</details>
+[![NyanOS64 Demo Workspace](https://img.youtube.com/vi/O8ObfAYi2Xg/maxresdefault.jpg)](https://youtu.be/O8ObfAYi2Xg)
 
+Please click on the image to run the demo.
 
+## ✨ Core Features
 
-<!-- ABOUT THE PROJECT -->
-## About The Project
+NyanOS64 is built from scratch, with some custom-made subsystems (except for the bootloader, which is Limine):
 
-NyanOS is my hobby OS designed from the ground up for the `x86-64` architecture. I use the Limine Bootloader to boot my kernel. The primary goal of this project is to explore and learn the concepts of OSDev.
+- **Kernel & Memory:** 64-bit Long Mode with _Physical/Virtual Memory Manager_.
+- **Process Management:** Loads and runs ELF binaries in Ring 3. They are tasks/processes that are controlled by a _Preemptive Scheduler_.
+- **Inter-Process Communication (IPC):** Supports pipes, shared memory, and message queue.
+- **File System:** A _VFS_ layer for abstract underlying storage. It supports _FAT32 (Read/Write)_ and _TAR archives (READ)_.
+- **Graphics & GUI:** A _Window Manager_ with double-buffered rendering to avoid flickering, plus movable and resizable windows.
+- **Userland Apps:** Includes `NyanShell` as a terminal, `Nyamo` for text editing (with soft-wrap), and a native `Snake` game.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+## 🏗️ Architecture Highlight
 
-### Built With
+NyanOS64 demonstrates solutions to some of the most complex aspects of system architecture. What are they?
 
-This project is built with:
+- **Higher Half Kernel:** The OS follows a design of higher half architecture. That means the kernel is mapped to the upper space of 64-bit virtual address. This helps separate the kernel and user-space apps, thus improving security and stability.
 
-* C
-* x86-64 Assembly (NASM)
-* GNU Make
-* Limine Bootloader
-* QEMU
+- **GDT, IDT, and Interrupt Handling:** Shipped with native Global Descriptor Table (GDT) and Interrupt Descriptor Table (IDT), both are built from scratch. Thanks to them, the OS can safely transition into Long Mode from the Limine boot phase. Hardware interrupts (IRQs) and CPU exceptions (#PF is what I struggled the most :/) are caught and handled effectively. That's how in/out events are routed to event queue.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+- **Memory Management Unit (MMU):**
+  - **PMM & VMM:** Implements x86_64 4-level paging to manage physical frames, map them to virtual memory for user-space tasks to use safely. The `sbrk` is also supported.
+  - **Custom Heap Allocator:** Implements `kmalloc` and `kfree` with block splitting and contiguous free-block coalescing to avoid memory fragmentation.
 
+- **Preemptive Task Scheduler:**
+  Hardware timer interrupts are utilized to help scheduler to perform context switching from a task/process to another. The function saves, restores CPU registers (FPU included), then jumps between Ring 0 (Kernel) and Ring 3 (User-space).
 
-<!-- GETTING STARTED -->
-## Getting Started
+## 🚀 Build & Run
 
-To get a local copy up and running, follow these simple steps.
+To build and run NyanOS64 on your machine, you will need a Linux environment with the following dependencies installed:
 
 ### Prerequisites
 
-Ensure you have the following tools installed on your system.
-* `make`
-* `qemu` (for running the OS)
-* `nasm` (for assembling assembly files)
-* An `x86_64-elf` cross-compiler (GCC or Clang)
+- `make` and `gcc`
+- `nasm`
+- `xorriso`, `mtools`, and `dosfstools`
+- `qemu-system-x86_64`
 
-### Building and Running
+### Build and Run
 
-1. Clone the repo
-   ```sh
-   git clone https://github.com/NyanPham/NyanOS64.git
-   cd NyanOS64
-   ```
-2. Run the OS
-   ```sh
-   make run
-   ```
-   This command will compile the kernel and shell, create a bootable disk image, and launch it in QEMU.
+1. Clone the repository:
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+```bash
+git clone https://github.com/NyanPham/NyanOS64.git
+cd NyanOS64
+```
 
+2. Generate the FAT32 hard drive image:
 
-<!-- USAGE EXAMPLES -->
-## Usage
+```bash
+./reset_disk.sh
+```
 
-Once NyanOS has booted, you will be greeted by the `NyanOS>` prompt. You can interact with the shell using the following commands:
-* `hi` - Prints a friendly greeting.
-* `clear` - Clears the terminal screen.
-* `reboot` - Reboots the virtual machine.
+3. Boot the OS in QEMU:
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+```bash
+make run
+```
 
+4. To clean the build files:
 
-<!-- ROADMAP -->
-## Roadmap
+```bash
+make clean
+```
 
-- [x] Implement a complete physical and virtual memory manager.
-- [x] Set up an IDT and handle CPU exceptions and interrupts.
-- [x] Build a simple shell as a user-space program.
-- [ ] Expand the syscall interface.
-- [ ] Implement a simple filesystem.
+## 📂 Project Structure & File System
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+In NyanOS64, system resources and user data are separated.
 
-<!-- LICENSE -->
-## License
+Virtual File System (VFS):
 
-Distributed under the MIT License. See `LICENSE` for more information.
+- /bin/ and /assets/: System files and native `exe` files loaded into RAM at boot (Tar, rootfs). Hightlights are terminal, snake game, and view_bmp.
+- /data/: Mounted from `hdd.img` to support FAT32 for persistent data manipulation. Except `test.txt` and `test2.txt` as they are overwritten by the Kernel after boot.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+Source code layout:
 
+- `src/` - The source code of the core Kernel, such as `mem`, `sched`, and `arch`.
+- `src/libc/` - Custom implementation for the C libary.
+- `progs/` - User-space apps (`nyamo.c`, `terminal.c`, `shell.c`, etc.).
+- `GNUmakefile` - The system to build, clean the compiled files.
 
-<!-- CONTACT -->
-## Contact
+## 🙏 Acknowledgments
 
-NyanPham - (contact details)
+This project journey would not have been possible without free, community-based resources online:
 
-Project Link: https://github.com/NyanPham/NyanOS64
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-<!-- ACKNOWLEDGMENTS -->
-## Acknowledgments
-
-* OSDev Wiki
-* Limine Bootloader
-* Best-README-Template
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-<!-- MARKDOWN LINKS & IMAGES -->
-[contributors-shield]: https://img.shields.io/github/contributors/NyanPham/NyanOS64.svg?style=for-the-badge
-[contributors-url]: https://github.com/NyanPham/NyanOS64/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/NyanPham/NyanOS64.svg?style=for-the-badge
-[forks-url]: https://github.com/NyanPham/NyanOS64/network/members
-[stars-shield]: https://img.shields.io/github/stars/NyanPham/NyanOS64.svg?style=for-the-badge
-[stars-url]: https://github.com/NyanPham/NyanOS64/stargazers
-[issues-shield]: https://img.shields.io/github/issues/NyanPham/NyanOS64.svg?style=for-the-badge
-[issues-url]: https://github.com/NyanPham/NyanOS64/issues
-[license-shield]: https://img.shields.io/github/license/NyanPham/NyanOS64.svg?style=for-the-badge
-[license-url]: https://github.com/NyanPham/NyanOS64/blob/master/LICENSE
+- [Operating Systems: From 0 to 1](https://github.com/tuhdo/os01) - My proud ignitor for this project.
+- [OSDev Wiki](https://wiki.osdev.org/) - The bible, the source of truth of OSDev :3.
+- [Limine Bootloader](https://github.com/limine-bootloader/limine) - For handling the complex 64-bit boot process.
+- [DreamportDev - Osdev Notes](https://github.com/dreamportdev/Osdev-Notes) - Friendly notes to explain complex concepts in OSDev, structured as book, and is much less academic than OSDev wiki.
