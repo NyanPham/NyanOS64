@@ -71,7 +71,4 @@ Task *task_factory_create(uint64_t entry, uint64_t rsp);
 Task *task_factory_fork(Task *parent);
 void sched_check_sleeping_tasks(void);
 
-static void inline sched_clean_gui(Task *tsk);
-static void inline sched_clean_fds(Task *tsk);
-
 #endif

@@ -104,12 +104,21 @@ void term_put_char(char c)
 // ANSI DRIVER
 // =========================================================
 
-static void drv_put_char(void *data, char c) { term_put_char(c); }
+static void drv_put_char(void *data, char c)
+{
+    (void)data;
+    term_put_char(c);
+}
 
-static void drv_set_color(void *data, uint32_t color) { curr_fg = color; }
+static void drv_set_color(void *data, uint32_t color)
+{
+    (void)data;
+    curr_fg = color;
+}
 
 static void drv_set_cursor(void *data, int c, int r)
 {
+    (void)data;
     cur_col = c;
     cur_row = r;
 
@@ -126,6 +135,7 @@ static void drv_set_cursor(void *data, int c, int r)
 
 static void drv_clear_screen(void *data, int mode)
 {
+    (void)data;
     if (mode == 2)
     {
         for (int i = 0; i < n_rows * n_cols; i += 1)

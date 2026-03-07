@@ -130,11 +130,13 @@ void video_init_buf()
 {
     for (size_t i = 0; i < 75; i++)
     {
-        void *page_virt_hhdm = pmm_alloc_frame();
-        if (page_virt_hhdm == NULL)
+        uint64_t page_addr = pmm_alloc_frame();
+        if (page_addr == 0)
         {
             return;
         }
+
+        void *page_virt_hhdm = vmm_phys_to_hhdm(page_addr);
         memset_sse(page_virt_hhdm, 0, PAGE_SIZE);
 
         uint64_t phys_addr = (uint64_t)page_virt_hhdm - hhdm_offset;
@@ -255,32 +257,25 @@ void video_add_dirty_rect(int64_t x, int64_t y, int64_t w, int64_t h)
         }
     }
 
-    if (x + w >= g_fb_width)
+    if (x + w >= (int64_t)g_fb_width)
     {
         w = g_fb_width - x;
     }
 
-    if (y + h >= g_fb_height)
+    if (y + h >= (int64_t)g_fb_height)
     {
-        h = g_fb_height - y;
+        h = (int64_t)g_fb_height - y;
     }
 
     for (uint32_t i = 0; i < g_rect_count; i++)
     {
         Rect *r = &g_rect_list[i];
         if (x >= r->x && y > r->y &&
-            (x + w) <= (r->x + r->w) &&
-            (y + h) <= (r->y + r->h))
+            (x + w) <= (r->x + (int64_t)r->w) &&
+            (y + h) <= (r->y + (int64_t)r->h))
         {
             return;
         }
-
-        // if (r->x >= x && r->y >= y &&
-        //     (r->x + r->w) <= (x + w) &&
-        //     (r->y + r->h) <= (y + h))
-        // {
-        //     return;
-        // }
     }
 
     // record the rect as dirty list
@@ -301,6 +296,7 @@ static void video_putc_internal(char c)
 
 void video_write(const char *str, uint32_t color)
 {
+    (void)color;
     while (*str)
     {
         video_putc_internal(*str);
@@ -406,7 +402,6 @@ void video_swap()
 
     if (g_force_full_refresh)
     {
-        uint64_t row_size = g_fb_width * sizeof(uint32_t);
         memcpy_sse(g_fb_ptr, g_back_buf, g_fb_height * g_pitch32 * sizeof(uint32_t));
         g_force_full_refresh = 0;
         g_rect_count = 0;

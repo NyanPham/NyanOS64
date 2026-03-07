@@ -135,8 +135,8 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
 
             if (parent_node->ops && parent_node->ops->create)
             {
-                int res = parent_node->ops->create(parent_node, child_name, mode);
-                if (res == 0)
+                vfs_node_t *created = parent_node->ops->create(parent_node, child_name, mode);
+                if (created == NULL)
                 {
                     node = vfs_navigate(filename);
                 }
@@ -257,7 +257,7 @@ void vfs_seek(file_handle_t *file, uint64_t new_offset)
 vfs_node_t *vfs_navigate(const char *path)
 {
     vfs_node_t *best_mount_root = NULL;
-    const char *best_mount_path = "";
+    // const char *best_mount_path = "";
     int best_match_len = -1;
 
     /*
@@ -282,7 +282,7 @@ vfs_node_t *vfs_navigate(const char *path)
                 {
                     best_match_len = mount_len;
                     best_mount_root = g_mounts[i].root;
-                    best_mount_path = g_mounts[i].path;
+                    // best_mount_path = g_mounts[i].path;
                 }
             }
         }
@@ -390,4 +390,95 @@ int vfs_unlink(const char *path)
 
     kfree(node);
     return 0;
+}
+
+void resolve_path(const char *cwd, const char *inp_path, char *out_buf)
+{
+    char *tmp = (char *)kmalloc(256);
+
+    // First, let's find the starting point
+    if (inp_path[0] == '/')
+    {
+        // absolute path
+        strcpy(tmp, inp_path);
+    }
+    else
+    {
+        // relative path -> cwd + "/" + inp_path
+        strcpy(tmp, cwd);
+        int len = strlen(tmp);
+        if (len > 1 && tmp[len - 1] != '/')
+        {
+            strcat(tmp, "/");
+        }
+        strcat(tmp, inp_path);
+    }
+
+    // Second, handle the Stack logic with `..` and `.`
+    char (*stack)[32] = (char (*)[32])kmalloc(32 * 32);
+    if (stack == NULL)
+    {
+        kfree(tmp);
+        return;
+    }
+    int top = 0;
+    int i = 0;
+
+    if (tmp[0] == '/')
+    {
+        i = 1;
+    }
+
+    char name_buf[32];
+    int n_idx = 0;
+
+    while (1)
+    {
+        char c = tmp[i];
+
+        if (c == '/' || c == 0)
+        {
+            name_buf[n_idx] = 0;
+            if (n_idx > 0)
+            {
+                if (strcmp(name_buf, "..") == 0)
+                {
+                    if (top > 0)
+                        top--;
+                }
+                else if (strcmp(name_buf, ".") == 0)
+                {
+                    // ignore
+                }
+                else
+                {
+                    strcpy(stack[top++], name_buf);
+                }
+            }
+            n_idx = 0;
+            if (c == 0)
+            {
+                break;
+            }
+        }
+        else
+        {
+            name_buf[n_idx++] = c;
+        }
+        i++;
+    }
+
+    // Last, rebuild the stack path
+    strcpy(out_buf, "/");
+    for (int k = 0; k < top; k++)
+    {
+        if (k > 0)
+        {
+            strcat(out_buf, "/");
+        }
+        strcat(out_buf, stack[k]);
+    }
+
+    kfree(tmp);
+    kfree(stack);
 }

@@ -16,12 +16,17 @@ static inline void hlt(void)
     asm volatile("hlt");
 }
 
-static void hcf(void)
+static inline void hcf(void)
 {
     for (;;)
     {
         hlt();
     }
+}
+
+static inline void pause(void)
+{
+    asm volatile("pause");
 }
 
 static inline uint64_t get_rflags(void)

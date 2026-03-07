@@ -28,5 +28,7 @@ typedef struct tar_header_t
 void tar_list(char *list, uint64_t max_len);
 char *tar_read_file(const char *fname);
 void tar_init(void *tar_addr);
+bool tar_validate(tar_header_t *header);
+uint64_t oct2bin(const char *str, int size);
 
 #endif

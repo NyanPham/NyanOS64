@@ -1,11 +1,13 @@
 #include "mq.h"
 #include "mem/kmalloc.h"
 #include "../string.h"
+#include "drivers/serial.h"
 
 static MessageQueue_t *g_mq_root = NULL;
 
 MessageQueue_t *mq_open(const char *name, int flags)
 {
+    (void)flags;
     MessageQueue_t *curr = g_mq_root;
     while (curr != NULL)
     {

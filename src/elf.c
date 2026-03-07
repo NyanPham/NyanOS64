@@ -25,7 +25,7 @@ uint64_t elf_load(const char *fname)
         return 0;
     }
 
-    vfs_read(file, sizeof(Elf64_Ehdr), &elf_hdr);
+    vfs_read(file, sizeof(Elf64_Ehdr), (uint8_t *)&elf_hdr);
 
     if (elf_hdr.e_ident[0] != ELF_MAGIC0 ||
         elf_hdr.e_ident[1] != ELF_MAGIC1 ||
@@ -42,7 +42,7 @@ uint64_t elf_load(const char *fname)
     uint16_t phdrs_size = elf_hdr.e_phnum * elf_hdr.e_phentsize;
     Elf64_Phdr *phdr = (Elf64_Phdr *)vmm_alloc(phdrs_size);
     vfs_seek(file, elf_hdr.e_phoff);
-    vfs_read(file, phdrs_size, phdr);
+    vfs_read(file, phdrs_size, (uint8_t *)phdr);
 
     for (uint16_t i = 0; i < elf_hdr.e_phnum; i++)
     {
@@ -51,21 +51,21 @@ uint64_t elf_load(const char *fname)
             uint64_t mem_size = phdr[i].p_memsz;
             uint64_t file_size = phdr[i].p_filesz;
             uint64_t vaddr = phdr[i].p_vaddr;
-            uint64_t offset = phdr[i].p_offset;
+            // uint64_t offset = phdr[i].p_offset;
 
             uint64_t npages = (mem_size + PAGE_SIZE - 1) / PAGE_SIZE;
             for (size_t j = 0; j < npages; j++)
             {
-                void *loc_virt_addr = pmm_alloc_frame();
-                if (loc_virt_addr == NULL)
+                uint64_t phys_addr = pmm_alloc_frame();
+                if (phys_addr == 0)
                 {
                     kprint("ELF: Out of memory!\n");
                     return 0;
                 }
 
+                void *loc_virt_addr = (void *)vmm_phys_to_hhdm(phys_addr);
                 memset(loc_virt_addr, 0, PAGE_SIZE);
 
-                uint64_t phys_addr = vmm_hhdm_to_phys(loc_virt_addr);
                 uint64_t targt_addr = vaddr + (j * PAGE_SIZE);
 
                 vmm_map_page(

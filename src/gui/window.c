@@ -37,6 +37,7 @@ static Rect *g_rect_free_list = NULL;
 
 static void init_rect_pool(void);
 Rect *rect_alloc(void);
+void rect_free(Rect *r);
 
 static WinDragCtx drag_ctx =
     {
@@ -44,6 +45,9 @@ static WinDragCtx drag_ctx =
         .off_x = 0,
         .off_y = 0,
 };
+
+static int win_toggle_maximize(Window *win);
+static int win_toggle_minimize(Window *win);
 
 static void win_stain_list(Window *win)
 {
@@ -69,9 +73,9 @@ static void win_draw(Window *win)
     {
         int64_t start_off_x = rect->x - win->x;
         int64_t start_off_y = rect->y - win->y;
-        for (int r = 0; r < rect->h; r++)
+        for (uint64_t r = 0; r < rect->h; r++)
         {
-            uint32_t *row = &win->pixels[(r + start_off_y) * win->width + (start_off_x)];
+            uint32_t *row = (uint32_t *)&win->pixels[(r + start_off_y) * win->width + (start_off_x)];
             int64_t scrn_x = rect->x;
             int64_t scrn_y = r + rect->y;
             video_draw_pixel_line(scrn_x, scrn_y, row, rect->w * sizeof(Pixel));
@@ -90,9 +94,9 @@ static void init_win_pixels(Window *win)
     {
         /* TITLE BAR */
         // init the title bar
-        for (int64_t r = 0; r < WIN_TITLE_BAR_HEIGHT; r++)
+        for (uint64_t r = 0; r < WIN_TITLE_BAR_HEIGHT; r++)
         {
-            for (int64_t c = 0; c < win->width; c++)
+            for (uint64_t c = 0; c < win->width; c++)
             {
                 win->pixels[r * win->width + c].color = Blue;
             }
@@ -100,14 +104,14 @@ static void init_win_pixels(Window *win)
 
         // draw the title
         char *title = win->title;
-        for (int64_t x = 5; (x < win->width - 15 && *title); x += CHAR_W)
+        for (uint64_t x = 5; (x < win->width - 15 && *title); x += CHAR_W)
         {
             // y is always 5
             win_draw_char_at(win, *title, x, 5, White, Blue);
             title++;
         }
 
-        int64_t btn_size = WIN_TITLE_BAR_HEIGHT;
+        int btn_size = WIN_TITLE_BAR_HEIGHT;
 
         // draw the minimize button
         if (win->flags & WIN_MINIMIZABLE)
@@ -119,12 +123,12 @@ static void init_win_pixels(Window *win)
             int right_margin = btn_size - 4;
             int line_y = btn_size - 5;
 
-            for (int64_t r = min_btn_y; r < min_btn_y + btn_size; r++)
+            for (int r = min_btn_y; r < min_btn_y + btn_size; r++)
             {
-                int64_t rel_y = r - min_btn_y;
-                for (int64_t c = min_btn_x; c < min_btn_x + btn_size; c++)
+                int rel_y = r - min_btn_y;
+                for (int c = min_btn_x; c < min_btn_x + btn_size; c++)
                 {
-                    int64_t rel_x = c - min_btn_x;
+                    int rel_x = c - min_btn_x;
                     uint8_t is_line = (rel_y == line_y && rel_x >= left_margin && rel_x < right_margin) ? 1 : 0;
 
                     win->pixels[r * win->width + c].color = is_line ? Black : Yellow;
@@ -184,9 +188,9 @@ static void init_win_pixels(Window *win)
 
     /* CONTENT BACKGROUND */
     int64_t start_r = (win->flags & WIN_BORDERLESS) ? 0 : WIN_TITLE_BAR_HEIGHT;
-    for (int64_t r = start_r; r < win->height; r++)
+    for (uint64_t r = start_r; r < win->height; r++)
     {
-        for (int64_t c = 0; c < win->width; c++)
+        for (uint64_t c = 0; c < win->width; c++)
         {
             win->pixels[r * win->width + c].color = Slate;
         }
@@ -195,12 +199,12 @@ static void init_win_pixels(Window *win)
     /* BORDERS */
     if (!(win->flags & WIN_BORDERLESS))
     {
-        for (int c = 0; c < win->width; c++)
+        for (uint64_t c = 0; c < win->width; c++)
         {
             win->pixels[c].color = White;
             win->pixels[c + (win->width * (win->height - 1))].color = White;
         }
-        for (int r = 0; r < win->height; r++)
+        for (uint64_t r = 0; r < win->height; r++)
         {
             win->pixels[r * win->width].color = White;
             win->pixels[(r * win->width) + win->width - 1].color = White;
@@ -251,7 +255,7 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     win->y = y;
     win->width = width;
     win->height = height;
-    win->title = title;
+    win->title = (char *)title;
     win->flags = flags;
     win->cursor_x = 0;
     win->cursor_y = 0;
@@ -384,9 +388,9 @@ Window *get_win_at(int64_t mx, int64_t my)
     while (curr != NULL)
     {
         if (mx >= curr->x &&
-            mx < curr->x + curr->width &&
+            mx < curr->x + (int64_t)curr->width &&
             my >= curr->y &&
-            my < curr->y + curr->height)
+            my < curr->y + (int64_t)curr->height)
         {
             return curr;
         }
@@ -547,7 +551,7 @@ void win_put_char(Window *win, char c)
         int64_t scrn_x = win->x + WIN_BORDER_SIZE + win->cursor_x;
         // int64_t scrn_y = win->y + WIN_TITLE_BAR_HEIGHT + win->cursor_y;
 
-        if (scrn_x >= win->x + win->width - WIN_BORDER_SIZE)
+        if (scrn_x >= win->x + (int64_t)win->width - WIN_BORDER_SIZE)
         {
             win->cursor_x = 0;
             win->cursor_y += CHAR_H;
@@ -1101,9 +1105,9 @@ void init_desktop()
 {
     g_desktop_win = win_create(0, 0, video_get_width(), video_get_height(), NULL, WIN_BORDERLESS);
 
-    for (int64_t y = 0; y < g_desktop_win->height; y++)
+    for (uint64_t y = 0; y < g_desktop_win->height; y++)
     {
-        for (int64_t x = 0; x < g_desktop_win->width; x++)
+        for (uint64_t x = 0; x < g_desktop_win->width; x++)
         {
             bool is_dark = ((x / 4) + (y / 4)) % 2;
             g_desktop_win->pixels[y * g_desktop_win->width + x].color = is_dark ? Teal : DarkTeal;

@@ -51,3 +51,5 @@ enter_user_mode:
     mov gs, ax
 
     iretq
+
+section .note.GNU-stack noalloc noexec nowrite progbits

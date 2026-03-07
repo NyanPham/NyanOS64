@@ -71,5 +71,6 @@ void vfs_seek(file_handle_t *file, uint64_t new_offset);
 vfs_node_t *vfs_navigate(const char *path);
 int vfs_readdir(vfs_node_t *node, uint32_t index, dirent_t *out);
 int vfs_unlink(const char *path);
+void resolve_path(const char *cwd, const char *inp_path, char *out_buf);
 
 #endif

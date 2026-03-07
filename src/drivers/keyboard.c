@@ -209,7 +209,7 @@ static void send_ansi_sequence(const char *seq)
             .key = c,
         };
 
-        rb_push(&kbd_dev.buf, c);
+        rb_push((RingBuf *)&kbd_dev.buf, c);
         seq++;
         event_queue_push(&g_event_queue, e);
     }
@@ -335,7 +335,7 @@ static void keyboard_handler(void *regs)
                 e.modifiers |= MOD_SHIFT;
             }
 
-            rb_push(&kbd_dev.buf, ascii_char);
+            rb_push((RingBuf *)&kbd_dev.buf, ascii_char);
 
             event_queue_push(&g_event_queue, e);
             // if (kbd_dev.waiting_pid != -1)
@@ -355,7 +355,7 @@ void keyboard_set_waiting(int64_t pid)
 char keyboard_get_char()
 {
     char c;
-    if (rb_pop(&kbd_dev.buf, &c))
+    if (rb_pop((RingBuf *)&kbd_dev.buf, &c))
     {
         return c;
     }
@@ -364,7 +364,7 @@ char keyboard_get_char()
 
 void keyboard_init(void)
 {
-    rb_init(&kbd_dev.buf);
+    rb_init((RingBuf *)&kbd_dev.buf);
     kbd_dev.waiting_pid = -1;
     register_irq_handler(1, keyboard_handler);
     // pic_clear_mask(1);

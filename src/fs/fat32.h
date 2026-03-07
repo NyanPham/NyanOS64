@@ -79,7 +79,7 @@ int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entr
 int fat32_iterate(uint32_t cluster, fat32_entry_cb_t cb, void *ctx);
 uint8_t *fat32_read_file(DirectoryEntry *entry);
 int fat32_readdir(vfs_node_t *node, uint32_t idx, dirent_t *out);
-int fat32_create(vfs_node_t *parent, const char *name, int flags);
+vfs_node_t *fat32_create(vfs_node_t *parent, const char *name, uint32_t flags);
 void fat32_write_fat_entry(uint32_t cluster, uint32_t value);
 int64_t fat32_find_free_cluster(void);
 int fat32_find_free_directory_entry(uint32_t dir_cluster, fat32_location_t *out_loc);

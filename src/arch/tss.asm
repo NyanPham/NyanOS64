@@ -9,3 +9,5 @@ global gdt_load_tss
 gdt_load_tss:
     ltr di
     ret
+
+section .note.GNU-stack noalloc noexec nowrite progbits

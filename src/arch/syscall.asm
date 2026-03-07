@@ -75,3 +75,5 @@ syscall_entry:
 
     pop rsp
     o64 sysret
+
+section .note.GNU-stack noalloc noexec nowrite progbits

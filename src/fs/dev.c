@@ -22,7 +22,8 @@ uint64_t stdout_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t 
     // video_write can print a null-terminated string
     // here, we're never sure if the buf to print is null-terminated as we depend on size
     // we split the buf in chunks of 126 bytes (with null termination), and print the chunk each time
-
+    (void)node;
+    (void)offset;
     char tmp[128];
 
     // prints each chunk of 127 bytes
@@ -44,6 +45,10 @@ uint64_t stdout_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t 
  */
 uint64_t stdout_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
+    (void)node;
+    (void)offset;
+    (void)size;
+    (void)buf;
     return 0;
 }
 
@@ -52,6 +57,9 @@ uint64_t stdout_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *
  */
 uint64_t stdin_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
+    (void)node;
+    (void)offset;
+
     if (size == 0)
     {
         return 0;
@@ -101,8 +109,12 @@ uint64_t stdin_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *b
 /**
  * @brief Writes nothing
  */
-uint64_t stdin_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buffer)
+uint64_t stdin_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
+    (void)node;
+    (void)offset;
+    (void)size;
+    (void)buf;
     return 0;
 }
 

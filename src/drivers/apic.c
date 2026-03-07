@@ -40,6 +40,7 @@ bool check_apic()
 }
 
 // Read a 32-bit reg from I/O APIC
+[[maybe_unused]]
 static uint32_t ioapic_read(uint32_t reg)
 {
     g_ioapic_base[IOREGSEL_OFFSET] = reg & 0xFF;           // select reg port

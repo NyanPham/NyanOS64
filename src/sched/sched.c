@@ -3,6 +3,7 @@
 #include "mem/vmm.h"
 #include "mem/kmalloc.h"
 #include "arch/gdt.h"
+#include "drivers/timer.h"
 #include "drivers/serial.h"
 #include "cpu.h"
 #include "kern_defs.h"
@@ -10,6 +11,7 @@
 #include "gui/window.h"
 #include "include/signal.h"
 #include "utils/asm_instrs.h"
+#include "../string.h"
 
 #include <stddef.h>
 
@@ -29,6 +31,9 @@ extern uint64_t kern_stk_ptr;
 
 extern void switch_to_task(uint64_t *prev_rsp_ptr, uint64_t next_rsp, uint8_t *prev_fpu, uint8_t *next_fpu);
 extern void task_start_stub(void);
+
+inline static void sched_clean_gui(Task *tsk);
+inline static void sched_clean_fds(Task *tsk);
 
 static uint8_t *get_aligned_fpu_region(Task *tsk)
 {
@@ -119,8 +124,13 @@ void task_context_setup(Task *tsk, uint64_t entry, uint64_t rsp)
 
     // alloc a page for within the Kernel Stack
     // Note: kern_stk is virt hhdm addr.
-    void *kern_stk = pmm_alloc_frame();
-    uint64_t *sp = (uint64_t *)((uint8_t *)kern_stk + PAGE_SIZE);
+    uint64_t kern_stk = pmm_alloc_frame();
+    if (kern_stk == 0)
+    {
+        return;
+    }
+
+    uint64_t *sp = (uint64_t *)((uint8_t *)vmm_phys_to_hhdm(kern_stk) + PAGE_SIZE);
     tsk->kern_stk_top = (uint64_t)sp;
 
     // now make a fake scene from scratch for the new task
@@ -185,7 +195,7 @@ void sched_destroy_task(Task *tsk)
 {
     if (tsk->kern_stk_top != 0)
     {
-        pmm_free_frame((void *)(tsk->kern_stk_top - PAGE_SIZE));
+        pmm_free_frame(vmm_hhdm_to_phys((void *)(tsk->kern_stk_top - PAGE_SIZE)));
     }
 
     vmm_ret_pml4(tsk->pml4);
@@ -245,13 +255,13 @@ void sched_init(void)
         kern_tsk->fd_tbl[i] = NULL;
     }
 
-    void *stk_phys = pmm_alloc_frame();
-    if (stk_phys == NULL)
+    uint64_t stk_phys = pmm_alloc_frame();
+    if (stk_phys == 0)
     {
         kprint("PANIC: Kernel Task Stack OOM\n");
         hcf();
     }
-    kern_tsk->kern_stk_top = (uint64_t)stk_phys + PAGE_SIZE;
+    kern_tsk->kern_stk_top = (uint64_t)vmm_phys_to_hhdm(stk_phys) + PAGE_SIZE;
     kern_tsk->kern_stk_rsp = 0;
 
     // uint64_t* sp = (uint64_t*)kern_tsk->kern_stk_top;
@@ -585,13 +595,13 @@ Task *task_factory_fork(Task *parent_tsk)
     child_tsk->pml4 = new_pml4;
 
     // alloc kernel stack for the child
-    void *kern_stk = pmm_alloc_frame();
-    if (kern_stk == NULL)
+    uint64_t kern_stk = pmm_alloc_frame();
+    if (kern_stk == 0)
     {
         kfree(child_tsk);
         return NULL;
     }
-    child_tsk->kern_stk_top = (uint64_t)kern_stk + PAGE_SIZE;
+    child_tsk->kern_stk_top = (uint64_t)vmm_phys_to_hhdm(kern_stk) + PAGE_SIZE;
 
     // copy environment
     memcpy(child_tsk->fd_tbl, parent_tsk->fd_tbl, MAX_OPEN_FILES * sizeof(file_handle_t *));
@@ -662,7 +672,7 @@ Task *task_factory_fork(Task *parent_tsk)
     return child_tsk;
 }
 
-static void inline sched_clean_gui(Task *tsk)
+inline static void sched_clean_gui(Task *tsk)
 {
     if (tsk->win != NULL)
     {
@@ -674,7 +684,7 @@ static void inline sched_clean_gui(Task *tsk)
     }
 }
 
-static void inline sched_clean_fds(Task *tsk)
+inline static void sched_clean_fds(Task *tsk)
 {
     for (int i = 0; i < MAX_OPEN_FILES; i++)
     {

@@ -7,6 +7,7 @@
 #include "kern_defs.h"
 #include "utils/asm_instrs.h"
 #include "sched/sched.h"
+#include "drivers/serial.h"
 
 #include <stddef.h>
 
@@ -38,13 +39,13 @@ static void get_vm_ctx(VmFreeRegion ***free_head_ptr, VmAllocatedList ***alloc_h
 
 uint64_t vmm_new_pml4()
 {
-    void *pml4_virt = pmm_alloc_frame();
-    if (pml4_virt == NULL)
+    uint64_t pml4_phys = pmm_alloc_frame();
+    if (pml4_phys == 0)
     {
-        return NULL;
+        return 0;
     }
 
-    uint64_t pml4_phys = vmm_hhdm_to_phys(pml4_virt);
+    void *pml4_virt = vmm_phys_to_hhdm(pml4_phys);
     memset(pml4_virt, 0, PAGE_SIZE);
     memcpy(
         &((uint64_t *)pml4_virt)[256],
@@ -56,8 +57,7 @@ uint64_t vmm_new_pml4()
 
 void vmm_ret_pml4(uint64_t pml4_phys)
 {
-    void *pml4_virt = vmm_phys_to_hhdm(pml4_phys);
-    pmm_free_frame(pml4_virt);
+    pmm_free_frame(pml4_phys);
 }
 
 void vmm_free_table(uint64_t *table, int level)
@@ -70,11 +70,12 @@ void vmm_free_table(uint64_t *table, int level)
             continue;
         }
 
+        uint64_t phys_addr = pte_get_addr(entry);
         uint64_t *virt_addr = vmm_phys_to_hhdm(pte_get_addr(entry));
 
         if (level == 1)
         {
-            pmm_free_frame(virt_addr);
+            pmm_free_frame(phys_addr);
         }
         else if (level == 4 && i > 255)
         {
@@ -85,7 +86,7 @@ void vmm_free_table(uint64_t *table, int level)
             vmm_free_table(virt_addr, level - 1);
         }
     }
-    pmm_free_frame(table);
+    pmm_free_frame(vmm_hhdm_to_phys(table));
 }
 
 uint64_t pte_set_addr(uint64_t page_tab_entry, uint64_t phys_addr)
@@ -127,18 +128,16 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, uint8_
             - update the entry in PML4
             */
 
-            void *new_tab_phys = pmm_alloc_frame();
-            if (new_tab_phys == NULL)
+            uint64_t new_tab_phys = pmm_alloc_frame();
+            if (new_tab_phys == 0)
             {
                 return NULL;
             }
 
-            pdpt_virt = (uint64_t *)((uintptr_t)new_tab_phys); // Note that our pmm already converts the addr to virt addr
+            pdpt_virt = (void *)vmm_phys_to_hhdm(new_tab_phys); // Note that our pmm already converts the addr to virt addr
             memset(pdpt_virt, 0, PAGE_SIZE);
 
-            uint64_t new_phys_addr = vmm_hhdm_to_phys(new_tab_phys);
-            uint64_t _flags = VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER;
-            pml4_virt[pml4_idx] = pte_set_addr(0, new_phys_addr) | _flags;
+            pml4_virt[pml4_idx] = pte_set_addr(0, new_tab_phys) | VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER;
         }
         else
         {
@@ -158,17 +157,14 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, uint8_
     {
         if (create_if_missing)
         {
-            void *new_tab_phys = pmm_alloc_frame();
-            if (new_tab_phys == NULL)
+            uint64_t new_phys_addr = pmm_alloc_frame();
+            if (new_phys_addr == 0)
             {
                 return NULL;
             }
-            pd_virt = (uint64_t *)((uintptr_t)new_tab_phys);
+            pd_virt = (uint64_t *)vmm_phys_to_hhdm(new_phys_addr);
             memset(pd_virt, 0, PAGE_SIZE);
-
-            uint64_t new_phys_addr = vmm_hhdm_to_phys(new_tab_phys);
-            uint64_t _flags = VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER;
-            pdpt_virt[pdpt_idx] = pte_set_addr(0, new_phys_addr) | _flags;
+            pdpt_virt[pdpt_idx] = pte_set_addr(0, new_phys_addr) | VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER;
         }
         else
         {
@@ -187,17 +183,15 @@ static uint64_t *vmm_walk_to_pte(uint64_t *pml4_virt, uint64_t virt_addr, uint8_
     {
         if (create_if_missing)
         {
-            void *new_tab_phys = pmm_alloc_frame();
-            if (new_tab_phys == NULL)
+            uint64_t new_phys_addr = pmm_alloc_frame();
+            if (new_phys_addr == 0)
             {
                 return NULL;
             }
-            pt_virt = (uint64_t *)((uintptr_t)new_tab_phys);
-            memset(pt_virt, 0, PAGE_SIZE);
 
-            uint64_t new_phys_addr = vmm_hhdm_to_phys(new_tab_phys);
-            uint64_t _flags = VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER;
-            pd_virt[pd_idx] = pte_set_addr(0, new_phys_addr) | _flags;
+            pt_virt = (uint64_t *)vmm_phys_to_hhdm(new_phys_addr);
+            memset(pt_virt, 0, PAGE_SIZE);
+            pd_virt[pd_idx] = pte_set_addr(0, new_phys_addr) | VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER;
         }
         else
         {
@@ -233,7 +227,18 @@ void vmm_map_page(uint64_t *pml4_virt, uint64_t virt_addr, uint64_t phys_addr, u
         return;
     }
 
-    *pte = pte_set_addr(0, phys_addr) | flags;
+    if (*pte & VMM_FLAG_PRESENT)
+    {
+        uint64_t old_phys = pte_get_addr(*pte);
+        if (old_phys != phys_addr)
+        {
+            pmm_dec_ref(old_phys);
+
+            __asm__ volatile("invlpg (%0)" ::"r"(virt_addr) : "memory");
+        }
+    }
+
+    *pte = pte_set_addr(0, phys_addr) | flags | VMM_FLAG_PRESENT;
 
     __asm__ volatile("invlpg (%0)" ::"r"(virt_addr) : "memory");
 }
@@ -317,8 +322,8 @@ void *vmm_alloc(size_t size)
 
     for (i = 0; i < npages; i++)
     {
-        void *phys_hhdm_addr = pmm_alloc_frame();
-        if (phys_hhdm_addr == NULL)
+        uint64_t phys_addr = pmm_alloc_frame();
+        if (phys_addr == 0)
         {
             break;
         }
@@ -326,7 +331,7 @@ void *vmm_alloc(size_t size)
         vmm_map_page(
             pml4,
             virt_start_addr + i * PAGE_SIZE,
-            vmm_hhdm_to_phys(phys_hhdm_addr),
+            phys_addr,
             VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
     }
 
@@ -339,7 +344,7 @@ void *vmm_alloc(size_t size)
             uint64_t virt_addr = virt_start_addr + j * PAGE_SIZE;
             uint64_t phys_addr = vmm_virt2phys(pml4, virt_addr);
             vmm_unmap_page(pml4, virt_addr);
-            pmm_free_frame(vmm_phys_to_hhdm(phys_addr));
+            pmm_free_frame(phys_addr);
         }
 
         vmm_add_free_region(free_head, virt_start_addr, aligned_size);
@@ -355,7 +360,7 @@ void *vmm_alloc(size_t size)
             uint64_t virt_addr = virt_start_addr + i * PAGE_SIZE;
             uint64_t phys_addr = vmm_virt2phys(pml4, virt_addr);
             vmm_unmap_page(pml4, virt_addr);
-            pmm_free_frame(vmm_phys_to_hhdm(phys_addr));
+            pmm_free_frame(phys_addr);
         }
 
         vmm_add_free_region(free_head, virt_start_addr, aligned_size);
@@ -481,7 +486,7 @@ void vmm_free(void *ptr)
         {
             if (!(curr_node->flags & VMM_FLAG_SHM))
             {
-                pmm_free_frame(vmm_phys_to_hhdm(phys_addr));
+                pmm_free_frame(phys_addr);
             }
             vmm_unmap_page(pml4, virt_addr);
         }
@@ -593,7 +598,7 @@ VmAllocatedList *vmm_pop_allocated_mem(VmAllocatedList **head_ref, uint64_t addr
 
 VmAllocatedList *vmm_find_allocated_mem(VmAllocatedList **head_ref, uint64_t addr)
 {
-    VmAllocatedList *curr_node = head_ref;
+    VmAllocatedList *curr_node = (VmAllocatedList *)head_ref;
     while (curr_node != NULL)
     {
         if (curr_node->addr == addr)
@@ -608,9 +613,14 @@ VmAllocatedList *vmm_find_allocated_mem(VmAllocatedList **head_ref, uint64_t add
 
 uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
 {
-    uint64_t *child_tbl_virt = (uint64_t *)pmm_alloc_frame();
+    uint64_t child_tbl_phys = pmm_alloc_frame();
+    if (child_tbl_phys == 0)
+    {
+        return 0;
+    }
+
+    uint64_t *child_tbl_virt = (uint64_t *)vmm_phys_to_hhdm(child_tbl_phys);
     memset(child_tbl_virt, 0, PAGE_SIZE);
-    uint64_t child_tbl_phys = vmm_hhdm_to_phys(child_tbl_virt);
 
     int limit = level == 4 ? 256 : 512;
 
@@ -651,11 +661,10 @@ uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
             }
 
             uint64_t parent_phys = pte_get_addr(entry);
-            void *parent_virt_hhdm = vmm_phys_to_hhdm(parent_phys);
 
             parent_tbl_virt[i] &= ~VMM_FLAG_WRITABLE;
             child_tbl_virt[i] = parent_tbl_virt[i];
-            pmm_inc_ref(parent_virt_hhdm);
+            pmm_inc_ref(parent_phys);
         }
     }
 
@@ -684,13 +693,12 @@ void *vmm_alloc_global(size_t size)
 
     for (i = 0; i < npages; i++)
     {
-        void *phys_hhdm_addr = pmm_alloc_frame();
-        if (phys_hhdm_addr == NULL)
+        uint64_t phys_addr = pmm_alloc_frame();
+        if (phys_addr == 0)
         {
             break;
         }
 
-        uint64_t phys_addr = vmm_hhdm_to_phys(phys_hhdm_addr);
         uint64_t virt_addr = virt_start_addr + i * PAGE_SIZE;
 
         vmm_map_page(
@@ -718,7 +726,7 @@ void *vmm_alloc_global(size_t size)
             uint64_t virt_addr = virt_start_addr + j * PAGE_SIZE;
             uint64_t phys_addr = vmm_virt2phys(kern_pml4, virt_addr);
             vmm_unmap_page(kern_pml4, virt_addr);
-            pmm_free_frame(vmm_phys_to_hhdm(phys_addr));
+            pmm_free_frame(phys_addr);
         }
 
         vmm_add_free_region(free_head, virt_start_addr, aligned_size);
@@ -803,8 +811,9 @@ int vmm_handle_cow(uint64_t fault_addr)
         return -1;
     }
 
-    uint64_t *virt_addr = vmm_phys_to_hhdm(pte_get_addr(*pte));
-    uint32_t ref_count = pmm_get_ref_count(virt_addr);
+    uint64_t old_phys = pte_get_addr(*pte);
+    uint64_t *virt_addr = vmm_phys_to_hhdm(old_phys);
+    uint32_t ref_count = pmm_get_ref_count(old_phys);
 
     if (ref_count == 1)
     {
@@ -812,11 +821,18 @@ int vmm_handle_cow(uint64_t fault_addr)
     }
     else if (ref_count > 1)
     {
-        void *hhdm_addr = pmm_alloc_frame();
-        memcpy(hhdm_addr, virt_addr, PAGE_SIZE);
+        uint64_t phys_addr = pmm_alloc_frame();
+
+        if (phys_addr == 0)
+        {
+            return -1;
+        }
+
+        void *hhdm_addr = (void *)vmm_phys_to_hhdm(phys_addr);
+        memcpy(hhdm_addr, (void *)virt_addr, PAGE_SIZE);
         uint64_t flags = pte_get_flags(*pte) | VMM_FLAG_WRITABLE;
-        *pte = vmm_hhdm_to_phys(hhdm_addr) | (flags & 0xFFF);
-        pmm_free_frame(virt_addr);
+        *pte = phys_addr | (flags & 0xFFF);
+        pmm_dec_ref(old_phys);
     }
 
     asm volatile("invlpg %0" : : "m"(*(char *)fault_addr) : "memory");

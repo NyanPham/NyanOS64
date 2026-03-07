@@ -124,7 +124,7 @@ static uint64_t fat32_read(vfs_node_t *node, uint64_t offset, uint64_t size, uin
     fat32_node_data *node_data = (fat32_node_data *)(node->device_data);
     uint32_t curr_cluster = node_data->first_cluster;
 
-    for (int i = 0; i < offset / g_bytes_per_cluster; i++)
+    for (uint64_t i = 0; i < offset / g_bytes_per_cluster; i++)
     {
         curr_cluster = fat32_read_fat(curr_cluster);
     }
@@ -143,7 +143,7 @@ static uint64_t fat32_read(vfs_node_t *node, uint64_t offset, uint64_t size, uin
     {
         uint64_t copy_size = uint64_min(rem_size, g_bytes_per_cluster - read_offset);
         uint32_t lba = fat32_cluster_to_lba(curr_cluster);
-        ata_read_sectors(tmp_buf, lba, g_bpb.sectors_per_cluster, g_drive_sel);
+        ata_read_sectors((uint16_t *)tmp_buf, lba, g_bpb.sectors_per_cluster, g_drive_sel);
         memcpy(buffer, tmp_buf + read_offset, copy_size);
         buffer += copy_size;
         rem_size -= copy_size;
@@ -270,7 +270,7 @@ static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, ui
 
     uint32_t curr_cluster = node_data->first_cluster;
 
-    for (int i = 0; i < offset / g_bytes_per_cluster; i++)
+    for (uint64_t i = 0; i < offset / g_bytes_per_cluster; i++)
     {
         curr_cluster = fat32_read_fat(curr_cluster);
     }
@@ -290,9 +290,9 @@ static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, ui
     {
         uint64_t copy_size = uint64_min(rem_size, g_bytes_per_cluster - read_offset);
         uint32_t lba = fat32_cluster_to_lba(curr_cluster);
-        ata_read_sectors(tmp_buf, lba, g_bpb.sectors_per_cluster, g_drive_sel);
+        ata_read_sectors((uint16_t *)tmp_buf, lba, g_bpb.sectors_per_cluster, g_drive_sel);
         memcpy(tmp_buf + read_offset, buffer, copy_size);
-        ata_write_sectors(tmp_buf, lba, g_bpb.sectors_per_cluster, g_drive_sel);
+        ata_write_sectors((uint16_t *)tmp_buf, lba, g_bpb.sectors_per_cluster, g_drive_sel);
         buffer += copy_size;
         rem_size -= copy_size;
         read_offset = 0;
@@ -448,8 +448,8 @@ int fat32_parse_name(const char *fname, char *out_name, char *out_ext)
     memset(out_ext, ' ', 3);
 
     uint8_t is_ext = 0;
-    int i = 0; // index for name
-    int j = 0; // index for ext
+    size_t i = 0; // index for name
+    size_t j = 0; // index for ext
     for (i = 0; i < name_len; i++)
     {
         char c = fname[i];
@@ -583,8 +583,8 @@ int fat32_iterate(uint32_t cluster, fat32_entry_cb_t entry_cb, void *ctx)
             uint32_t curr_lba = root_lba + i;
             ata_read_sectors(tmp_buf, curr_lba, 1, g_drive_sel);
 
-            DirectoryEntry *dir_entries = tmp_buf;
-            for (int j = 0; j < g_bpb.bytes_per_sector / sizeof(DirectoryEntry); j++)
+            DirectoryEntry *dir_entries = (DirectoryEntry *)tmp_buf;
+            for (size_t j = 0; j < g_bpb.bytes_per_sector / sizeof(DirectoryEntry); j++)
             {
                 DirectoryEntry *dir_entry = &dir_entries[j];
                 if (dir_entry->name[0] == '\0')
@@ -634,7 +634,7 @@ uint8_t *fat32_read_file(DirectoryEntry *entry)
     while (curr_cluster < EOC)
     {
         uint32_t lba = fat32_cluster_to_lba(curr_cluster);
-        ata_read_sectors(buf_cur, lba, g_bpb.sectors_per_cluster, g_drive_sel);
+        ata_read_sectors((uint16_t *)buf_cur, lba, g_bpb.sectors_per_cluster, g_drive_sel);
         buf_cur += g_bpb.bytes_per_sector * g_bpb.sectors_per_cluster;
         curr_cluster = fat32_read_fat(curr_cluster);
     }
@@ -735,9 +735,9 @@ int fat32_readdir(vfs_node_t *node, uint32_t idx, dirent_t *out)
  * @param parent Pointer to the parent directory node (vfs_node_t).
  * @param fname  The name of the new file (e.g., "test.txt").
  * @param flags  Creation flags (currently unused).
- * @return int 0 on success, -1 on failure (Disk full, Directory full, or Error).
+ * @return vfs_node_t* NULL (relies on vfs_navigate to find the created node).
  */
-int fat32_create(vfs_node_t *parent, const char *fname, int flags)
+vfs_node_t *fat32_create(vfs_node_t *parent, const char *fname, uint32_t flags)
 {
     char name[8];
     char ext[3];
@@ -747,14 +747,14 @@ int fat32_create(vfs_node_t *parent, const char *fname, int flags)
     if (parent_data == NULL)
     {
         kprint("FAT32_CREATE failed: Parent Data is NULL!\n");
-        return -1;
+        return NULL;
     }
 
     DirectoryEntry exist_entry;
     if (fat32_find_file(parent_data->first_cluster, fname, &exist_entry, NULL) == 0)
     {
         kprint("FAT32_CREATE failed: File already exists!\n");
-        return -1;
+        return NULL;
     }
 
     fat32_parse_name(fname, name, ext);
@@ -762,19 +762,19 @@ int fat32_create(vfs_node_t *parent, const char *fname, int flags)
     if (free_cluster_id < 0)
     {
         kprint("FAT32_CREATE failed: No free cluster id found!\n");
-        return -1;
+        return NULL;
     }
 
     if (fat32_find_free_directory_entry(parent_data->first_cluster, &loc) < 0) // find a free slot in the parent to point to the child's slot
     {
-        return -1;
+        return NULL;
     }
 
     uint8_t *tmp_buf = (uint8_t *)kmalloc(SECTOR_SIZE);
     if (tmp_buf == NULL)
     {
         kprint("FAT32_CREATE: OOM\n");
-        return -1;
+        return NULL;
     }
     memset(tmp_buf, 0, SECTOR_SIZE);
 
@@ -823,7 +823,29 @@ int fat32_create(vfs_node_t *parent, const char *fname, int flags)
     fat32_write_fat_entry(free_cluster_id, EOC);
 
     kfree(tmp_buf);
-    return 0;
+
+    vfs_node_t *new_node = (vfs_node_t *)kmalloc(sizeof(vfs_node_t));
+    if (new_node == NULL)
+    {
+        return NULL;
+    }
+
+    memset(new_node, 0, sizeof(vfs_node_t));
+    strncpy(new_node->name, fname, 127);
+    new_node->flags = flags;
+    new_node->length = 0;
+    new_node->ops = &fat32_ops;
+
+    fat32_node_data *new_data = (fat32_node_data *)kmalloc(sizeof(fat32_node_data));
+    if (new_data == NULL)
+    {
+        kfree(new_node);
+        return NULL;
+    }
+    new_data->first_cluster = free_cluster_id;
+    new_node->device_data = new_data;
+
+    return new_node;
 }
 
 /**
@@ -920,8 +942,8 @@ int fat32_find_free_directory_entry(uint32_t dir_cluster, fat32_location_t *out_
             uint32_t curr_lba = root_lba + i;
             ata_read_sectors(tmp_buf, curr_lba, 1, g_drive_sel);
 
-            DirectoryEntry *dir_entries = tmp_buf;
-            for (int j = 0; j < g_bpb.bytes_per_sector / sizeof(DirectoryEntry); j++)
+            DirectoryEntry *dir_entries = (DirectoryEntry *)tmp_buf;
+            for (size_t j = 0; j < g_bpb.bytes_per_sector / sizeof(DirectoryEntry); j++)
             {
                 DirectoryEntry *dir_entry = &dir_entries[j];
                 uint8_t c = (uint8_t)dir_entry->name[0];

@@ -1,9 +1,12 @@
 #include "pipe.h"
 #include "sched/sched.h"
 #include "utils/asm_instrs.h"
+#include "drivers/serial.h"
 
 uint64_t pipe_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
+    (void)offset;
+
     Pipe *pipe = (Pipe *)node->device_data;
     uint64_t read_count = 0;
 
@@ -68,6 +71,8 @@ uint64_t pipe_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *bu
 
 uint64_t pipe_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buf)
 {
+    (void)offset;
+
     Pipe *pipe = (Pipe *)node->device_data;
     uint64_t write_count = 0;
 
@@ -121,7 +126,7 @@ uint64_t pipe_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *b
     return write_count;
 }
 
-uint64_t pipe_close_reader(vfs_node_t *node)
+void pipe_close_reader(vfs_node_t *node)
 {
     Pipe *pipe = (Pipe *)node->device_data;
 
@@ -136,10 +141,9 @@ uint64_t pipe_close_reader(vfs_node_t *node)
     }
 
     sti();
-    return 0;
 }
 
-uint64_t pipe_close_writer(vfs_node_t *node)
+void pipe_close_writer(vfs_node_t *node)
 {
     Pipe *pipe = (Pipe *)node->device_data;
 
@@ -154,7 +158,6 @@ uint64_t pipe_close_writer(vfs_node_t *node)
     }
 
     sti();
-    return 0;
 }
 
 int pipe_check_ready(struct vfs_node *node)

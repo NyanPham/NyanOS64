@@ -160,9 +160,9 @@ void pmm_init(struct limine_memmap_response *memmap_resp, struct limine_hhdm_res
 
 /**
  * @brief Allocates a single physical memory frame.
- * @return A virtual pointer to the start of the allocated 4KB frame, or NULL if out of memory.
+ * @return A physical address to the start of the allocated 4KB frame, or NULL if out of memory.
  */
-void *pmm_alloc_frame()
+uint64_t pmm_alloc_frame(void)
 {
     // starts scanning from the last known free page, do not start the scanning from the beginning
     for (size_t i = last_free_page; i < total_pages; i++)
@@ -172,7 +172,7 @@ void *pmm_alloc_frame()
             bitmap_set(i);
             ref_counts[i] = 1;
             last_free_page = i + 1;
-            return (void *)vmm_phys_to_hhdm(i * PAGE_SIZE); // convert to a virtual address.
+            return (uint64_t)(i * PAGE_SIZE); // convert to a virtual address.
         }
     }
 
@@ -184,21 +184,21 @@ void *pmm_alloc_frame()
             bitmap_set(i);
             ref_counts[i] = 1;
             last_free_page = i + 1;
-            return (void *)vmm_phys_to_hhdm(i * PAGE_SIZE);
+            return (uint64_t)(i * PAGE_SIZE);
         }
     }
 
-    return NULL; // mem is full
+    return 0; // mem is full
 }
 
 /**
  * @brief Frees a previously allocated physical memory frame.
- * @param frame_addr The virtual address of the frame to free.
+ * @param frame_addr The physical address of the frame to free.
  */
-void pmm_free_frame(void *frame_addr)
+void pmm_free_frame(uint64_t phys_addr)
 {
     // convert back from VM addr to PM addr, and compute the bit index in the bitmap
-    size_t bit = vmm_hhdm_to_phys(frame_addr) / PAGE_SIZE;
+    size_t bit = phys_addr / PAGE_SIZE;
     if (bitmap_test(bit))
     {
         // mark it as free
@@ -218,18 +218,34 @@ void pmm_free_frame(void *frame_addr)
  * @brief Increases the ref_count of a physical frame by 1.
  * Used when a child process is forked and shares memory pages with its parent.
  */
-void pmm_inc_ref(void *frame_addr)
+void pmm_inc_ref(uint64_t frame_addr)
 {
-    size_t idx = vmm_hhdm_to_phys(frame_addr) / PAGE_SIZE;
+    size_t idx = frame_addr / PAGE_SIZE;
     ref_counts[idx] += 1;
+}
+
+/**
+ * @brief Decreases the ref_count of a physical frame by 1.
+ * Used when a child process is forked and shares memory pages with its parent.
+ * If the ref_count reaches 0, free the frame.
+ */
+void pmm_dec_ref(uint64_t frame_addr)
+{
+    size_t idx = frame_addr / PAGE_SIZE;
+    ref_counts[idx] -= 1;
+
+    if (ref_counts[idx] == 0)
+    {
+        pmm_free_frame(frame_addr);
+    }
 }
 
 /**
  * @brief Get ref_count of tasks/processes sharing the same physical frame.
  * Used by the VMM to determine if a shared page needs to be copied (Copy-on-Write).
  */
-uint32_t pmm_get_ref_count(void *frame_addr)
+uint32_t pmm_get_ref_count(uint64_t frame_addr)
 {
-    size_t idx = vmm_hhdm_to_phys(frame_addr) / PAGE_SIZE;
+    size_t idx = frame_addr / PAGE_SIZE;
     return ref_counts[idx];
 }

@@ -11,8 +11,9 @@
 #include "mem/kmalloc.h"
 #include "drivers/serial.h"
 #include "drivers/apic.h"
-#include "drivers/keyboard.h"
 #include "drivers/timer.h"
+#include "drivers/keyboard.h"
+#include "drivers/mouse.h"
 #include "drivers/legacy/pit.h"
 #include "drivers/legacy/pic.h"
 #include "drivers/video.h"
@@ -90,7 +91,7 @@ static inline void spawn_terminal()
         kprint("Loading Terminal...\n");
 
         uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
-        uint64_t phys_usr_stk = vmm_hhdm_to_phys(pmm_alloc_frame());
+        uint64_t phys_usr_stk = pmm_alloc_frame();
 
         vmm_map_page(
             vmm_phys_to_hhdm(term_tsk->pml4),
@@ -209,8 +210,8 @@ void test_fat32(vfs_node_t *fat_root)
     k_ls("/data");
 
     kprint("Creating test2.txt...\n");
-    int res = fat32_create(fat_root, "test2.txt", VFS_FILE);
-    if (res == 0)
+    vfs_node_t *created_0 = fat32_create(fat_root, "test2.txt", VFS_FILE);
+    if (created_0 != NULL)
     {
         kprint("Creation successful! Listing root:\n");
         k_ls("/data");
@@ -262,8 +263,8 @@ void test_fat32(vfs_node_t *fat_root)
     }
 
     kprint("\nCreating directory 'MYDIR'...\n");
-    int res_dir = fat32_create(fat_root, "mydir", VFS_DIRECTORY);
-    if (res_dir == 0)
+    vfs_node_t *created = fat32_create(fat_root, "mydir", VFS_DIRECTORY);
+    if (created != NULL)
     {
         kprint("Folder creation successful!\n");
         k_ls("/data/mydir");
@@ -322,7 +323,7 @@ static inline void spawn_digital_clock()
     if (entry != 0)
     {
         uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
-        uint64_t phys_usr_stk = vmm_hhdm_to_phys(pmm_alloc_frame());
+        uint64_t phys_usr_stk = pmm_alloc_frame();
 
         vmm_map_page(
             vmm_phys_to_hhdm(clock_task->pml4),
@@ -370,7 +371,7 @@ void kmain(void)
     pmm_init(memmap_request.response, hhdm_request.response);
     vmm_init();
 
-    uint64_t tss_kern_stk = (uint64_t)pmm_alloc_frame() + PAGE_SIZE;
+    uint64_t tss_kern_stk = (uint64_t)vmm_phys_to_hhdm(pmm_alloc_frame()) + PAGE_SIZE;
     tss_set_stack(tss_kern_stk);
 
     serial_init();

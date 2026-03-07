@@ -286,6 +286,11 @@ static uint64_t ata_fs_write(vfs_node_t *node, uint64_t offset, uint64_t size, u
 
 static vfs_node_t *ata_fs_create(vfs_node_t *parent, const char *name, uint32_t flags)
 {
+    (void)parent;
+    (void)name;
+    (void)flags;
+    // TODO
+    return NULL;
 }
 
 vfs_fs_ops_t ata_ops = {

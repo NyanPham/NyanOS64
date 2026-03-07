@@ -5,6 +5,7 @@
 #include "stat.h"
 #include "../include/time.h"
 #include "../include/event.h"
+#include "../include/syscall_nums.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -65,6 +66,7 @@ void set_fg(int pid);
 int kill_fg(int shell_pid);
 int await_io(int *fds, int num_fds, int await_gui, int non_block);
 int win_get_size(int *w, int *h);
+int shutdown(void);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);

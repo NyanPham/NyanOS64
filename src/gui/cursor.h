@@ -1,5 +1,5 @@
-#ifndef CURSOR_H
-#define CURSOR_H
+#ifndef CURSOR_H_INC
+#define CURSOR_H_INC
 
 #define CURSOR_W 12
 #define CURSOR_H 18

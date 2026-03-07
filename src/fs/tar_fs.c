@@ -2,6 +2,7 @@
 #include "tar.h"
 #include "mem/kmalloc.h"
 #include "./string.h"
+#include "fs/tar.h"
 #include "drivers/serial.h"
 
 uint64_t tar_vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buffer);
@@ -70,8 +71,8 @@ uint64_t tar_vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t 
 
 vfs_node_t *tar_vfs_finddir(vfs_node_t *node, const char *name)
 {
-    void *tar_addr = node->device_data;
-    tar_header_t *hdr = (tar_header_t *)tar_addr;
+    // void *tar_addr = node->device_data;
+    // tar_header_t *hdr = (tar_header_t *)tar_addr;
 
     // for the root, it's g_tar_root_path
     // for child, it's header->name, the first field

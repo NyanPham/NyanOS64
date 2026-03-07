@@ -82,3 +82,5 @@ DECLARE_IRQ 12
 DECLARE_IRQ 13
 DECLARE_IRQ 14
 DECLARE_IRQ 15
+
+section .note.GNU-stack noalloc noexec nowrite progbits

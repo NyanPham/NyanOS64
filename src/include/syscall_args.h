@@ -14,7 +14,7 @@ typedef struct WinParams
     int64_t y;
     uint64_t width;
     uint64_t height;
-    const char title[WIN_PARAMS_TITLE_SIZE];
+    char title[WIN_PARAMS_TITLE_SIZE];
     uint32_t flags;
 } WinParams_t;
 

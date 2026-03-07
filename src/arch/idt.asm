@@ -109,3 +109,5 @@ isr_stub_table:
     dq isr_stub_%+i
 %assign i i+1
 %endrep
+
+section .note.GNU-stack noalloc noexec nowrite progbits

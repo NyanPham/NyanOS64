@@ -16,7 +16,7 @@
 #define PD_INDEX 0x15
 #define PT_INDEX 0xc
 
-extern struct Task;
+struct Task;
 extern uint64_t hhdm_offset;
 
 typedef struct VmAllocatedList
@@ -155,14 +155,14 @@ void vmm_cleanup_task(struct Task *tsk);
 
 int vmm_handle_cow(uint64_t fault_addr);
 
-static inline uint64_t *vmm_phys_to_hhdm(uint64_t phys_addr)
+static inline void *vmm_phys_to_hhdm(uint64_t phys_addr)
 {
-    return (uint64_t *)(phys_addr + hhdm_offset);
+    return (void *)(phys_addr | hhdm_offset);
 }
 
-static inline uint64_t vmm_hhdm_to_phys(uint64_t *virt_addr)
+static inline uint64_t vmm_hhdm_to_phys(void *virt_addr)
 {
-    return (uint64_t)virt_addr - hhdm_offset;
+    return (uint64_t)virt_addr & (~hhdm_offset);
 }
 
 #endif

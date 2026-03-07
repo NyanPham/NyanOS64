@@ -39,7 +39,7 @@ static inline uint64_t syscall(uint64_t sys_num, uint64_t arg1, uint64_t arg2, u
 
 void exit(int status)
 {
-    syscall(8, (uint64_t)status, 0, 0, 0, 0, 0);
+    syscall(SYS_EXIT, (uint64_t)status, 0, 0, 0, 0, 0);
     while (1)
     {
     };
@@ -48,174 +48,180 @@ void exit(int status)
 void print(const char *str)
 {
     uint64_t len = strlen(str);
-    syscall(1, 1, (uint64_t)str, len, 0, 0, 0);
+    syscall(SYS_WRITE, 1, (uint64_t)str, len, 0, 0, 0);
 }
 
 void kprint(const char *s)
 {
-    syscall(13, (uint64_t)s, 0, 0, 0, 0, 0);
+    syscall(SYS_KPRINT, (uint64_t)s, 0, 0, 0, 0, 0);
 }
 
 void kprint_int(int x)
 {
-    syscall(18, (uint64_t)x, 0, 0, 0, 0, 0);
+    syscall(SYS_KPRINT_INT, (uint64_t)x, 0, 0, 0, 0, 0);
 }
 
 int open(const char *pathname, uint32_t flags)
 {
     // syscall 10: sys_open
-    return (int)syscall(10, (uint64_t)pathname, (uint64_t)flags, 0, 0, 0, 0);
+    return (int)syscall(SYS_OPEN, (uint64_t)pathname, (uint64_t)flags, 0, 0, 0, 0);
 }
 
 int close(int fd)
 {
     // syscall 11: sys_close
-    return (int)syscall(11, (uint64_t)fd, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_CLOSE, (uint64_t)fd, 0, 0, 0, 0, 0);
 }
 
 int read(int fd, void *buf, uint64_t count)
 {
     // syscall 0: sys_read
-    return (int)syscall(0, (uint64_t)fd, (uint64_t)buf, count, 0, 0, 0);
+    return (int)syscall(SYS_READ, (uint64_t)fd, (uint64_t)buf, count, 0, 0, 0);
 }
 
 int write(int fd, const void *buf, uint64_t count)
 {
-    return (int)syscall(1, (uint64_t)fd, (uint64_t)buf, count, 0, 0, 0);
+    return (int)syscall(SYS_WRITE, (uint64_t)fd, (uint64_t)buf, count, 0, 0, 0);
 }
 
 int mkdir(const char *pathname)
 {
-    return (int)syscall(19, (uint64_t)pathname, VFS_DIRECTORY, 0, 0, 0, 0);
+    return (int)syscall(SYS_MKDIR, (uint64_t)pathname, VFS_DIRECTORY, 0, 0, 0, 0);
 }
 
 void reboot(void)
 {
-    syscall(4, 0, 0, 0, 0, 0, 0);
+    syscall(SYS_REBOOT, 0, 0, 0, 0, 0, 0);
 }
 
 int fork(void)
 {
-    return (int)syscall(6, 0, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_FORK, 0, 0, 0, 0, 0, 0);
 }
 
 int getpid(void)
 {
-    return (int)syscall(22, 0, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_GETPID, 0, 0, 0, 0, 0, 0);
 }
 
 int pipe(int pipefd[2])
 {
-    return (int)syscall(20, (uint64_t)pipefd, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_PIPE, (uint64_t)pipefd, 0, 0, 0, 0, 0);
 }
 
 int dup2(int old_fd, int new_fd)
 {
-    return (int)syscall(21, (uint64_t)old_fd, (uint64_t)new_fd, 0, 0, 0, 0);
+    return (int)syscall(SYS_DUP2, (uint64_t)old_fd, (uint64_t)new_fd, 0, 0, 0, 0);
 }
 
 int readdir(int fd, uint32_t idx, dirent_t *out)
 {
-    return (int)syscall(23, (uint64_t)fd, (uint64_t)idx, (uint64_t)out, 0, 0, 0);
+    return (int)syscall(SYS_READDIR, (uint64_t)fd, (uint64_t)idx, (uint64_t)out, 0, 0, 0);
 }
 
 int unlink(const char *pathname)
 {
-    return (int)syscall(24, (uint64_t)pathname, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_UNLINK, (uint64_t)pathname, 0, 0, 0, 0, 0);
 }
 
 int shm_open(const char *name, int flags, int mode)
 {
-    return (int)syscall(25, (uint64_t)name, (uint64_t)flags, (uint64_t)mode, 0, 0, 0);
+    return (int)syscall(SYS_SHM_OPEN, (uint64_t)name, (uint64_t)flags, (uint64_t)mode, 0, 0, 0);
 }
 
 int ftruncate(int fd, uint64_t length)
 {
-    return (int)syscall(26, (uint64_t)fd, (uint64_t)length, 0, 0, 0, 0);
+    return (int)syscall(SYS_FTRUNCATE, (uint64_t)fd, (uint64_t)length, 0, 0, 0, 0);
 }
 
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, int offset)
 {
-    return (void *)syscall(27, (uint64_t)addr, (uint64_t)length, (uint64_t)prot, (uint64_t)flags, (uint64_t)fd, (uint64_t)offset);
+    return (void *)syscall(SYS_MMAP, (uint64_t)addr, (uint64_t)length, (uint64_t)prot, (uint64_t)flags, (uint64_t)fd, (uint64_t)offset);
 }
 
 int munmap(void *addr, size_t length)
 {
-    return (int)syscall(28, (uint64_t)addr, (uint64_t)length, 0, 0, 0, 0);
+    return (int)syscall(SYS_MUNMAP, (uint64_t)addr, (uint64_t)length, 0, 0, 0, 0);
 }
 
 int fstat(int fd, stat_t *statbuf)
 {
-    return (int)syscall(29, (uint64_t)fd, (uint64_t)statbuf, 0, 0, 0, 0);
+    return (int)syscall(SYS_FSTAT, (uint64_t)fd, (uint64_t)statbuf, 0, 0, 0, 0);
 }
 
 mqd_t mq_open(const char *name, int flags)
 {
-    return (mqd_t)syscall(30, (uint64_t)name, (uint64_t)flags, 0, 0, 0, 0);
+    return (mqd_t)syscall(SYS_MQ_OPEN, (uint64_t)name, (uint64_t)flags, 0, 0, 0, 0);
 }
 
 int mq_send(mqd_t mqd, const void *data, size_t size)
 {
-    return (int)syscall(31, (uint64_t)mqd, (uint64_t)data, (uint64_t)size, 0, 0, 0);
+    return (int)syscall(SYS_MQ_SEND, (uint64_t)mqd, (uint64_t)data, (uint64_t)size, 0, 0, 0);
 }
 
 int mq_receive(mqd_t mqd, void *buf, size_t len)
 {
-    return (int)syscall(32, (uint64_t)mqd, (uint64_t)buf, (uint64_t)len, 0, 0, 0);
+    return (int)syscall(SYS_MQ_RECEIVE, (uint64_t)mqd, (uint64_t)buf, (uint64_t)len, 0, 0, 0);
 }
 
 int mq_unlink(const char *name)
 {
-    return (int)syscall(33, (uint64_t)name, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_MQ_UNLINK, (uint64_t)name, 0, 0, 0, 0, 0);
 }
 
 int sys_get_time(Time_t *t)
 {
-    return (int)syscall(34, (uint64_t)t, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_GET_TIME, (uint64_t)t, 0, 0, 0, 0, 0);
 }
 
 int draw_rect(int x, int y, int w, int h, uint32_t color)
 {
-    return (int)syscall(35, (uint64_t)x, (uint64_t)y, (uint64_t)w, (uint64_t)h, (uint64_t)color, 0);
+    return (int)syscall(SYS_DRAW_RECT, (uint64_t)x, (uint64_t)y, (uint64_t)w, (uint64_t)h, (uint64_t)color, 0);
 }
 
 void sleep(uint64_t ms)
 {
-    syscall(36, ms, 0, 0, 0, 0, 0);
+    syscall(SYS_SLEEP, ms, 0, 0, 0, 0, 0);
 }
 
 int blit(int x, int y, int w, int h, uint32_t *buf)
 {
-    return (int)syscall(37, (uint64_t)x, (uint64_t)y, (uint64_t)w, (uint64_t)h, (uint64_t)buf, 0);
+    return (int)syscall(SYS_BLIT, (uint64_t)x, (uint64_t)y, (uint64_t)w, (uint64_t)h, (uint64_t)buf, 0);
 }
 
 int get_event(Event *event, uint32_t flags)
 {
-    return (int)syscall(38, (uint64_t)event, (uint64_t)flags, 0, 0, 0, 0);
+    return (int)syscall(SYS_GET_EVENT, (uint64_t)event, (uint64_t)flags, 0, 0, 0, 0);
 }
 
 void set_fg(int pid)
 {
-    syscall(39, (uint64_t)pid, 0, 0, 0, 0, 0);
+    syscall(SYS_SET_FG, (uint64_t)pid, 0, 0, 0, 0, 0);
 }
 
 int kill_fg(int shell_pid)
 {
-    (int)syscall(40, (uint64_t)shell_pid, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_KILL_FG, (uint64_t)shell_pid, 0, 0, 0, 0, 0);
 }
 
 int await_io(int *fds, int num_fds, int await_gui, int non_block)
 {
-    return (int)syscall(41, (uint64_t)fds, (uint64_t)num_fds, (uint64_t)await_gui, (uint64_t)non_block, 0, 0);
+    return (int)syscall(SYS_AWAIT_IO, (uint64_t)fds, (uint64_t)num_fds, (uint64_t)await_gui, (uint64_t)non_block, 0, 0);
 }
+
 int win_get_size(int *w, int *h)
 {
-    return (int)syscall(42, (uint64_t)w, (uint64_t)h, 0, 0, 0, 0);
+    return (int)syscall(SYS_WIN_GET_SIZE, (uint64_t)w, (uint64_t)h, 0, 0, 0, 0);
+}
+
+int shutdown(void)
+{
+    syscall(SYS_SHUTDOWN, 0, 0, 0, 0, 0, 0);
 }
 
 int win_create(WinParams_t *win_params)
 {
-    return (int)syscall(17, (uint64_t)win_params, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_CREATE_WIN, (uint64_t)win_params, 0, 0, 0, 0, 0);
 }
 
 /* ======= STRING, MEMORY FUNCTIONS =======*/
@@ -580,7 +586,7 @@ char *strchr(const char *haystack, const char needle)
 
 void *sbrk(int64_t incr_payload)
 {
-    return (void *)syscall(12, (uint64_t)incr_payload, 0, 0, 0, 0, 0);
+    return (void *)syscall(SYS_SBRK, (uint64_t)incr_payload, 0, 0, 0, 0, 0);
 }
 
 typedef struct block_meta
@@ -771,23 +777,23 @@ void srand(unsigned int seed)
 /*======= PROCESS/SYSCALL =======*/
 int exec(const char *path, char *const argv[])
 {
-    return (int)syscall(7, (uint64_t)path, (uint64_t)argv, 0, 0, 0, 0);
+    return (int)syscall(SYS_EXEC, (uint64_t)path, (uint64_t)argv, 0, 0, 0, 0);
 }
 
 int waitpid(int pid, int *status)
 {
-    return (int)syscall(9, (uint64_t)pid, (uint64_t)status, 0, 0, 0, 0);
+    return (int)syscall(SYS_WAITPID, (uint64_t)pid, (uint64_t)status, 0, 0, 0, 0);
 }
 
 /*======= DIR SYS =======*/
 int chdir(const char *path)
 {
-    return (int)syscall(15, (uint64_t)path, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_CHDIR, (uint64_t)path, 0, 0, 0, 0, 0);
 }
 
 char *getcwd(char *buf, size_t size)
 {
-    int ret = (int)syscall(16, (uint64_t)buf, (uint64_t)size, 0, 0, 0, 0);
+    int ret = (int)syscall(SYS_GETCWD, (uint64_t)buf, (uint64_t)size, 0, 0, 0, 0);
     if (ret < 0)
     {
         return NULL;
@@ -798,7 +804,7 @@ char *getcwd(char *buf, size_t size)
 
 void list_files(char *list, uint64_t max_len)
 {
-    syscall(5, (uint64_t)list, max_len, 0, 0, 0, 0);
+    syscall(SYS_LIST_FILES, (uint64_t)list, max_len, 0, 0, 0, 0);
 }
 
 /*======= OTHERS =======*/
@@ -859,7 +865,7 @@ void move_cursor(int row, int col)
 
 int get_key(void)
 {
-    return (int)syscall(14, 0, 0, 0, 0, 0, 0);
+    return (int)syscall(SYS_GET_KEY, 0, 0, 0, 0, 0, 0);
 }
 
 void print_dec(int num)

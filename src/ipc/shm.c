@@ -6,6 +6,7 @@
 #include "mem/vmm.h"
 #include "mem/kmalloc.h"
 #include "kern_defs.h"
+#include "drivers/serial.h"
 
 static SharedMem_t *g_shm_list = NULL;
 
@@ -118,21 +119,22 @@ int shm_set_size(SharedMem_t *shm, uint32_t new_size)
         return -1;
     }
 
-    for (int i = 0; i < num_pages; i++)
+    for (uint32_t i = 0; i < num_pages; i++)
     {
-        void *hhdm_addr = pmm_alloc_frame();
-        if (hhdm_addr == NULL)
+        uint64_t phys_addr = pmm_alloc_frame();
+        if (phys_addr == 0)
         {
             kprint("SHM: OOM during shm_set_size\n");
-            for (int j = 0; j < i; j++)
+            for (uint32_t j = 0; j < i; j++)
             {
-                pmm_free_frame(vmm_phys_to_hhdm(page_list[j]));
+                pmm_free_frame(page_list[j]);
             }
             kfree(page_list);
             return -1;
         }
-        memset(hhdm_addr, 0, PAGE_SIZE);
-        uint64_t phys_addr = vmm_hhdm_to_phys(hhdm_addr);
+
+        void *virt_addr = (void *)vmm_phys_to_hhdm(phys_addr);
+        memset(virt_addr, 0, PAGE_SIZE);
         page_list[i] = phys_addr;
     }
 

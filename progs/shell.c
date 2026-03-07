@@ -20,23 +20,27 @@ void clear_curr_line(int len)
 int cmd_hi()
 {
     print("Hi! How are you doing?\n");
+    return 0;
 }
 
 int cmd_reboot()
 {
     print("Rebooting...\n");
     reboot();
+    return 0;
 }
 
 int cmd_exit()
 {
     print("\x04");
     exit(0);
+    return 0;
 }
 
 int cmd_clear()
 {
     print("\033[32m\033[40m\033[2J\033[1;1H");
+    return 0;
 }
 
 int cmd_ls(int argc, char **argv)
@@ -100,6 +104,7 @@ int cmd_pwd()
     {
         print("Error: Cannot get current directory.\n");
     }
+    return 0;
 }
 
 int cmd_cd(int argc, char **argv)
@@ -117,6 +122,7 @@ int cmd_cd(int argc, char **argv)
             print("\n");
         }
     }
+    return 0;
 }
 
 int cmd_cat(int argc, char **argv)
@@ -154,14 +160,23 @@ int cmd_help()
     print("NyanOS Shell Commands:\n");
     print("  hi             Say hello\n");
     print("  reboot         Reboot the system\n");
+    print("  shutdown       Power off the system\n");
     print("  exit           Exit the shell\n");
     print("  clear          Clear screen\n");
-    print("  ls             List files (rootfs)\n");
+    print("  ls             List files and directories\n");
     print("  pwd            Print working directory\n");
     print("  cd <path>      Change directory\n");
     print("  cat <file>     Print file contents\n");
+    print("  grep <kw>      Search for keyword in input\n");
+    print("  echo <txt>     Print text to terminal\n");
+    print("  rm <file>      Remove a file\n");
+    print("  touch <file>   Create an empty file\n");
+    print("  cp <src> <dst> Copy a file\n");
+    print("  mv <src> <dst> Move or rename a file\n");
+    print("  mkdir <dir>    Create a directory\n");
     print("  help           Show this message\n");
     print("  <program>      Run executable (e.g. snake.elf)\n");
+    return 0;
 }
 
 int cmd_grep(int argc, char **argv)
@@ -358,6 +373,13 @@ int cmd_mv(int argc, char **argv)
     return 0;
 }
 
+int cmd_shutdown()
+{
+    print("NyanOS is going to shutdown...Hope I'll see you again :(\n");
+    shutdown();
+    return 1;
+}
+
 int exec_cmd(int argc, char **argv)
 {
     /* --- HI --- */
@@ -465,9 +487,17 @@ int exec_cmd(int argc, char **argv)
         return 1;
     }
 
+    /* --- MV --- */
     else if (strncmp(argv[0], "mv", 3) == 0)
     {
         cmd_mv(argc, argv);
+        return 1;
+    }
+
+    /* --- SHUTDOWN --- */
+    else if (strncmp(argv[0], "shutdown", 8) == 0)
+    {
+        cmd_shutdown();
         return 1;
     }
 

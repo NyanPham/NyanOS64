@@ -16,7 +16,14 @@ void kfree(void *ptr);
 // Request a new page frame and update the g_free_list_head
 void *request_new_page()
 {
-    FreeBlock *ptr = pmm_alloc_frame();
+    uint64_t phys_addr = pmm_alloc_frame();
+
+    if (phys_addr == 0)
+    {
+        return NULL;
+    }
+
+    FreeBlock *ptr = (FreeBlock *)vmm_phys_to_hhdm(phys_addr);
 
     if (ptr == NULL)
     {
