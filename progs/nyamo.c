@@ -620,6 +620,16 @@ int main(int argc, char **argv)
     editor_query_size();
     edtr_ld();
 
+    if (num_lines == 0)
+    {
+        rows = malloc(sizeof(ERow));
+        rows[0].chars = malloc(1);
+        rows[0].chars[0] = '\0';
+        rows[0].len = 0;
+        rows[0].cap = 1;
+        num_lines = 1;
+    }
+
     while (1)
     {
         edtr_drw();

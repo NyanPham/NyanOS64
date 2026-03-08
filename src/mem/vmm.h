@@ -112,10 +112,13 @@ void vmm_free(void *ptr);
 void *vmm_realloc(void *ptr, size_t new_size);
 
 /**
- * @brief Recursively deep-copies a paging hierarchy and mapped physical memory.
- * Traverses the page tables starting from the given level, then allocates
- * new physical frames for the page tables and duplicates the data
+ * @brief Recursively copies a paging hierarchy using Copy-on-Write (CoW).
+ * Traverses the page tables. For the lowest level (PT), it shares the physical
+ * frames between parent and child, marks them Read-Only, and increments ref counts.
  *
+ * Parent: PML4_A -> PDPT_A -> PD_A -> PT_A -> Data_Frame_X
+ * Child:  PML4_B -> PDPT_B -> PD_B -> PT_B -> Data_Frame_X (Shared!)
+ * 
  * @return The physical address of the newly allocated page table.
  */
 uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level);

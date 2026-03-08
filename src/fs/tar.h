@@ -10,12 +10,12 @@ typedef struct tar_header_t
     char mode[8];
     char uid[8];
     char gid[8];
-    char size[12];
+    char size[12];      // [SPECIAL]: A string representing Octal type in size
     char mtime[12];
     char chksum[8];
-    char typeflag;
+    char typeflag;      // 0: file, 5: directory
     char linkname[100];
-    char magic[6];
+    char magic[6];      // string "ustar"
     char version[2];
     char uname[32];
     char gname[32];

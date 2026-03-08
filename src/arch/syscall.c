@@ -799,7 +799,7 @@ static uint64_t sys_pipe(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     {
         return -1;
     }
-
+    
     int8_t read_fd = find_free_fd(curr_tsk);
     if (read_fd < 0)
     {
