@@ -1,6 +1,7 @@
 #ifndef VFS_H
 #define VFS_H
 
+#include "utils/spinlock.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -57,6 +58,7 @@ typedef struct file_handle
     uint64_t offset;
     uint32_t mode;
     int ref_count;
+    spinlock_t lock;
 } file_handle_t;
 
 void vfs_init();

@@ -662,7 +662,10 @@ uint64_t vmm_copy_hierarchy(uint64_t *parent_tbl_virt, int level)
 
             uint64_t parent_phys = pte_get_addr(entry);
 
-            parent_tbl_virt[i] &= ~VMM_FLAG_WRITABLE;
+            if ((entry & PTE_FLAG_SHARED) == 0)
+            {
+                parent_tbl_virt[i] &= ~VMM_FLAG_WRITABLE;
+            }
             child_tbl_virt[i] = parent_tbl_virt[i];
             pmm_inc_ref(parent_phys);
         }

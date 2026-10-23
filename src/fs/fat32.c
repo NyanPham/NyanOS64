@@ -82,9 +82,11 @@ static vfs_node_t *fat32_finddir(vfs_node_t *node, const char *name)
 
     strcpy(new_node->name, name);
     new_node->length = dir_entry.file_size;
-    new_node->flags = (dir_entry.attributes & 0x10)
-                          ? VFS_DIRECTORY
-                          : VFS_FILE;
+    new_node->flags = ((dir_entry.attributes & 0x10)
+                           ? VFS_DIRECTORY
+                           : VFS_FILE) |
+                      VFS_NODE_AUTOFREE;
+    ;
 
     new_node_data->first_cluster = (dir_entry.first_cluster_high << 0x10) | dir_entry.first_cluster_low;
     new_node_data->sector_lba = loc.sector_lba;
@@ -264,8 +266,7 @@ static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, ui
                 fat32_write_fat_entry(prev_cluster, EOC);
             }
         }
-
-        fat32_update_size(node, offset + size);
+        // fat32_update_size(node, offset + size);
     }
 
     uint32_t curr_cluster = node_data->first_cluster;
@@ -300,6 +301,12 @@ static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, ui
     }
 
     vmm_free(tmp_buf);
+
+    if (offset + size > node->length)
+    {
+        fat32_update_size(node, offset + size);
+    }
+
     return size;
 }
 
@@ -832,7 +839,7 @@ vfs_node_t *fat32_create(vfs_node_t *parent, const char *fname, uint32_t flags)
 
     memset(new_node, 0, sizeof(vfs_node_t));
     strncpy(new_node->name, fname, 127);
-    new_node->flags = flags;
+    new_node->flags = flags | VFS_NODE_AUTOFREE;
     new_node->length = 0;
     new_node->ops = &fat32_ops;
 
@@ -843,6 +850,8 @@ vfs_node_t *fat32_create(vfs_node_t *parent, const char *fname, uint32_t flags)
         return NULL;
     }
     new_data->first_cluster = free_cluster_id;
+    new_data->sector_lba = loc.sector_lba;
+    new_data->offset = loc.offset;
     new_node->device_data = new_data;
 
     return new_node;

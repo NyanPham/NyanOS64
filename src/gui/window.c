@@ -288,7 +288,7 @@ Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const 
     win->pixels_size = pixel_buf_size;
     init_win_pixels(win);
 
-    uint64_t rflags = get_rflags();
+    uint64_t rflags = read_rflags();
     cli();
     // link it to the list
     // the latest created win is always
@@ -362,7 +362,7 @@ bool check_win_drag(Window *win, int64_t mouse_x, int64_t mouse_y)
 
 void win_paint()
 {
-    uint64_t rflags = get_rflags();
+    uint64_t rflags = read_rflags();
     cli();
     Window *curr = g_win_list;
     while (curr != NULL)
@@ -440,7 +440,7 @@ void win_focus(Window *win)
 
 void win_close(Window *win)
 {
-    uint64_t rflags = get_rflags();
+    uint64_t rflags = read_rflags();
     cli();
     video_add_dirty_rect(win->x, win->y, win->width, win->height);
 

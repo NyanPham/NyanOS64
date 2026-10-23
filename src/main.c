@@ -68,6 +68,9 @@ extern uint64_t kern_stk_ptr;
 extern void enter_user_mode(uint64_t entry, uint64_t usr_stk_ptr);
 extern EventBuf g_event_queue;
 extern Window *g_desktop_win;
+extern void sched_acquire_lock(uint64_t *rflags);
+extern void sched_release_lock(uint64_t *rflags);
+extern Task *sched_find_task_locked(int pid);
 
 static inline void spawn_terminal()
 {
@@ -460,12 +463,20 @@ void kmain(void)
                     Window *top_win = win_get_active();
                     if (top_win != NULL && top_win->owner_pid != -1)
                     {
-                        Task *tsk = sched_find_task(top_win->owner_pid);
-                        if (tsk != NULL && tsk->event_queue != NULL)
+                        uint64_t rflags;
+                        sched_acquire_lock(&rflags);
+                        Task *tsk = sched_find_task_locked(top_win->owner_pid);
+
+                        if (tsk != NULL && tsk->state != TASK_DEAD && tsk->state != TASK_ZOMBIE && tsk->event_queue != NULL)
                         {
                             event_queue_push(tsk->event_queue, e);
-                            sched_wake_pid(top_win->owner_pid);
+                            if (tsk->state == TASK_SLEEPING || tsk->state == TASK_WAITING)
+                            {
+                                tsk->state = TASK_READY;
+                            }
                         }
+
+                        sched_release_lock(&rflags);
                     }
                 }
                 break;
@@ -473,12 +484,18 @@ void kmain(void)
             case EVENT_WIN_RESIZE:
             {
                 int pid = e.resize_event.win_owner_pid;
-                Task *tsk = sched_find_task(pid);
-                if (tsk != NULL && tsk->event_queue != NULL)
+                uint64_t rflags;
+                sched_acquire_lock(&rflags);
+                Task *tsk = sched_find_task_locked(pid);
+                if (tsk != NULL && tsk->state != TASK_DEAD && tsk->state != TASK_ZOMBIE && tsk->event_queue != NULL)
                 {
                     event_queue_push(tsk->event_queue, e);
-                    sched_wake_pid(pid);
+                    if (tsk->state == TASK_SLEEPING || tsk->state == TASK_WAITING)
+                    {
+                        tsk->state = TASK_READY;
+                    }
                 }
+                sched_release_lock(&rflags);
                 break;
             }
             default:

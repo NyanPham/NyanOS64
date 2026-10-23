@@ -16,6 +16,8 @@
 #define PD_INDEX 0x15
 #define PT_INDEX 0xc
 
+#define PTE_FLAG_SHARED (1 << 9)
+
 struct Task;
 extern uint64_t hhdm_offset;
 

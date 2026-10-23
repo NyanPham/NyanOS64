@@ -76,12 +76,14 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
             kprint("vfs_open failed: out of mem!\n");
             return NULL;
         }
+
         fhandle->node = node;
         fhandle->mode = mode;
         fhandle->ref_count = 1;
         fhandle->offset = (mode & O_APPEND)
                               ? node->length
                               : 0;
+        spinlock_init(&fhandle->lock);
 
         return fhandle;
     }
@@ -178,6 +180,7 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
     fhandle->offset = (mode & O_APPEND)
                           ? node->length
                           : 0;
+    spinlock_init(&fhandle->lock);
 
     return fhandle;
 }
@@ -192,8 +195,12 @@ uint64_t vfs_read(file_handle_t *file, uint64_t size, uint8_t *buffer)
 
     if (file->node && file->node->ops && file->node->ops->read)
     {
+        spinlock_acquire(&file->lock);
+
         uint64_t nbytes = file->node->ops->read(file->node, file->offset, size, buffer);
         file->offset += nbytes;
+
+        spinlock_release(&file->lock);
         return nbytes;
     }
 
@@ -210,8 +217,12 @@ uint64_t vfs_write(file_handle_t *file, uint64_t size, uint8_t *buffer)
 
     if (file->node && file->node->ops && file->node->ops->write)
     {
+        spinlock_acquire(&file->lock);
+
         uint64_t nbytes = file->node->ops->write(file->node, file->offset, size, buffer);
         file->offset += nbytes;
+
+        spinlock_release(&file->lock);
         return nbytes;
     }
 
@@ -349,6 +360,17 @@ vfs_node_t *vfs_navigate(const char *path)
         }
 
         vfs_node_t *next_node = curr_node->ops->finddir(curr_node, name);
+
+        if (curr_node != best_mount_root)
+        {
+            if (curr_node->flags & VFS_NODE_AUTOFREE)
+            {
+                if (curr_node->device_data)
+                    kfree(curr_node->device_data);
+                kfree(curr_node);
+            }
+        }
+
         if (next_node == NULL)
         {
             return NULL;

@@ -167,16 +167,18 @@ void dev_attach_stdio(file_handle_t **fd_tbl)
     file_handle_t *h_in = kmalloc(sizeof(file_handle_t));
     h_in->node = g_stdin_node;
     h_in->offset = 0;
-    h_in->mode = 1; // read mode
+    h_in->mode = 1;
     h_in->ref_count = 1;
+    spinlock_init(&h_in->lock);
     fd_tbl[0] = h_in;
 
     // FD 1: stdout
     file_handle_t *h_out = kmalloc(sizeof(file_handle_t));
     h_out->node = g_stdout_node;
     h_out->offset = 0;
-    h_out->mode = 2; // write mode
+    h_out->mode = 2;
     h_out->ref_count = 1;
+    spinlock_init(&h_out->lock);
     fd_tbl[1] = h_out;
 
     // FD 2: stderr (temporary shared with stdout :3 )
@@ -185,6 +187,7 @@ void dev_attach_stdio(file_handle_t **fd_tbl)
     h_err->offset = 0;
     h_err->mode = 2;
     h_err->ref_count = 1;
+    spinlock_init(&h_err->lock);
     fd_tbl[2] = h_err;
 }
 

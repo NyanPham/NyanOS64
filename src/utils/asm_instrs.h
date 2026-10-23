@@ -1,6 +1,8 @@
 #ifndef ASM_INSTRS_H
 #define ASM_INSTRS_H
 
+#include <stdint.h>
+
 static inline void cli(void)
 {
     asm volatile("cli");
@@ -29,10 +31,10 @@ static inline void pause(void)
     asm volatile("pause");
 }
 
-static inline uint64_t get_rflags(void)
+static inline uint64_t read_rflags(void)
 {
     uint64_t rflags;
-    asm volatile("pushfq; pop %0" : "=r"(rflags));
+    __asm__ volatile ("pushfq; pop %0" : "=rm" (rflags) :: "memory");
     return rflags;
 }
 

@@ -4,7 +4,7 @@
 #include "../io.h"
 #include "drivers/video.h"
 #include "drivers/keyboard.h"
-#include "drivers/serial.h" // debugging
+#include "drivers/serial.h"
 #include "drivers/rtc.h"
 #include "drivers/timer.h"
 #include "fs/tar.h"
@@ -26,16 +26,17 @@
 #include "ipc/mq.h"
 #include "event/event.h"
 #include "include/syscall_nums.h"
+#include "mem/user_access.h"
 
 #include <stddef.h>
 #include <stdbool.h>
 
 #define UNUSED(x) (void)(x)
 
-#define IA32_EFER 0xC0000080  // a register that allows enabling the SYSCALL/SYSRET instruction (Extended Feature Enable Register)
-#define IA32_STAR 0xC0000081  // a register that stores segment selectors for fast system calls, mostly for SYSCALL
-#define IA32_LSTAR 0xC0000082 // a register to hold the 64-bit virt_addr of the syscall handler
-#define IA32_FMASK 0xC0000084 // a register that masks (clears) specific flags in RFLAGS during a syscall
+#define IA32_EFER 0xC0000080
+#define IA32_STAR 0xC0000081
+#define IA32_LSTAR 0xC0000082
+#define IA32_FMASK 0xC0000084
 #define EFER_SCE 1
 #define INT_FLAGS 0x200
 #define REBOOT_PORT 0x64
@@ -45,22 +46,34 @@ extern void syscall_entry(void);
 int8_t find_free_fd(Task *task);
 extern void switch_to_task(uint64_t *prev_rsp_ptr, uint64_t next_rsp, uint8_t *prev_fpu, uint8_t *next_fpu);
 
+#define USER_SPACE_LIMIT 0x00007FFFFFFFFFFF
+
 static bool verify_usr_access(uint64_t ptr, uint64_t size)
 {
-    uint64_t res = (ptr + size);
-    return (res >= ptr && res >= size && res <= KERN_BASE);
+    if (ptr == 0)
+        return false;
+
+    if (size == 0)
+        return true;
+    uint64_t end = ptr + size;
+    if (end < ptr)
+        return false;
+    return (end <= USER_SPACE_LIMIT);
 }
 
-// static uint64_t sys_reserved(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
-// {
-//     UNUSED(arg1);
-//     UNUSED(arg2);
-//     UNUSED(arg3);
-//     UNUSED(arg4);
-//     UNUSED(arg5);
-//     kprint("SYSCALL RESERVED");
-//     return 0;
-// }
+static int copy_string_from_user(char *dest, const char *src, size_t max_len)
+{
+    for (size_t i = 0; i < max_len; i++)
+    {
+        if (!verify_usr_access((uint64_t)(src + i), 1))
+            return -1;
+        dest[i] = src[i];
+        if (src[i] == '\0')
+            return i;
+    }
+    dest[max_len - 1] = '\0';
+    return max_len;
+}
 
 void syscall_init(void)
 {
@@ -198,8 +211,8 @@ static uint64_t sys_shutdown(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64
         pause();
     }
 
-    outw(0x604, 0x2000);  // QEMU
-    outw(0xB004, 0x2000); // Bochs/VirtualBox
+    outw(0x604, 0x2000);
+    outw(0xB004, 0x2000);
 
     cli();
     hlt();
@@ -232,6 +245,8 @@ static uint64_t sys_list_files(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint
     UNUSED(arg3);
     UNUSED(arg4);
     UNUSED(arg5);
+    if (!verify_usr_access(arg1, 1))
+        return -1;
     tar_list((char *)arg1, arg2);
     return 0;
 }
@@ -250,7 +265,7 @@ static uint64_t sys_fork(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     }
     Task *child_tsk = task_factory_fork(parent_tsk);
     sched_register_task(child_tsk);
-    return child_tsk->pid; // for parent, it fork returns child's pid
+    return child_tsk->pid;
 }
 
 static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
@@ -261,12 +276,27 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     char *raw_path = (char *)arg1;
     char **argv = (char **)arg2;
 
+    if (!verify_usr_access((uint64_t)raw_path, 1))
+        return -1;
+    if (argv == NULL)
+        return -1;
+
     int argc = 0;
     size_t argv_size = 0;
-    while (argv[argc] != NULL)
+    while (1)
     {
+        if (!verify_usr_access((uint64_t)&argv[argc], sizeof(char *)))
+            return -1;
+        if (argv[argc] == NULL)
+            break;
+        if (!verify_usr_access((uint64_t)argv[argc], 1))
+            return -1;
+
         argv_size += strlen(argv[argc]) + 1;
         argc++;
+
+        if (argc >= 128)
+            return -1;
     }
 
     size_t argv_ptr_size = (argc + 1) * sizeof(uint64_t);
@@ -281,7 +311,7 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
         cpy_off += len;
     }
 
-    uint64_t start_usr_addr = (USER_STACK_TOP - argv_size) & ~0xF; // address to store the argv content in the new stack
+    uint64_t start_usr_addr = (USER_STACK_TOP - argv_size) & ~0xF;
     uint64_t tentative_list_addr = start_usr_addr - argv_ptr_size;
 
     if ((tentative_list_addr & 0xF) == 0)
@@ -310,7 +340,7 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
 
     uint64_t old_pml4 = read_cr3();
 
-    uint64_t new_pml4 = vmm_new_pml4(); // copy kernel space, while the user space is empty
+    uint64_t new_pml4 = vmm_new_pml4();
     if (new_pml4 == 0)
     {
         kfree(argv_buf);
@@ -374,6 +404,17 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
         curr_tsk->pml4 = old_pml4;
         sti();
         kfree(elf_fname);
+
+        for (int i = 0; i < USER_STACK_PAGES; i++)
+        {
+            uint64_t virt_stk_page = virt_usr_stk_base + (PAGE_SIZE * i);
+            uint64_t phys_frame = vmm_virt2phys(new_pml4_hhdm, virt_stk_page);
+            if (phys_frame != 0)
+            {
+                pmm_free_frame(phys_frame);
+            }
+        }
+
         vmm_ret_pml4(new_pml4);
         return -1;
     }
@@ -382,7 +423,10 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
 
     curr_tsk->heap_end = USER_HEAP_START;
 
+    curr_tsk->pml4 = old_pml4;
     vmm_cleanup_task(curr_tsk);
+    curr_tsk->pml4 = new_pml4;
+
     VmFreeRegion *vm_free_head = (VmFreeRegion *)kmalloc(sizeof(VmFreeRegion));
     if (vm_free_head == NULL)
     {
@@ -394,6 +438,12 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
 
     curr_tsk->vm_free_head = vm_free_head;
     curr_tsk->vm_alloc_head = NULL;
+
+    vmm_add_allocated_mem(
+        &curr_tsk->vm_alloc_head,
+        virt_usr_stk_base,
+        PAGE_SIZE * USER_STACK_PAGES,
+        0);
 
     vmm_free_table(vmm_phys_to_hhdm(old_pml4), 4);
 
@@ -473,8 +523,9 @@ static uint64_t sys_open(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     UNUSED(arg5);
     char *fname = (char *)arg1;
     uint32_t mode = (uint32_t)arg2;
+    char safe_fname[256];
 
-    if (!verify_usr_access((uint64_t)fname, 1))
+    if (copy_string_from_user(safe_fname, fname, sizeof(safe_fname)) < 0)
     {
         kprint("SYS_OPEN failed: Invalid user access\n");
         return -1;
@@ -489,7 +540,7 @@ static uint64_t sys_open(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     }
 
     char full_path[256];
-    resolve_path(curr_tsk->cwd, fname, full_path);
+    resolve_path(curr_tsk->cwd, safe_fname, full_path);
 
     file_handle_t *f = vfs_open(full_path, mode);
     if (f == NULL)
@@ -533,23 +584,24 @@ static uint64_t sys_sbrk(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     int64_t incr_payload = (int64_t)arg1;
     Task *curr_tsk = get_curr_task();
 
+    if (incr_payload == 0)
+        return curr_tsk->heap_end;
+    if (incr_payload < 0)
+        return curr_tsk->heap_end;
+
     uint64_t prev_brk = curr_tsk->heap_end;
     uint64_t next_brk = prev_brk + incr_payload;
 
-    if (incr_payload == 0)
+    if (next_brk < prev_brk)
+        return -1;
+
+#define USER_HEAP_MAX_LIMIT 0x0000008000000000
+    if (next_brk > USER_HEAP_MAX_LIMIT || next_brk > USER_SPACE_LIMIT)
     {
-        return prev_brk;
+        kprint("SYS_SBRK: App requested too much memory!\n");
+        return -1;
     }
 
-    // TODO: Support the shrink heap
-    if (incr_payload < 0)
-    {
-        return prev_brk;
-    }
-
-    // old page: (prev_brk - 1) / PAGE_SIZE
-    // new page: (next_brk - 1) / PAGE_SIZE
-    // new page > old page, then map more
     uint64_t start_page_addr = (prev_brk % PAGE_SIZE) == 0
                                    ? prev_brk
                                    : (prev_brk + 0xFFF) & ~0xFFF;
@@ -565,7 +617,7 @@ static uint64_t sys_sbrk(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
         }
 
         void *phys_addr_hhdm = vmm_phys_to_hhdm(phys_addr);
-        memset(phys_addr_hhdm, 0, PAGE_SIZE); // Security: Clean the page
+        memset(phys_addr_hhdm, 0, PAGE_SIZE);
 
         vmm_map_page(
             vmm_phys_to_hhdm(curr_tsk->pml4),
@@ -615,7 +667,9 @@ static uint64_t sys_chdir(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t 
     UNUSED(arg4);
     UNUSED(arg5);
     char *path = (char *)arg1;
-    if (!verify_usr_access((uint64_t)path, 1))
+    char safe_path[256];
+
+    if (copy_string_from_user(safe_path, path, sizeof(safe_path)) < 0)
     {
         return -1;
     }
@@ -623,9 +677,7 @@ static uint64_t sys_chdir(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t 
     Task *curr_tsk = get_curr_task();
 
     char new_path[256];
-    resolve_path(curr_tsk->cwd, path, new_path);
-    // TODO: check if the directory exists with new vfs_is_dir(path)
-    // now just assumes we always have it
+    resolve_path(curr_tsk->cwd, safe_path, new_path);
 
     if (strlen(new_path) >= 255)
     {
@@ -681,6 +733,23 @@ static uint64_t sys_create_win(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint
         return -1;
     }
 
+    int scrn_w = video_get_width();
+    int scrn_h = video_get_height();
+
+    if (win_params->width <= 0)
+        win_params->width = 100;
+    if (win_params->height <= 0)
+        win_params->height = 100;
+    if (win_params->width > (uint64_t)scrn_w)
+        win_params->width = (uint64_t)scrn_w;
+    if (win_params->height > (uint64_t)scrn_h)
+        win_params->height = (uint64_t)scrn_h;
+
+    if (win_params->x < 0)
+        win_params->x = 0;
+    if (win_params->y < 0)
+        win_params->y = 0;
+
     char *w_title = (char *)kmalloc(256);
     if (w_title != NULL)
     {
@@ -720,6 +789,10 @@ static uint64_t sys_mkdir(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t 
     UNUSED(arg5);
     char *path = (char *)arg1;
     uint32_t flags = (uint32_t)arg2;
+    char safe_path[256];
+
+    if (copy_string_from_user(safe_path, path, sizeof(safe_path)) < 0)
+        return -1;
 
     Task *curr_tsk = get_curr_task();
 
@@ -734,7 +807,7 @@ static uint64_t sys_mkdir(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t 
     }
 
     char full_path[256];
-    resolve_path(cwd, path, full_path);
+    resolve_path(cwd, safe_path, full_path);
 
     if (strlen(full_path) >= 255)
     {
@@ -793,13 +866,15 @@ static uint64_t sys_pipe(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     UNUSED(arg5);
     int *fd_ptr = (int *)arg1;
 
-    // Firstly, finds the 2 free spots in the fd_tbl
+    if (!verify_usr_access((uint64_t)fd_ptr, sizeof(int) * 2))
+        return -1;
+
     Task *curr_tsk = get_curr_task();
     if (curr_tsk == NULL)
     {
         return -1;
     }
-    
+
     int8_t read_fd = find_free_fd(curr_tsk);
     if (read_fd < 0)
     {
@@ -878,28 +953,30 @@ static uint64_t sys_pipe(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
 
     // Set up Read End
     strcpy(node_read->name, "pipe_read_end");
-    node_read->flags = VFS_CHAR_DEVICE | VFS_NODE_AUTOFREE;
+    node_read->flags = VFS_CHAR_DEVICE;
     node_read->length = 0;
     node_read->device_data = pipe;
     node_read->ops = &pipe_read_ops;
 
     // Set up Write End
     strcpy(node_write->name, "pipe_write_end");
-    node_write->flags = VFS_CHAR_DEVICE | VFS_NODE_AUTOFREE;
+    node_write->flags = VFS_CHAR_DEVICE;
     node_write->length = 0;
     node_write->device_data = pipe;
     node_write->ops = &pipe_write_ops;
 
     // Setup handles
     handle_read->node = node_read;
-    handle_read->mode = 1; // any works
+    handle_read->mode = 1;
     handle_read->offset = 0;
     handle_read->ref_count = 1;
+    spinlock_init(&handle_read->lock);
 
     handle_write->node = node_write;
-    handle_write->mode = 2; // any works
+    handle_write->mode = 2;
     handle_write->offset = 0;
     handle_write->ref_count = 1;
+    spinlock_init(&handle_write->lock);
 
     fd_ptr[0] = read_fd;
     fd_ptr[1] = write_fd;
@@ -999,10 +1076,10 @@ static uint64_t sys_unlink(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t
     UNUSED(arg4);
     UNUSED(arg5);
     char *path = (char *)arg1;
-    if (!verify_usr_access((uint64_t)path, 1))
-    {
+    char safe_path[256];
+
+    if (copy_string_from_user(safe_path, path, sizeof(safe_path)) < 0)
         return -1;
-    }
 
     Task *curr_tsk = get_curr_task();
 
@@ -1017,7 +1094,7 @@ static uint64_t sys_unlink(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t
     }
 
     char new_path[256];
-    resolve_path(cwd, path, new_path);
+    resolve_path(cwd, safe_path, new_path);
 
     if (strlen(new_path) >= 255)
     {
@@ -1056,6 +1133,7 @@ static uint64_t sys_shm_open(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64
     handle->offset = 0;
     handle->mode = mode;
     handle->ref_count = 1;
+    spinlock_init(&handle->lock);
 
     Task *curr_tsk = get_curr_task();
 
@@ -1148,7 +1226,10 @@ static uint64_t sys_mmap(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     // to consecutive virt addrs
     uint64_t *pml4 = vmm_phys_to_hhdm(read_cr3());
 
-    for (uint32_t i = 0; i < shm->page_count; i++)
+    uint32_t requested_pages = aligned_len / PAGE_SIZE;
+    uint32_t pages_to_map = (requested_pages < shm->page_count) ? requested_pages : shm->page_count;
+
+    for (uint32_t i = 0; i < pages_to_map; i++)
     {
         uint64_t phys_addr = shm->phys_pages[i];
         uint64_t virt_addr = virt_start_addr + i * PAGE_SIZE;
@@ -1156,7 +1237,7 @@ static uint64_t sys_mmap(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
             pml4,
             virt_addr,
             phys_addr,
-            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER | PTE_FLAG_SHARED);
     }
 
     vmm_add_allocated_mem(alloc_head, virt_start_addr, aligned_len, VMM_FLAG_SHM);
@@ -1274,6 +1355,19 @@ static uint64_t sys_mq_send(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_
         return -1;
     }
 
+#define MAX_MQ_MSG_SIZE 4096
+    if (size == 0 || size > MAX_MQ_MSG_SIZE)
+    {
+        kprint("SYS_MQ_SEND: Message size out of bounds!\n");
+        return -1;
+    }
+
+    if (verify_usr_access((uint64_t)mq, sizeof(MessageQueue_t)))
+    {
+        kprint("SYS_MQ_SEND: Fake MQ Pointer detected!\n");
+        return -1;
+    }
+
     if (!verify_usr_access((uint64_t)data, size))
     {
         return -1;
@@ -1294,6 +1388,9 @@ static uint64_t sys_mq_receive(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint
     {
         return -1;
     }
+
+    if (len == 0 || len > 4096)
+        return -1;
 
     if (!verify_usr_access((uint64_t)buf, len))
     {
@@ -1359,6 +1456,29 @@ static uint64_t sys_draw_rect(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint6
         return -1;
     }
 
+    int win_w, win_h;
+    win_get_client_size(curr_tsk->win, &win_w, &win_h);
+
+    if (x < 0)
+    {
+        w += x;
+        x = 0;
+    }
+    if (y < 0)
+    {
+        h += y;
+        y = 0;
+    }
+    if (w <= 0 || h <= 0)
+        return 0;
+
+    if (x + w > win_w)
+        w = win_w - x;
+    if (y + h > win_h)
+        h = win_h - y;
+    if (w <= 0 || h <= 0)
+        return 0;
+
     win_fill_rect(curr_tsk->win, x, y, w, h, color);
 
     return 0;
@@ -1398,6 +1518,14 @@ static uint64_t sys_blit(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
 
     Task *curr_tsk = get_curr_task();
     if (curr_tsk->win == NULL)
+    {
+        return -1;
+    }
+
+    int win_w, win_h;
+    win_get_client_size(curr_tsk->win, &win_w, &win_h);
+
+    if (x < 0 || y < 0 || x + w > win_w || y + h > win_h)
     {
         return -1;
     }
@@ -1488,6 +1616,9 @@ static uint64_t sys_await_io(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64
     int await_gui = (int)arg3;
     int non_block = (int)arg4;
 
+    if (!verify_usr_access((uint64_t)fds, sizeof(int) * num_fds))
+        return -1;
+
     Task *curr_tsk = get_curr_task();
 
     while (1)
@@ -1535,6 +1666,9 @@ static uint64_t sys_win_get_size(uint64_t arg1, uint64_t arg2, uint64_t arg3, ui
     UNUSED(arg5);
     int *w = (int *)arg1;
     int *h = (int *)arg2;
+
+    if (!verify_usr_access((uint64_t)w, sizeof(int)) || !verify_usr_access((uint64_t)h, sizeof(int)))
+        return -1;
 
     Task *curr_tsk = get_curr_task();
     if (curr_tsk->win)
