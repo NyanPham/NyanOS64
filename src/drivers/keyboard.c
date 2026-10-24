@@ -256,6 +256,7 @@ static void keyboard_handler(void *regs)
 
     default:
         // fall through, does nothing :/
+        break;
     }
 
     if (scancode & BREAK_CODE)

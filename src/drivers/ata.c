@@ -29,6 +29,7 @@
 #define ATA_SR_ERR 0x01 // error
 
 static volatile uint8_t ata_drq = 0;
+[[maybe_unused]]
 static volatile uint8_t ata_err = 0;
 
 static void ata_handler()

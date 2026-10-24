@@ -23,10 +23,9 @@
 
 static spinlock_t sched_lock = SPINLOCK_INIT;
 
-// Linked list for Tasks
 static Task *g_head_tsk = NULL;
 static Task *g_curr_tsk = NULL;
-static int g_next_pid = KERN_TSK_PID + 1; // value "0" is our OS kernel
+static int g_next_pid = KERN_TSK_PID + 1;
 
 extern uint64_t *kern_pml4;
 extern void tss_set_stack(uint64_t stk_ptr);
@@ -38,9 +37,6 @@ extern void task_start_stub(void);
 inline static void sched_clean_gui(Task *tsk);
 inline static void sched_clean_fds(Task *tsk);
 
-/* =======================================
- * FOR EVENT MANAGER
- * ======================================= */
 void sched_acquire_lock(uint64_t *rflags)
 {
     SPIN_LOCK_IRQSAVE(&sched_lock, *rflags);
@@ -65,8 +61,6 @@ Task *sched_find_task_locked(int pid)
     return NULL;
 }
 
-/* ======================================= */
-
 static uint8_t *get_aligned_fpu_region(Task *tsk)
 {
     uint64_t addr = (uint64_t)tsk->fpu_regs;
@@ -74,9 +68,29 @@ static uint8_t *get_aligned_fpu_region(Task *tsk)
     return (uint8_t *)addr;
 }
 
+static void sched_reparent_children_locked(Task *exiting_tsk)
+{
+    if (g_head_tsk == NULL)
+        return;
+    Task *t = g_head_tsk;
+    do
+    {
+        if (t->parent == exiting_tsk)
+        {
+            t->parent = g_head_tsk;
+        }
+        t = t->next;
+    } while (t != g_head_tsk);
+}
+
 Task *sched_new_task(void)
 {
     Task *new_tsk = (Task *)kmalloc(sizeof(Task));
+    if (new_tsk == NULL)
+    {
+        return NULL;
+    }
+    memset(new_tsk, 0, sizeof(Task));
 
     uint64_t flags;
     SPIN_LOCK_IRQSAVE(&sched_lock, flags);
@@ -87,6 +101,11 @@ Task *sched_new_task(void)
     new_tsk->kern_stk_top = 0;
     new_tsk->state = TASK_WAITING;
     new_tsk->pml4 = vmm_new_pml4();
+    if (new_tsk->pml4 == 0)
+    {
+        kfree(new_tsk);
+        return NULL;
+    }
     new_tsk->parent = g_curr_tsk;
     new_tsk->heap_end = USER_HEAP_START;
     new_tsk->win = NULL;
@@ -97,11 +116,14 @@ Task *sched_new_task(void)
 
     uint8_t *fpu_ptr = get_aligned_fpu_region(new_tsk);
     memset(fpu_ptr, 0, 512);
+    *((uint16_t *)(fpu_ptr)) = 0x037F;
     *((uint32_t *)(fpu_ptr + 0x18)) = 0x1F80;
 
     VmFreeRegion *vm_free_head = (VmFreeRegion *)kmalloc(sizeof(VmFreeRegion));
     if (vm_free_head == NULL)
     {
+        vmm_ret_pml4(new_tsk->pml4);
+        kfree(new_tsk);
         return NULL;
     }
 
@@ -115,12 +137,14 @@ Task *sched_new_task(void)
     if (event_queue == NULL)
     {
         kfree(vm_free_head);
+        vmm_ret_pml4(new_tsk->pml4);
+        kfree(new_tsk);
         return NULL;
     }
     new_tsk->event_queue = event_queue;
     event_queue_init(new_tsk->event_queue);
 
-    if (g_curr_tsk != NULL)
+    if (g_curr_tsk != NULL && g_curr_tsk->cwd[0] != '\0')
     {
         strcpy(new_tsk->cwd, g_curr_tsk->cwd);
     }
@@ -190,9 +214,16 @@ void task_context_reset(Task *tsk, uint64_t entry, uint64_t rsp)
 
 void sched_destroy_task(Task *tsk)
 {
+    if (tsk == NULL || tsk->pid == 0)
+        return;
+
+    sched_clean_gui(tsk);
+    sched_clean_fds(tsk);
+
     if (tsk->kern_stk_top != 0)
     {
         pmm_free_frame(vmm_hhdm_to_phys((void *)(tsk->kern_stk_top - PAGE_SIZE)));
+        tsk->kern_stk_top = 0;
     }
     if (tsk->event_queue != NULL)
     {
@@ -203,8 +234,8 @@ void sched_destroy_task(Task *tsk)
     if (tsk->pml4 != 0)
     {
         vmm_free_table(vmm_phys_to_hhdm(tsk->pml4), 4);
+        tsk->pml4 = 0;
     }
-    sched_clean_gui(tsk);
     kfree(tsk);
 }
 
@@ -213,21 +244,24 @@ void sched_unlink_task(Task *tsk)
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
 
-    Task *prev = tsk;
-    while (prev->next != tsk)
+    if (g_head_tsk == NULL)
+    {
+        SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
+        return;
+    }
+
+    Task *prev = g_head_tsk;
+    while (prev->next != tsk && prev->next != g_head_tsk)
     {
         prev = prev->next;
     }
 
-    Task *next_tsk = tsk->next;
-    prev->next = next_tsk;
-
-    if (tsk == g_head_tsk)
+    if (prev->next == tsk)
     {
-        g_head_tsk = next_tsk;
-        if (tsk == next_tsk)
+        prev->next = tsk->next;
+        if (tsk == g_head_tsk)
         {
-            g_head_tsk = NULL;
+            g_head_tsk = (tsk->next == tsk) ? NULL : tsk->next;
         }
     }
 
@@ -237,11 +271,13 @@ void sched_unlink_task(Task *tsk)
 void sched_init(void)
 {
     Task *kern_tsk = (Task *)kmalloc(sizeof(Task));
+    memset(kern_tsk, 0, sizeof(Task));
     kern_tsk->pid = 0;
     kern_tsk->state = TASK_READY;
     kern_tsk->pml4 = read_cr3();
     kern_tsk->wake_tick = -1;
     kern_tsk->fg_pid = -1;
+    strcpy(kern_tsk->cwd, "/");
 
     EventBuf *event_queue = (EventBuf *)vmm_alloc_global(sizeof(EventBuf));
     if (event_queue == NULL)
@@ -324,6 +360,11 @@ void schedule(void)
     if (next_tsk == NULL || next_tsk == g_curr_tsk)
     {
         SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
+        if (g_curr_tsk != NULL && g_curr_tsk->pid != 0 && (g_curr_tsk->pending_signals & (1 << (SIGINT - 1))))
+        {
+            g_curr_tsk->pending_signals &= ~(1 << (SIGINT - 1));
+            sched_exit(0);
+        }
         return;
     }
 
@@ -337,7 +378,6 @@ void schedule(void)
     uint8_t *prev_fpu = (prev_tsk != NULL) ? get_aligned_fpu_region(prev_tsk) : NULL;
     uint8_t *next_fpu = get_aligned_fpu_region(next_tsk);
 
-    // Release spinlock WITHOUT enabling interrupts until after stack switch!
     spinlock_release(&sched_lock);
 
     if (prev_tsk == NULL)
@@ -354,7 +394,7 @@ void schedule(void)
         sti();
     }
 
-    if (g_curr_tsk->pending_signals & (1 << (SIGINT - 1)))
+    if (g_curr_tsk->pid != 0 && (g_curr_tsk->pending_signals & (1 << (SIGINT - 1))))
     {
         kprint("Signal SIGINT detected! Killing process...\n");
         g_curr_tsk->pending_signals &= ~(1 << (SIGINT - 1));
@@ -362,7 +402,7 @@ void schedule(void)
     }
 }
 
-void sched_block()
+void sched_block(void)
 {
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
@@ -396,12 +436,14 @@ void sched_exit(int code)
 
     Task *task_to_exit = g_curr_tsk;
 
-    // Clean up GUI and FDs BEFORE switching CR3 and g_curr_tsk
     sched_clean_gui(task_to_exit);
     sched_clean_fds(task_to_exit);
 
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
+    (void)rflags;
+
+    sched_reparent_children_locked(task_to_exit);
 
     Task *next_tsk = task_to_exit->next;
     while (next_tsk->state != TASK_READY)
@@ -409,7 +451,7 @@ void sched_exit(int code)
         next_tsk = next_tsk->next;
         if (next_tsk == task_to_exit)
         {
-            next_tsk = g_head_tsk; // fallback to kernel task (PID 0)
+            next_tsk = g_head_tsk;
             break;
         }
     }
@@ -438,13 +480,16 @@ void sched_exit(int code)
 
     uint8_t *next_fpu = get_aligned_fpu_region(next_tsk);
 
-    // Keep interrupts disabled across switch_to_task
     spinlock_release(&sched_lock);
     switch_to_task(NULL, next_tsk->kern_stk_rsp, NULL, next_fpu);
 }
 
 void sched_kill(int pid)
 {
+    if (pid <= 0)
+    {
+        return;
+    }
     if (pid == g_curr_tsk->pid)
     {
         sched_exit(-1);
@@ -455,13 +500,13 @@ void sched_kill(int pid)
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
 
     Task *tgt_tsk = sched_find_task_locked(pid);
-    if (tgt_tsk == NULL)
+    if (tgt_tsk == NULL || tgt_tsk->state == TASK_ZOMBIE || tgt_tsk->state == TASK_DEAD)
     {
         SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
-        kprint("SCHED: Kill failed, PID not found\n");
         return;
     }
 
+    sched_reparent_children_locked(tgt_tsk);
     tgt_tsk->state = TASK_ZOMBIE;
     tgt_tsk->ret_val = -1;
 
@@ -477,9 +522,10 @@ void sched_kill(int pid)
     SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
 
     sched_clean_gui(tgt_tsk);
+    sched_clean_fds(tgt_tsk);
 }
 
-Task *get_curr_task()
+Task *get_curr_task(void)
 {
     return g_curr_tsk;
 }
@@ -493,7 +539,7 @@ Task *sched_find_task(int pid)
     return t;
 }
 
-int64_t get_curr_task_pid()
+int64_t get_curr_task_pid(void)
 {
     Task *t = get_curr_task();
     if (t == NULL)
@@ -567,19 +613,30 @@ Task *task_factory_fork(Task *parent_tsk)
     uint8_t *child_fpu = get_aligned_fpu_region(child_tsk);
     memcpy(child_fpu, parent_fpu, 512);
 
+    // Free the default empty PML4 allocated by sched_new_task before replacing it
+    if (child_tsk->pml4 != 0)
+    {
+        vmm_ret_pml4(child_tsk->pml4);
+        child_tsk->pml4 = 0;
+    }
+
     uint64_t new_pml4 = vmm_copy_hierarchy(vmm_phys_to_hhdm(parent_tsk->pml4), 4);
+    if (new_pml4 == 0)
+    {
+        sched_destroy_task(child_tsk);
+        return NULL;
+    }
     child_tsk->pml4 = new_pml4;
 
     uint64_t kern_stk = pmm_alloc_frame();
     if (kern_stk == 0)
     {
-        kfree(child_tsk);
+        sched_destroy_task(child_tsk);
         return NULL;
     }
     child_tsk->kern_stk_top = (uint64_t)vmm_phys_to_hhdm(kern_stk) + PAGE_SIZE;
 
     memcpy(child_tsk->fd_tbl, parent_tsk->fd_tbl, MAX_OPEN_FILES * sizeof(file_handle_t *));
-
     for (int i = 0; i < MAX_OPEN_FILES; i++)
     {
         if (child_tsk->fd_tbl[i] == NULL)
@@ -591,6 +648,8 @@ Task *task_factory_fork(Task *parent_tsk)
     child_tsk->parent = parent_tsk;
     child_tsk->state = TASK_READY;
     child_tsk->win = parent_tsk->win;
+
+    vmm_cleanup_task(child_tsk);
     child_tsk->vm_alloc_head = vmm_copy_alloc_list(parent_tsk->vm_alloc_head);
     child_tsk->vm_free_head = vmm_copy_free_list(parent_tsk->vm_free_head);
 
@@ -604,7 +663,7 @@ Task *task_factory_fork(Task *parent_tsk)
     *(--child_sp) = NEW_TASK_CS;
     *(--child_sp) = (uint64_t)*(parent_sp + 11);
 
-    *(--child_sp) = 0;                           // pid, rax = 0;
+    *(--child_sp) = 0;                           // rax = 0 in child
     *(--child_sp) = (uint64_t)*(parent_sp + 7);  // rbx
     *(--child_sp) = (uint64_t)*(parent_sp + 11); // rcx
     *(--child_sp) = 0;                           // rdx
@@ -655,8 +714,10 @@ inline static void sched_clean_fds(Task *tsk)
     }
 }
 
-void sched_check_sleeping_tasks()
+void sched_check_sleeping_tasks(void)
 {
+    Task *zombie_to_reap = NULL;
+
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
 
@@ -668,15 +729,41 @@ void sched_check_sleeping_tasks()
 
     int64_t curr_tick = timer_get_ticks();
     Task *t = g_head_tsk;
+    Task *prev = g_head_tsk;
+    while (prev->next != g_head_tsk)
+    {
+        prev = prev->next;
+    }
+
     do
     {
+        Task *next = t->next;
         if (t->state == TASK_SLEEPING && curr_tick >= t->wake_tick)
         {
             t->state = TASK_READY;
             t->wake_tick = -1;
         }
-        t = t->next;
+        else if (t->pid != 0 && t != g_curr_tsk && t->state == TASK_ZOMBIE &&
+                 (t->parent == NULL || t->parent->pid == 0 || t->parent->state == TASK_ZOMBIE || t->parent->state == TASK_DEAD) &&
+                 zombie_to_reap == NULL)
+        {
+            // Auto-reap orphaned or kernel-spawned zombie task
+            prev->next = next;
+            if (t == g_head_tsk)
+            {
+                g_head_tsk = next;
+            }
+            zombie_to_reap = t;
+            break;
+        }
+        prev = t;
+        t = next;
     } while (t != g_head_tsk);
 
     SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
+
+    if (zombie_to_reap != NULL)
+    {
+        sched_destroy_task(zombie_to_reap);
+    }
 }

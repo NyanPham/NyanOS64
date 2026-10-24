@@ -95,8 +95,6 @@ int main(int argc, char **argv)
     uint8_t *row_buf = malloc(row_size);
     uint32_t *img_buf = malloc(bmp_header.width * bmp_header.height * sizeof(uint32_t));
 
-    int content_start_y = 0;
-
     for (int y = bmp_header.height - 1; y >= 0; y--)
     {
         read(fd, row_buf, row_size);
@@ -126,4 +124,6 @@ int main(int argc, char **argv)
     }
 
     exit(0);
+
+    return 0;
 }

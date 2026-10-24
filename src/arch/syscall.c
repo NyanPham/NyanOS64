@@ -264,6 +264,10 @@ static uint64_t sys_fork(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
         return -1;
     }
     Task *child_tsk = task_factory_fork(parent_tsk);
+    if (child_tsk == NULL)
+    {
+        return -1;
+    }
     sched_register_task(child_tsk);
     return child_tsk->pid;
 }
@@ -300,8 +304,9 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     }
 
     size_t argv_ptr_size = (argc + 1) * sizeof(uint64_t);
-
     char *argv_buf = kmalloc(argv_size);
+    if (argv_buf == NULL)
+        return -1;
 
     int cpy_off = 0;
     for (int i = 0; i < argc; i++)
@@ -320,6 +325,11 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     }
 
     uint64_t *argv_list = (uint64_t *)kmalloc(argv_ptr_size);
+    if (argv_list == NULL)
+    {
+        kfree(argv_buf);
+        return -1;
+    }
 
     size_t curr_off = 0;
     for (int i = 0; i < argc; i++)
@@ -327,32 +337,31 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
         argv_list[i] = start_usr_addr + curr_off;
         curr_off += strlen(argv[i]) + 1;
     }
-
     argv_list[argc] = 0;
 
-    // handle the path
     Task *curr_tsk = get_curr_task();
     char full_path[256];
     resolve_path(curr_tsk->cwd, raw_path, full_path);
 
     char *elf_fname = kmalloc(strlen(full_path) + 1);
-    strcpy(elf_fname, full_path);
-
-    uint64_t old_pml4 = read_cr3();
-
-    uint64_t new_pml4 = vmm_new_pml4();
-    if (new_pml4 == 0)
+    if (elf_fname == NULL)
     {
         kfree(argv_buf);
         kfree(argv_list);
         return -1;
     }
+    strcpy(elf_fname, full_path);
 
-    /*
-    turn of the interrupts to
-    avoid our scheduler intervention
-    when the pml4 swapping is still happening
-    */
+    uint64_t old_pml4 = read_cr3();
+    uint64_t new_pml4 = vmm_new_pml4();
+    if (new_pml4 == 0)
+    {
+        kfree(argv_buf);
+        kfree(argv_list);
+        kfree(elf_fname);
+        return -1;
+    }
+
     cli();
     write_cr3(new_pml4);
     curr_tsk->pml4 = new_pml4;
@@ -364,7 +373,6 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     for (int i = 0; i < USER_STACK_PAGES; i++)
     {
         uint64_t phys_usr_stk_frame = pmm_alloc_frame();
-
         vmm_map_page(
             new_pml4_hhdm,
             virt_usr_stk_base + (PAGE_SIZE * i),
@@ -374,19 +382,15 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
 
     uint64_t phys_usr_stk = vmm_virt2phys(new_pml4_hhdm, start_usr_addr) & ~0xFFF;
 
-    // copy the argv_buf
     uint64_t offset_buf = start_usr_addr & 0xFFF;
     void *dest_buf = vmm_phys_to_hhdm(phys_usr_stk + offset_buf);
     memcpy(dest_buf, argv_buf, argv_size);
 
-    // copy the argv_list
     uint64_t start_list_addr = start_usr_addr - argv_ptr_size;
     uint64_t offset_list = start_list_addr & 0xFFF;
     void *dest_list = vmm_phys_to_hhdm(phys_usr_stk + offset_list);
     memcpy(dest_list, argv_list, argv_ptr_size);
 
-    // write argc into the rsp top
-    // virt_rsp = start_list_addr - 8
     uint64_t rsp_virt_addr = start_list_addr - sizeof(uint64_t);
     uint64_t offset_rsp = rsp_virt_addr & 0xFFF;
     uint64_t *dest_rsp = vmm_phys_to_hhdm(phys_usr_stk + offset_rsp);
@@ -396,6 +400,7 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     kfree(argv_list);
 
     uint64_t entry = elf_load(elf_fname);
+    kfree(elf_fname);
 
     if (entry == 0)
     {
@@ -403,39 +408,33 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
         write_cr3(old_pml4);
         curr_tsk->pml4 = old_pml4;
         sti();
-        kfree(elf_fname);
 
-        for (int i = 0; i < USER_STACK_PAGES; i++)
-        {
-            uint64_t virt_stk_page = virt_usr_stk_base + (PAGE_SIZE * i);
-            uint64_t phys_frame = vmm_virt2phys(new_pml4_hhdm, virt_stk_page);
-            if (phys_frame != 0)
-            {
-                pmm_free_frame(phys_frame);
-            }
-        }
-
-        vmm_ret_pml4(new_pml4);
+        vmm_free_table(new_pml4_hhdm, 4);
         return -1;
     }
 
-    kfree(elf_fname);
+    // Allocate a brand-new kernel stack frame so we don't overwrite the stack we are currently running on!
+    uint64_t new_kern_stk_phys = pmm_alloc_frame();
+    if (new_kern_stk_phys == 0)
+    {
+        cli();
+        write_cr3(old_pml4);
+        curr_tsk->pml4 = old_pml4;
+        sti();
+        vmm_free_table(new_pml4_hhdm, 4);
+        return -1;
+    }
 
     curr_tsk->heap_end = USER_HEAP_START;
-
-    curr_tsk->pml4 = old_pml4;
     vmm_cleanup_task(curr_tsk);
-    curr_tsk->pml4 = new_pml4;
 
     VmFreeRegion *vm_free_head = (VmFreeRegion *)kmalloc(sizeof(VmFreeRegion));
-    if (vm_free_head == NULL)
+    if (vm_free_head != NULL)
     {
-        return -1;
+        vm_free_head->addr = USER_MMAP_START;
+        vm_free_head->size = USER_MMAP_SIZE;
+        vm_free_head->next = NULL;
     }
-    vm_free_head->addr = USER_MMAP_START;
-    vm_free_head->size = USER_MMAP_SIZE;
-    vm_free_head->next = NULL;
-
     curr_tsk->vm_free_head = vm_free_head;
     curr_tsk->vm_alloc_head = NULL;
 
@@ -457,19 +456,27 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     }
 
     cli();
+    uint64_t old_kern_stk_top = curr_tsk->kern_stk_top;
+    curr_tsk->kern_stk_top = (uint64_t)vmm_phys_to_hhdm(new_kern_stk_phys) + PAGE_SIZE;
+
+    extern uint64_t kern_stk_ptr;
+    tss_set_stack(curr_tsk->kern_stk_top);
+    kern_stk_ptr = curr_tsk->kern_stk_top;
+
     uint64_t fpu_addr = (uint64_t)curr_tsk->fpu_regs;
     uint8_t *fpu_aligned = (uint8_t *)((fpu_addr + 15) & ~((uint64_t)0xF));
     memset(fpu_aligned, 0, 512);
     *((uint16_t *)(fpu_aligned)) = 0x037F;
     *((uint32_t *)(fpu_aligned + 0x18)) = 0x1F80;
 
-    uint64_t entry_saved = entry;
-    uint64_t rsp_saved = rsp_virt_addr;
-    Task *tsk_saved = curr_tsk;
-
     task_context_reset(curr_tsk, entry, rsp_virt_addr);
-    switch_to_task(NULL, curr_tsk->kern_stk_rsp, NULL, fpu_aligned);
 
+    if (old_kern_stk_top != 0)
+    {
+        pmm_free_frame(vmm_hhdm_to_phys((void *)(old_kern_stk_top - PAGE_SIZE)));
+    }
+
+    switch_to_task(NULL, curr_tsk->kern_stk_rsp, NULL, fpu_aligned);
     return 0;
 }
 
@@ -1133,8 +1140,8 @@ static uint64_t sys_shm_open(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64
     if (handle == NULL)
     {
         kprint("SYS_SHM_OPEN failed: OOM\n");
-        kfree(node);
         ((SharedMem_t *)(node->device_data))->ref_count--;
+        kfree(node);
         return -1;
     }
 
@@ -1145,15 +1152,16 @@ static uint64_t sys_shm_open(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64
     spinlock_init(&handle->lock);
 
     Task *curr_tsk = get_curr_task();
-
     int8_t fd = find_free_fd(curr_tsk);
     if (fd < 0)
     {
+        ((SharedMem_t *)(node->device_data))->ref_count--;
+        kfree(node);
+        kfree(handle);
         return -1;
     }
 
     curr_tsk->fd_tbl[fd] = handle;
-
     return fd;
 }
 
@@ -1267,9 +1275,8 @@ static uint64_t sys_munmap(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t
         return -1;
     }
 
-    vmm_free(addr);
-
-    return 0;
+    Task *curr_tsk = get_curr_task();
+    return vmm_unmap_user(curr_tsk, addr);
 }
 
 static uint64_t sys_fstat(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)

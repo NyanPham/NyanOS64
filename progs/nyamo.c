@@ -847,4 +847,6 @@ int main(int argc, char **argv)
 
     print("\033[?47l");
     exit(0);
+
+    return 0;
 }

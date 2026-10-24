@@ -35,6 +35,7 @@ static uint64_t g_rows_on_screen = 0;
 static uint64_t g_visible_rows = 0;
 
 static uint32_t *g_back_buf = NULL;
+[[maybe_unused]]
 static volatile bool mouse_moved = false;
 
 static TermCell *buf = (TermCell *)BUF_VIRT_ENTRY;

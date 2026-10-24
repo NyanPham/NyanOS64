@@ -84,6 +84,9 @@ void draw_face()
 
 int main(int argc, char **argv)
 {
+    (void)argc;
+    (void)argv;
+
     WinParams_t wp;
     wp.x = 200;
     wp.y = 150;

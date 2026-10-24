@@ -51,6 +51,8 @@ void draw_colon(int ox, int oy, int tick)
 
 void main(int argc, char **argv)
 {
+    (void)argc;
+    (void)argv;
     WinParams_t params;
     params.x = 700;
     params.y = 400;

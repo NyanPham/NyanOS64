@@ -217,6 +217,7 @@ int win_get_size(int *w, int *h)
 int shutdown(void)
 {
     syscall(SYS_SHUTDOWN, 0, 0, 0, 0, 0, 0);
+    return 0;
 }
 
 int win_create(WinParams_t *win_params)
@@ -651,7 +652,7 @@ void *malloc(size_t size)
     {
         return NULL;
     }
-    size = (size + 7) & ~7;
+    size = (size + 15) & ~(size_t)15;
 
     block_meta *blk;
 
