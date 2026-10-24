@@ -6,11 +6,13 @@
 #include "vmm.h"
 #include "drivers/serial.h" // debugging
 #include "kern_defs.h"
+#include "utils/spinlock.h"
 
 extern uint64_t hhdm_offset;
-
 static FreeBlock *g_free_list_head = NULL;
+static spinlock_t kmalloc_lock = SPINLOCK_INIT;
 
+void kfree_unlocked(void *ptr);
 void kfree(void *ptr);
 
 // Request a new page frame and update the g_free_list_head
@@ -38,7 +40,7 @@ void *request_new_page()
 
     FreeBlock *new_page = (FreeBlock *)ptr;
     new_page->size = PAGE_SIZE;
-    kfree((void *)((uint8_t *)new_page + sizeof(FreeBlock)));
+    kfree_unlocked((void *)((uint8_t *)new_page + sizeof(FreeBlock)));
 
     return new_page;
 }
@@ -97,16 +99,21 @@ void *kmalloc(size_t size)
         return NULL; // TODO: we'll handle the edge case of allocating larger size later.
     }
 
+    uint64_t flags;
+    SPIN_LOCK_IRQSAVE(&kmalloc_lock, flags);
+
     FreeBlock *blk = find_free_block(size);
     if (blk == NULL)
     {
         if (request_new_page() == NULL)
         {
+            SPIN_UNLOCK_IRQRESTORE(&kmalloc_lock, flags);
             return NULL;
         }
         blk = find_free_block(size);
         if (blk == NULL)
         {
+            SPIN_UNLOCK_IRQRESTORE(&kmalloc_lock, flags);
             return NULL;
         }
     }
@@ -120,17 +127,18 @@ void *kmalloc(size_t size)
     {
         FreeBlock *remaining = (FreeBlock *)((uint8_t *)blk + allocated_size);
         remaining->size = remaining_size;
-        kfree((void *)((uint8_t *)remaining + sizeof(FreeBlock)));
+        kfree_unlocked((void *)((uint8_t *)remaining + sizeof(FreeBlock)));
     }
     else
     {
         blk->size += remaining_size;
     }
 
+    SPIN_UNLOCK_IRQRESTORE(&kmalloc_lock, flags);
     return ptr;
 }
 
-void kfree(void *ptr)
+void kfree_unlocked(void *ptr)
 {
     if (ptr == NULL)
     {
@@ -188,4 +196,17 @@ void kfree(void *ptr)
         prev->size += blk_to_free->size;
         prev->next = blk_to_free->next;
     }
+}
+
+void kfree(void *ptr)
+{
+    if (ptr == NULL)
+    {
+        return;
+    }
+
+    uint64_t flags;
+    SPIN_LOCK_IRQSAVE(&kmalloc_lock, flags);
+    kfree_unlocked(ptr);
+    SPIN_UNLOCK_IRQRESTORE(&kmalloc_lock, flags);
 }

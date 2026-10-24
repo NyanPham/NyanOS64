@@ -15,6 +15,7 @@
 #include "kern_defs.h"
 #include "vmm.h"
 #include "../string.h"
+#include "utils/spinlock.h"
 
 #include <limine.h>
 #include <stddef.h>
@@ -31,6 +32,7 @@ static size_t total_pages = 0;
 static size_t last_free_page = 0; // speed up allocation searches
 static size_t ref_counts_size = 0;
 static size_t ref_counts_page_count = 0;
+static spinlock_t pmm_lock = SPINLOCK_INIT;
 
 /**
  * @brief Sets a bit in the bitmap to mark a page is used
@@ -164,6 +166,9 @@ void pmm_init(struct limine_memmap_response *memmap_resp, struct limine_hhdm_res
  */
 uint64_t pmm_alloc_frame(void)
 {
+    uint64_t flags;
+    SPIN_LOCK_IRQSAVE(&pmm_lock, flags);
+
     // starts scanning from the last known free page, do not start the scanning from the beginning
     for (size_t i = last_free_page; i < total_pages; i++)
     {
@@ -172,6 +177,7 @@ uint64_t pmm_alloc_frame(void)
             bitmap_set(i);
             ref_counts[i] = 1;
             last_free_page = i + 1;
+            SPIN_UNLOCK_IRQRESTORE(&pmm_lock, flags);
             return (uint64_t)(i * PAGE_SIZE); // convert to a virtual address.
         }
     }
@@ -184,10 +190,12 @@ uint64_t pmm_alloc_frame(void)
             bitmap_set(i);
             ref_counts[i] = 1;
             last_free_page = i + 1;
+            SPIN_UNLOCK_IRQRESTORE(&pmm_lock, flags);
             return (uint64_t)(i * PAGE_SIZE);
         }
     }
 
+    SPIN_UNLOCK_IRQRESTORE(&pmm_lock, flags);
     return 0; // mem is full
 }
 
@@ -197,12 +205,23 @@ uint64_t pmm_alloc_frame(void)
  */
 void pmm_free_frame(uint64_t phys_addr)
 {
+    uint64_t flags;
+    SPIN_LOCK_IRQSAVE(&pmm_lock, flags);
+
     // convert back from VM addr to PM addr, and compute the bit index in the bitmap
     size_t bit = phys_addr / PAGE_SIZE;
+    if (bit >= total_pages)
+    {
+        SPIN_UNLOCK_IRQRESTORE(&pmm_lock, flags);
+        return;
+    }
+
     if (bitmap_test(bit))
     {
-        // mark it as free
-        ref_counts[bit] -= 1;
+        if (ref_counts[bit] > 0)
+        {
+            ref_counts[bit] -= 1;
+        }
         if (ref_counts[bit] == 0)
         {
             bitmap_clear(bit);
@@ -212,6 +231,8 @@ void pmm_free_frame(uint64_t phys_addr)
             }
         }
     }
+
+    SPIN_UNLOCK_IRQRESTORE(&pmm_lock, flags);
 }
 
 /**
@@ -220,8 +241,13 @@ void pmm_free_frame(uint64_t phys_addr)
  */
 void pmm_inc_ref(uint64_t frame_addr)
 {
+    uint64_t flags;
+    SPIN_LOCK_IRQSAVE(&pmm_lock, flags);
+
     size_t idx = frame_addr / PAGE_SIZE;
     ref_counts[idx] += 1;
+
+    SPIN_UNLOCK_IRQRESTORE(&pmm_lock, flags);
 }
 
 /**
@@ -231,13 +257,7 @@ void pmm_inc_ref(uint64_t frame_addr)
  */
 void pmm_dec_ref(uint64_t frame_addr)
 {
-    size_t idx = frame_addr / PAGE_SIZE;
-    ref_counts[idx] -= 1;
-
-    if (ref_counts[idx] == 0)
-    {
-        pmm_free_frame(frame_addr);
-    }
+    pmm_free_frame(frame_addr);
 }
 
 /**
@@ -246,6 +266,12 @@ void pmm_dec_ref(uint64_t frame_addr)
  */
 uint32_t pmm_get_ref_count(uint64_t frame_addr)
 {
+    uint64_t flags;
+    SPIN_LOCK_IRQSAVE(&pmm_lock, flags);
+
     size_t idx = frame_addr / PAGE_SIZE;
-    return ref_counts[idx];
+    uint32_t count = (idx < total_pages) ? ref_counts[idx] : 0;
+
+    SPIN_UNLOCK_IRQRESTORE(&pmm_lock, flags);
+    return count;
 }

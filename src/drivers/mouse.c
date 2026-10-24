@@ -79,6 +79,12 @@ static void mouse_handler(void *regs)
 
     uint8_t data = inb(MOUSE_PORT_DATA);
 
+    if (mouse.cycle == 0 && !(data & 0x08))
+    {
+        kprint("Error: Bag alignment!\n");
+        return;
+    }
+
     mouse.byte[mouse.cycle++] = data;
 
     if (mouse.cycle >= 3)

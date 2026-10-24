@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-inline uint8_t bcd2bin(uint8_t bcd)
+static inline uint8_t bcd2bin(uint8_t bcd)
 {
     return (bcd >> 4) * 10 + (bcd & 0x0F);
 }

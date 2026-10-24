@@ -20,17 +20,15 @@ void register_irq_handler(int irq, irq_handler_t handler)
 // It calls the registered handler for the given IRQ and then sends an EOI to the PIC.
 void irq_dispatch(int irq, void *regs)
 {
-    if (irq < 0 || irq >= 16) 
+    if (irq < 0 || irq >= 16)
     {
-        return; 
+        return;
     }
-
-    if (irq_handlers[irq]) 
+    lapic_send_eoi();
+    if (irq_handlers[irq])
     {
         irq_handlers[irq](regs);
     }
-
-    lapic_send_eoi();
 }
 
 // This is the main entry point for all IRQs.

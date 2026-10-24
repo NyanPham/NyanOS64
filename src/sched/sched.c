@@ -41,19 +41,25 @@ inline static void sched_clean_fds(Task *tsk);
 /* =======================================
  * FOR EVENT MANAGER
  * ======================================= */
-void sched_acquire_lock(uint64_t *rflags) {
+void sched_acquire_lock(uint64_t *rflags)
+{
     SPIN_LOCK_IRQSAVE(&sched_lock, *rflags);
 }
 
-void sched_release_lock(uint64_t *rflags) {
+void sched_release_lock(uint64_t *rflags)
+{
     SPIN_UNLOCK_IRQRESTORE(&sched_lock, *rflags);
 }
 
-Task *sched_find_task_locked(int pid) {
-    if (g_head_tsk == NULL) return NULL;
+Task *sched_find_task_locked(int pid)
+{
+    if (g_head_tsk == NULL)
+        return NULL;
     Task *t = g_head_tsk;
-    do {
-        if (t->pid == pid) return t;
+    do
+    {
+        if (t->pid == pid)
+            return t;
         t = t->next;
     } while (t != g_head_tsk);
     return NULL;
@@ -71,7 +77,7 @@ static uint8_t *get_aligned_fpu_region(Task *tsk)
 Task *sched_new_task(void)
 {
     Task *new_tsk = (Task *)kmalloc(sizeof(Task));
-    
+
     uint64_t flags;
     SPIN_LOCK_IRQSAVE(&sched_lock, flags);
     new_tsk->pid = g_next_pid++;
@@ -91,10 +97,13 @@ Task *sched_new_task(void)
 
     uint8_t *fpu_ptr = get_aligned_fpu_region(new_tsk);
     memset(fpu_ptr, 0, 512);
-    *((uint32_t *)(fpu_ptr + 0x18)) = 0x1F80; 
+    *((uint32_t *)(fpu_ptr + 0x18)) = 0x1F80;
 
     VmFreeRegion *vm_free_head = (VmFreeRegion *)kmalloc(sizeof(VmFreeRegion));
-    if (vm_free_head == NULL) { return NULL; }
+    if (vm_free_head == NULL)
+    {
+        return NULL;
+    }
 
     new_tsk->vm_free_head = vm_free_head;
     new_tsk->vm_free_head->addr = USER_MMAP_START;
@@ -103,20 +112,25 @@ Task *sched_new_task(void)
     new_tsk->vm_alloc_head = NULL;
 
     EventBuf *event_queue = (EventBuf *)vmm_alloc_global(sizeof(EventBuf));
-    if (event_queue == NULL) {
+    if (event_queue == NULL)
+    {
         kfree(vm_free_head);
         return NULL;
     }
     new_tsk->event_queue = event_queue;
     event_queue_init(new_tsk->event_queue);
 
-    if (g_curr_tsk != NULL) {
+    if (g_curr_tsk != NULL)
+    {
         strcpy(new_tsk->cwd, g_curr_tsk->cwd);
-    } else {
+    }
+    else
+    {
         strcpy(new_tsk->cwd, "/");
     }
 
-    for (uint8_t i = 0; i < MAX_OPEN_FILES; i++) {
+    for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
+    {
         new_tsk->fd_tbl[i] = NULL;
     }
     dev_attach_stdio(new_tsk->fd_tbl);
@@ -127,7 +141,8 @@ Task *sched_new_task(void)
 void task_context_setup(Task *tsk, uint64_t entry, uint64_t rsp)
 {
     uint64_t kern_stk = pmm_alloc_frame();
-    if (kern_stk == 0) return;
+    if (kern_stk == 0)
+        return;
 
     uint64_t *sp = (uint64_t *)((uint8_t *)vmm_phys_to_hhdm(kern_stk) + PAGE_SIZE);
     tsk->kern_stk_top = (uint64_t)sp;
@@ -138,9 +153,15 @@ void task_context_setup(Task *tsk, uint64_t entry, uint64_t rsp)
     *(--sp) = NEW_TASK_CS;     // CS
     *(--sp) = entry;           // RIP
 
-    for (uint8_t i = 0; i < 15; i++) { *(--sp) = 0; }
+    for (uint8_t i = 0; i < 15; i++)
+    {
+        *(--sp) = 0;
+    }
     *(--sp) = (uint64_t)task_start_stub;
-    for (uint8_t i = 0; i < 6; i++) { *(--sp) = 0; }
+    for (uint8_t i = 0; i < 6; i++)
+    {
+        *(--sp) = 0;
+    }
 
     tsk->kern_stk_rsp = (uint64_t)sp;
 }
@@ -148,26 +169,41 @@ void task_context_setup(Task *tsk, uint64_t entry, uint64_t rsp)
 void task_context_reset(Task *tsk, uint64_t entry, uint64_t rsp)
 {
     uint64_t *sp = (uint64_t *)tsk->kern_stk_top;
-    *(--sp) = NEW_TASK_SS;     
-    *(--sp) = rsp;             
-    *(--sp) = NEW_TASK_RFLAGS; 
-    *(--sp) = NEW_TASK_CS;     
-    *(--sp) = entry;           
+    *(--sp) = NEW_TASK_SS;
+    *(--sp) = rsp;
+    *(--sp) = NEW_TASK_RFLAGS;
+    *(--sp) = NEW_TASK_CS;
+    *(--sp) = entry;
 
-    for (int i = 0; i < 15; i++) { *(--sp) = 0; }
+    for (int i = 0; i < 15; i++)
+    {
+        *(--sp) = 0;
+    }
     *(--sp) = (uint64_t)task_start_stub;
-    for (int i = 0; i < 6; i++) { *(--sp) = 0; }
+    for (int i = 0; i < 6; i++)
+    {
+        *(--sp) = 0;
+    }
 
     tsk->kern_stk_rsp = (uint64_t)sp;
 }
 
 void sched_destroy_task(Task *tsk)
 {
-    if (tsk->kern_stk_top != 0) {
+    if (tsk->kern_stk_top != 0)
+    {
         pmm_free_frame(vmm_hhdm_to_phys((void *)(tsk->kern_stk_top - PAGE_SIZE)));
     }
+    if (tsk->event_queue != NULL)
+    {
+        vmm_free(tsk->event_queue);
+        tsk->event_queue = NULL;
+    }
     vmm_cleanup_task(tsk);
-    vmm_ret_pml4(tsk->pml4);
+    if (tsk->pml4 != 0)
+    {
+        vmm_free_table(vmm_phys_to_hhdm(tsk->pml4), 4);
+    }
     sched_clean_gui(tsk);
     kfree(tsk);
 }
@@ -178,16 +214,19 @@ void sched_unlink_task(Task *tsk)
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
 
     Task *prev = tsk;
-    while (prev->next != tsk) {
+    while (prev->next != tsk)
+    {
         prev = prev->next;
     }
 
     Task *next_tsk = tsk->next;
     prev->next = next_tsk;
 
-    if (tsk == g_head_tsk) {
+    if (tsk == g_head_tsk)
+    {
         g_head_tsk = next_tsk;
-        if (tsk == next_tsk) {
+        if (tsk == next_tsk)
+        {
             g_head_tsk = NULL;
         }
     }
@@ -205,19 +244,22 @@ void sched_init(void)
     kern_tsk->fg_pid = -1;
 
     EventBuf *event_queue = (EventBuf *)vmm_alloc_global(sizeof(EventBuf));
-    if (event_queue == NULL) {
+    if (event_queue == NULL)
+    {
         kprint("PANIC: Kernel Task Stack for EVENT_QUEUE: OOM\n");
         hcf();
     }
     kern_tsk->event_queue = event_queue;
     event_queue_init(kern_tsk->event_queue);
 
-    for (uint8_t i = 0; i < MAX_OPEN_FILES; i++) {
+    for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
+    {
         kern_tsk->fd_tbl[i] = NULL;
     }
 
     uint64_t stk_phys = pmm_alloc_frame();
-    if (stk_phys == 0) {
+    if (stk_phys == 0)
+    {
         kprint("PANIC: Kernel Task Stack OOM\n");
         hcf();
     }
@@ -233,7 +275,10 @@ void sched_init(void)
 void task_idle(void)
 {
     asm volatile("sti");
-    for (;;) { asm("hlt"); }
+    for (;;)
+    {
+        asm("hlt");
+    }
 }
 
 void schedule(void)
@@ -241,42 +286,43 @@ void schedule(void)
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
 
-    if (g_head_tsk == NULL) {
+    if (g_head_tsk == NULL)
+    {
         SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
         return;
     }
 
     Task *next_tsk;
-
-    if (g_curr_tsk == NULL) {
+    if (g_curr_tsk == NULL)
+    {
         next_tsk = g_head_tsk;
-    } else {
+    }
+    else
+    {
         next_tsk = g_curr_tsk->next;
-        if (next_tsk == NULL) {
+        if (next_tsk == NULL)
+        {
             next_tsk = g_head_tsk;
         }
 
         Task *start_tsk = next_tsk;
-        while (next_tsk->state != TASK_READY) {
+        while (next_tsk->state != TASK_READY)
+        {
             next_tsk = next_tsk->next;
-            if (next_tsk == NULL) {
+            if (next_tsk == NULL)
+            {
                 next_tsk = g_head_tsk;
             }
-
-            if (next_tsk == start_tsk) {
+            if (next_tsk == start_tsk)
+            {
                 next_tsk = g_head_tsk;
                 break;
             }
         }
     }
 
-    if (next_tsk == NULL) {
-        SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
-        kprint("[SCHEDULE]: PANIC next_tsk is NULL\n");
-        return;
-    }
-
-    if (next_tsk == g_curr_tsk) {
+    if (next_tsk == NULL || next_tsk == g_curr_tsk)
+    {
         SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
         return;
     }
@@ -291,15 +337,25 @@ void schedule(void)
     uint8_t *prev_fpu = (prev_tsk != NULL) ? get_aligned_fpu_region(prev_tsk) : NULL;
     uint8_t *next_fpu = get_aligned_fpu_region(next_tsk);
 
-    SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
+    // Release spinlock WITHOUT enabling interrupts until after stack switch!
+    spinlock_release(&sched_lock);
 
-    if (prev_tsk == NULL) {
+    if (prev_tsk == NULL)
+    {
         switch_to_task(NULL, next_tsk->kern_stk_rsp, NULL, next_fpu);
-    } else {
+    }
+    else
+    {
         switch_to_task(&prev_tsk->kern_stk_rsp, next_tsk->kern_stk_rsp, prev_fpu, next_fpu);
     }
 
-    if (g_curr_tsk->pending_signals & (1 << (SIGINT - 1))) {
+    if (rflags & (1 << 9))
+    {
+        sti();
+    }
+
+    if (g_curr_tsk->pending_signals & (1 << (SIGINT - 1)))
+    {
         kprint("Signal SIGINT detected! Killing process...\n");
         g_curr_tsk->pending_signals &= ~(1 << (SIGINT - 1));
         sched_exit(0);
@@ -312,7 +368,7 @@ void sched_block()
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
     g_curr_tsk->state = TASK_WAITING;
     SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
-    
+
     schedule();
 }
 
@@ -320,38 +376,46 @@ void sched_wake_pid(int pid)
 {
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
-    
+
     Task *t = sched_find_task_locked(pid);
-    if (t != NULL && t->state != TASK_ZOMBIE && t->state != TASK_DEAD) {
+    if (t != NULL && t->state != TASK_ZOMBIE && t->state != TASK_DEAD)
+    {
         t->state = TASK_READY;
     }
-    
+
     SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
 }
 
 void sched_exit(int code)
 {
-    if (g_curr_tsk->pid == 0) {
+    if (g_curr_tsk->pid == 0)
+    {
         kprint("Kernel cannot exit!\n");
         return;
     }
 
+    Task *task_to_exit = g_curr_tsk;
+
+    // Clean up GUI and FDs BEFORE switching CR3 and g_curr_tsk
+    sched_clean_gui(task_to_exit);
+    sched_clean_fds(task_to_exit);
+
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
 
-    Task *task_to_exit = g_curr_tsk;
     Task *next_tsk = task_to_exit->next;
-
-    while (next_tsk->state != TASK_READY) {
+    while (next_tsk->state != TASK_READY)
+    {
         next_tsk = next_tsk->next;
-        if (next_tsk == task_to_exit) {
-            SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
-            kprint("PANIC: NO valid task to switch to!\n");
-            for (;;) ;
+        if (next_tsk == task_to_exit)
+        {
+            next_tsk = g_head_tsk; // fallback to kernel task (PID 0)
+            break;
         }
     }
 
-    if (g_head_tsk == task_to_exit) {
+    if (g_head_tsk == task_to_exit)
+    {
         g_head_tsk = next_tsk;
     }
 
@@ -363,35 +427,36 @@ void sched_exit(int code)
     task_to_exit->state = TASK_ZOMBIE;
     task_to_exit->ret_val = code;
 
-    if (task_to_exit->parent != NULL) {
+    if (task_to_exit->parent != NULL)
+    {
         Task *parent = task_to_exit->parent;
-        if (parent->state != TASK_DEAD && parent->state != TASK_ZOMBIE) {
+        if (parent->state != TASK_DEAD && parent->state != TASK_ZOMBIE)
+        {
             parent->state = TASK_READY;
         }
     }
 
-    SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
-
-    sched_clean_gui(task_to_exit);
-    sched_clean_fds(task_to_exit);
-
-    kprint("Task exited. Switching to next...\n");
     uint8_t *next_fpu = get_aligned_fpu_region(next_tsk);
+
+    // Keep interrupts disabled across switch_to_task
+    spinlock_release(&sched_lock);
     switch_to_task(NULL, next_tsk->kern_stk_rsp, NULL, next_fpu);
 }
 
 void sched_kill(int pid)
 {
-    if (pid == g_curr_tsk->pid) {
+    if (pid == g_curr_tsk->pid)
+    {
         sched_exit(-1);
         return;
     }
 
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
-    
+
     Task *tgt_tsk = sched_find_task_locked(pid);
-    if (tgt_tsk == NULL) {
+    if (tgt_tsk == NULL)
+    {
         SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
         kprint("SCHED: Kill failed, PID not found\n");
         return;
@@ -400,13 +465,15 @@ void sched_kill(int pid)
     tgt_tsk->state = TASK_ZOMBIE;
     tgt_tsk->ret_val = -1;
 
-    if (tgt_tsk->parent != NULL) {
+    if (tgt_tsk->parent != NULL)
+    {
         Task *parent = tgt_tsk->parent;
-        if (parent->state != TASK_DEAD && parent->state != TASK_ZOMBIE) {
+        if (parent->state != TASK_DEAD && parent->state != TASK_ZOMBIE)
+        {
             parent->state = TASK_READY;
         }
     }
-    
+
     SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
 
     sched_clean_gui(tgt_tsk);
@@ -429,7 +496,8 @@ Task *sched_find_task(int pid)
 int64_t get_curr_task_pid()
 {
     Task *t = get_curr_task();
-    if (t == NULL) return -1;
+    if (t == NULL)
+        return -1;
     return t->pid;
 }
 
@@ -438,9 +506,12 @@ void sched_send_signal(int pid, uint32_t sig_code)
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
     Task *tsk = sched_find_task_locked(pid);
-    if (tsk != NULL) {
+    if (tsk != NULL)
+    {
         tsk->pending_signals |= 1 << (sig_code - 1);
-    } else {
+    }
+    else
+    {
         kprint("SCHED_SEND_SIGNAL failed: No task found for the id\n");
     }
     SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
@@ -451,11 +522,14 @@ void sched_register_task(Task *tsk)
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
 
-    if (g_head_tsk == NULL) {
+    if (g_head_tsk == NULL)
+    {
         g_head_tsk = tsk;
-        tsk->next = tsk; 
+        tsk->next = tsk;
         g_curr_tsk = tsk;
-    } else {
+    }
+    else
+    {
         tsk->next = g_head_tsk->next;
         g_head_tsk->next = tsk;
     }
@@ -467,7 +541,8 @@ void sched_register_task(Task *tsk)
 Task *task_factory_create(uint64_t entry, uint64_t rsp)
 {
     Task *tsk = sched_new_task();
-    if (tsk == NULL) return NULL;
+    if (tsk == NULL)
+        return NULL;
     task_context_setup(tsk, entry, rsp);
     return tsk;
 }
@@ -475,10 +550,13 @@ Task *task_factory_create(uint64_t entry, uint64_t rsp)
 Task *task_factory_fork(Task *parent_tsk)
 {
     Task *child_tsk = sched_new_task();
-    if (child_tsk == NULL) return NULL;
+    if (child_tsk == NULL)
+        return NULL;
 
-    for (int i = 0; i < MAX_OPEN_FILES; i++) {
-        if (child_tsk->fd_tbl[i] != NULL) {
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        if (child_tsk->fd_tbl[i] != NULL)
+        {
             vfs_close(child_tsk->fd_tbl[i]);
             child_tsk->fd_tbl[i] = NULL;
         }
@@ -493,7 +571,8 @@ Task *task_factory_fork(Task *parent_tsk)
     child_tsk->pml4 = new_pml4;
 
     uint64_t kern_stk = pmm_alloc_frame();
-    if (kern_stk == 0) {
+    if (kern_stk == 0)
+    {
         kfree(child_tsk);
         return NULL;
     }
@@ -501,8 +580,10 @@ Task *task_factory_fork(Task *parent_tsk)
 
     memcpy(child_tsk->fd_tbl, parent_tsk->fd_tbl, MAX_OPEN_FILES * sizeof(file_handle_t *));
 
-    for (int i = 0; i < MAX_OPEN_FILES; i++) {
-        if (child_tsk->fd_tbl[i] == NULL) continue;
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        if (child_tsk->fd_tbl[i] == NULL)
+            continue;
         vfs_retain(child_tsk->fd_tbl[i]);
     }
     memcpy(child_tsk->cwd, parent_tsk->cwd, MAX_CWD_LEN);
@@ -513,13 +594,13 @@ Task *task_factory_fork(Task *parent_tsk)
     child_tsk->vm_alloc_head = vmm_copy_alloc_list(parent_tsk->vm_alloc_head);
     child_tsk->vm_free_head = vmm_copy_free_list(parent_tsk->vm_free_head);
 
-    uint64_t *parent_sp = (uint64_t *)parent_tsk->kern_stk_top - 13; 
+    uint64_t *parent_sp = (uint64_t *)parent_tsk->kern_stk_top - 13;
     uint64_t *child_sp = (uint64_t *)child_tsk->kern_stk_top;
 
     *(--child_sp) = NEW_TASK_SS;
     uint64_t parent_user_rsp = *(parent_sp + 12);
     *(--child_sp) = parent_user_rsp;
-    *(--child_sp) = (uint64_t)*(parent_sp + 10) | 0x200; 
+    *(--child_sp) = (uint64_t)*(parent_sp + 10) | 0x200;
     *(--child_sp) = NEW_TASK_CS;
     *(--child_sp) = (uint64_t)*(parent_sp + 11);
 
@@ -541,7 +622,10 @@ Task *task_factory_fork(Task *parent_tsk)
 
     *(--child_sp) = (uint64_t)task_start_stub;
 
-    for (int i = 0; i < 6; i++) { *(--child_sp) = 0; }
+    for (int i = 0; i < 6; i++)
+    {
+        *(--child_sp) = 0;
+    }
     child_tsk->kern_stk_rsp = (uint64_t)child_sp;
 
     return child_tsk;
@@ -549,8 +633,10 @@ Task *task_factory_fork(Task *parent_tsk)
 
 inline static void sched_clean_gui(Task *tsk)
 {
-    if (tsk->win != NULL) {
-        if (tsk->win->owner_pid == tsk->pid) {
+    if (tsk->win != NULL)
+    {
+        if (tsk->win->owner_pid == tsk->pid)
+        {
             win_close(tsk->win);
         }
         tsk->win = NULL;
@@ -559,8 +645,10 @@ inline static void sched_clean_gui(Task *tsk)
 
 inline static void sched_clean_fds(Task *tsk)
 {
-    for (int i = 0; i < MAX_OPEN_FILES; i++) {
-        if (tsk->fd_tbl[i] != NULL) {
+    for (int i = 0; i < MAX_OPEN_FILES; i++)
+    {
+        if (tsk->fd_tbl[i] != NULL)
+        {
             vfs_close(tsk->fd_tbl[i]);
             tsk->fd_tbl[i] = NULL;
         }
@@ -572,15 +660,18 @@ void sched_check_sleeping_tasks()
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
 
-    if (g_head_tsk == NULL) {
+    if (g_head_tsk == NULL)
+    {
         SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
         return;
     }
 
     int64_t curr_tick = timer_get_ticks();
     Task *t = g_head_tsk;
-    do {
-        if (t->state == TASK_SLEEPING && curr_tick >= t->wake_tick) {
+    do
+    {
+        if (t->state == TASK_SLEEPING && curr_tick >= t->wake_tick)
+        {
             t->state = TASK_READY;
             t->wake_tick = -1;
         }

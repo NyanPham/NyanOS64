@@ -12,7 +12,7 @@ _start:
     call main
 
     mov rdi, rax    
-    mov rax, 8      ; call sys_exit, with the exit code from main
+    mov rax, 22      ; call sys_exit, with the exit code from main
     syscall
 
     jmp $

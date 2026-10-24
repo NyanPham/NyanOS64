@@ -456,13 +456,18 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
         curr_tsk->win = NULL;
     }
 
-    task_context_reset(curr_tsk, entry, rsp_virt_addr);
-
+    cli();
     uint64_t fpu_addr = (uint64_t)curr_tsk->fpu_regs;
     uint8_t *fpu_aligned = (uint8_t *)((fpu_addr + 15) & ~((uint64_t)0xF));
     memset(fpu_aligned, 0, 512);
     *((uint16_t *)(fpu_aligned)) = 0x037F;
     *((uint32_t *)(fpu_aligned + 0x18)) = 0x1F80;
+
+    uint64_t entry_saved = entry;
+    uint64_t rsp_saved = rsp_virt_addr;
+    Task *tsk_saved = curr_tsk;
+
+    task_context_reset(curr_tsk, entry, rsp_virt_addr);
     switch_to_task(NULL, curr_tsk->kern_stk_rsp, NULL, fpu_aligned);
 
     return 0;
@@ -1119,6 +1124,10 @@ static uint64_t sys_shm_open(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64
     }
 
     vfs_node_t *node = shm_create_vfs_node(name, flags);
+    if (node == NULL)
+    {
+        return -1;
+    }
 
     file_handle_t *handle = (file_handle_t *)kmalloc(sizeof(file_handle_t));
     if (handle == NULL)

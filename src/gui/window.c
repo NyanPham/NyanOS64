@@ -1122,6 +1122,8 @@ void init_desktop()
 
 void win_fill_rect(Window *win, int client_x, int client_y, int w, int h, uint32_t color)
 {
+    uint64_t rflags = read_rflags();
+    cli();
     int x = client_x;
     int y = client_y;
     int l_lim = 0;
@@ -1143,6 +1145,10 @@ void win_fill_rect(Window *win, int client_x, int client_y, int w, int h, uint32
 
     if (x >= r_lim || y >= b_lim)
     {
+        if (rflags & (1 << 9))
+        {
+            sti();
+        }
         return;
     }
 
@@ -1150,14 +1156,9 @@ void win_fill_rect(Window *win, int client_x, int client_y, int w, int h, uint32
     int draw_h = h;
 
     if (x + draw_w > r_lim)
-    {
         draw_w = r_lim - x;
-    }
-
     if (y + draw_h > b_lim)
-    {
         draw_h = b_lim - y;
-    }
 
     if (x < l_lim)
     {
@@ -1171,6 +1172,15 @@ void win_fill_rect(Window *win, int client_x, int client_y, int w, int h, uint32
         buf_off_y = t_lim - y;
         draw_h -= buf_off_y;
         y = t_lim;
+    }
+
+    if (draw_w <= 0 || draw_h <= 0)
+    {
+        if (rflags & (1 << 9))
+        {
+            sti();
+        }
+        return;
     }
 
     for (int r = 0; r < draw_h; r++)
@@ -1180,10 +1190,17 @@ void win_fill_rect(Window *win, int client_x, int client_y, int w, int h, uint32
     }
 
     win->flags |= WIN_DIRTY;
+    if (rflags & (1 << 9))
+    {
+        sti();
+    }
 }
 
 void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint32_t *buf)
 {
+    uint64_t rflags = read_rflags();
+    cli();
+
     int x = client_x;
     int y = client_y;
     int l_lim = 0;
@@ -1205,6 +1222,10 @@ void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint
 
     if (x >= r_lim || y >= b_lim)
     {
+        if (rflags & (1 << 9))
+        {
+            sti();
+        }
         return;
     }
 
@@ -1212,14 +1233,9 @@ void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint
     int draw_h = h;
 
     if (x + draw_w > r_lim)
-    {
         draw_w = r_lim - x;
-    }
-
     if (y + draw_h > b_lim)
-    {
         draw_h = b_lim - y;
-    }
 
     if (x < l_lim)
     {
@@ -1233,6 +1249,15 @@ void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint
         buf_off_y = t_lim - y;
         draw_h -= buf_off_y;
         y = t_lim;
+    }
+
+    if (draw_w <= 0 || draw_h <= 0)
+    {
+        if (rflags & (1 << 9))
+        {
+            sti();
+        }
+        return;
     }
 
     for (int r = 0; r < draw_h; r++)
@@ -1243,6 +1268,10 @@ void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint
     }
 
     win->flags |= WIN_DIRTY;
+    if (rflags & (1 << 9))
+    {
+        sti();
+    }
 }
 
 void win_get_client_size(Window *win, int *out_w, int *out_h)

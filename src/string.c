@@ -420,7 +420,7 @@ __attribute__((target("sse,sse2"))) void *memset_sse(void *s, int c, size_t n)
     // TAIL
     while (i < n)
     {
-        *(uint8_t *restrict)(&pdest[i]) = *(uint8_t *restrict)c64;
+        *(uint8_t *restrict)(&pdest[i]) = (uint8_t)c64;
         i += 1;
     }
 

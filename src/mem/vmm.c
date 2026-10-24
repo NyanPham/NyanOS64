@@ -71,11 +71,14 @@ void vmm_free_table(uint64_t *table, int level)
         }
 
         uint64_t phys_addr = pte_get_addr(entry);
-        uint64_t *virt_addr = vmm_phys_to_hhdm(pte_get_addr(entry));
+        uint64_t *virt_addr = vmm_phys_to_hhdm(phys_addr);
 
         if (level == 1)
         {
-            pmm_free_frame(phys_addr);
+            if (!(entry & PTE_FLAG_SHARED))
+            {
+                pmm_free_frame(phys_addr);
+            }
         }
         else if (level == 4 && i > 255)
         {
@@ -598,7 +601,9 @@ VmAllocatedList *vmm_pop_allocated_mem(VmAllocatedList **head_ref, uint64_t addr
 
 VmAllocatedList *vmm_find_allocated_mem(VmAllocatedList **head_ref, uint64_t addr)
 {
-    VmAllocatedList *curr_node = (VmAllocatedList *)head_ref;
+    if (head_ref == NULL)
+        return NULL;
+    VmAllocatedList *curr_node = *head_ref;
     while (curr_node != NULL)
     {
         if (curr_node->addr == addr)
@@ -607,7 +612,6 @@ VmAllocatedList *vmm_find_allocated_mem(VmAllocatedList **head_ref, uint64_t add
         }
         curr_node = curr_node->next;
     }
-
     return curr_node;
 }
 
@@ -809,7 +813,7 @@ int vmm_handle_cow(uint64_t fault_addr)
     uint64_t *pml4 = vmm_phys_to_hhdm(pte_get_addr(read_cr3()));
     uint64_t *pte = vmm_walk_to_pte(pml4, fault_addr, 0);
 
-    if (pte == NULL)
+    if (pte == NULL || !(*pte & VMM_FLAG_PRESENT))
     {
         return -1;
     }
@@ -818,14 +822,13 @@ int vmm_handle_cow(uint64_t fault_addr)
     uint64_t *virt_addr = vmm_phys_to_hhdm(old_phys);
     uint32_t ref_count = pmm_get_ref_count(old_phys);
 
-    if (ref_count == 1)
+    if (ref_count <= 1)
     {
         *pte |= VMM_FLAG_WRITABLE;
     }
-    else if (ref_count > 1)
+    else
     {
         uint64_t phys_addr = pmm_alloc_frame();
-
         if (phys_addr == 0)
         {
             return -1;

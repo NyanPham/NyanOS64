@@ -137,8 +137,8 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
 
             if (parent_node->ops && parent_node->ops->create)
             {
-                vfs_node_t *created = parent_node->ops->create(parent_node, child_name, mode);
-                if (created == NULL)
+                node = parent_node->ops->create(parent_node, child_name, mode);
+                if (node == NULL)
                 {
                     node = vfs_navigate(filename);
                 }
@@ -400,17 +400,17 @@ int vfs_readdir(vfs_node_t *node, uint32_t index, dirent_t *out)
 int vfs_unlink(const char *path)
 {
     vfs_node_t *node = vfs_navigate(path);
-    if (node == NULL)
+    if (node == NULL || node->ops == NULL || node->ops->unlink == NULL)
     {
         return -1;
     }
-
-    if (node->ops && node->ops->unlink)
+    node->ops->unlink(node);
+    if (node->flags & VFS_NODE_AUTOFREE)
     {
-        node->ops->unlink(node);
+        if (node->device_data)
+            kfree(node->device_data);
+        kfree(node);
     }
-
-    kfree(node);
     return 0;
 }
 

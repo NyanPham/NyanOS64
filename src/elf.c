@@ -33,6 +33,7 @@ uint64_t elf_load(const char *fname)
         elf_hdr.e_ident[3] != ELF_MAGIC3)
     {
         kprint("Error: Not a valid ELF file\n");
+        vfs_close(file);
         return 0;
     }
 
@@ -40,7 +41,14 @@ uint64_t elf_load(const char *fname)
     uint64_t *curr_pml4_virt = vmm_phys_to_hhdm(curr_pml4_phys);
 
     uint16_t phdrs_size = elf_hdr.e_phnum * elf_hdr.e_phentsize;
-    Elf64_Phdr *phdr = (Elf64_Phdr *)vmm_alloc(phdrs_size);
+    Elf64_Phdr *phdr = (Elf64_Phdr *)kmalloc(phdrs_size);
+    if (phdr == NULL)
+    {
+        kprint("ELF: Out of memory for phdrs!\n");
+        vfs_close(file);
+        return 0;
+    }
+
     vfs_seek(file, elf_hdr.e_phoff);
     vfs_read(file, phdrs_size, (uint8_t *)phdr);
 
@@ -51,59 +59,66 @@ uint64_t elf_load(const char *fname)
             uint64_t mem_size = phdr[i].p_memsz;
             uint64_t file_size = phdr[i].p_filesz;
             uint64_t vaddr = phdr[i].p_vaddr;
-            // uint64_t offset = phdr[i].p_offset;
 
-            uint64_t npages = (mem_size + PAGE_SIZE - 1) / PAGE_SIZE;
-            for (size_t j = 0; j < npages; j++)
+            if (mem_size == 0)
             {
-                uint64_t phys_addr = pmm_alloc_frame();
-                if (phys_addr == 0)
+                continue;
+            }
+
+            uint64_t start_page = vaddr & ~(uint64_t)(PAGE_SIZE - 1);
+            uint64_t end_page = (vaddr + mem_size + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+
+            // 1. Allocate and map all pages in [start_page, end_page) if not already mapped
+            for (uint64_t page_addr = start_page; page_addr < end_page; page_addr += PAGE_SIZE)
+            {
+                uint64_t existing_phys = vmm_virt2phys(curr_pml4_virt, page_addr);
+                if (existing_phys == 0)
                 {
-                    kprint("ELF: Out of memory!\n");
-                    return 0;
-                }
-
-                void *loc_virt_addr = (void *)vmm_phys_to_hhdm(phys_addr);
-                memset(loc_virt_addr, 0, PAGE_SIZE);
-
-                uint64_t targt_addr = vaddr + (j * PAGE_SIZE);
-
-                vmm_map_page(
-                    curr_pml4_virt,
-                    targt_addr,
-                    phys_addr,
-                    VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
-
-                uint64_t page_offset = j * PAGE_SIZE;
-
-                if (page_offset < file_size)
-                {
-                    uint64_t remaining_bytes = file_size - page_offset;
-                    uint64_t bytes_to_cpy = remaining_bytes > PAGE_SIZE ? PAGE_SIZE : remaining_bytes;
-
-                    if (bytes_to_cpy > 0)
+                    uint64_t phys_addr = pmm_alloc_frame();
+                    if (phys_addr == 0)
                     {
-                        vfs_seek(file, phdr[i].p_offset + page_offset);
-                        uint8_t *tmp_buf = (uint8_t *)vmm_alloc(bytes_to_cpy);
-                        vfs_read(file, bytes_to_cpy, tmp_buf);
-                        memcpy(loc_virt_addr, tmp_buf, bytes_to_cpy);
-                        vmm_free(tmp_buf);
+                        kprint("ELF: Out of memory!\n");
+                        kfree(phdr);
+                        vfs_close(file);
+                        return 0;
                     }
 
-                    if (bytes_to_cpy < PAGE_SIZE)
-                    {
-                        memset((uint8_t *)loc_virt_addr + bytes_to_cpy, 0, PAGE_SIZE - bytes_to_cpy);
-                    }
+                    void *loc_virt_addr = vmm_phys_to_hhdm(phys_addr);
+                    memset(loc_virt_addr, 0, PAGE_SIZE);
+
+                    vmm_map_page(
+                        curr_pml4_virt,
+                        page_addr,
+                        phys_addr,
+                        VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+                }
+            }
+
+            // 2. Copy file_size bytes to the exact virtual address (including page offset)
+            uint64_t copied = 0;
+            vfs_seek(file, phdr[i].p_offset);
+            while (copied < file_size)
+            {
+                uint64_t curr_vaddr = vaddr + copied;
+                uint64_t page_addr = curr_vaddr & ~(uint64_t)(PAGE_SIZE - 1);
+                uint64_t page_off = curr_vaddr & (PAGE_SIZE - 1);
+
+                uint64_t phys_addr = vmm_virt2phys(curr_pml4_virt, page_addr);
+                uint8_t *dst_ptr = (uint8_t *)vmm_phys_to_hhdm(phys_addr) + page_off;
+
+                uint64_t chunk = PAGE_SIZE - page_off;
+                if (chunk > (file_size - copied))
+                {
+                    chunk = file_size - copied;
                 }
 
-                // kprint("Loaded segment at ");
-                // kprint_hex_64(vaddr);
-                // kprint("\n");
+                vfs_read(file, chunk, dst_ptr);
+                copied += chunk;
             }
         }
     }
 
-    vmm_free(phdr);
+    kfree(phdr);
     vfs_close(file);
     kprint("ELF: Loaded successfully. Entry: ");
     kprint_hex_64(elf_hdr.e_entry);

@@ -29,13 +29,46 @@ def make_83_name(filename):
         base, ext = name.rsplit(".", 1)
     else:
         base, ext = name, ""
+    base = base.replace("-", "_")
     return base[:8].ljust(8, " ").encode("ascii") + ext[:3].ljust(3, " ").encode("ascii")
 
+def lfn_checksum(short_name_11):
+    chk = 0
+    for b in short_name_11:
+        chk = (((chk & 1) << 7) + (chk >> 1) + b) & 0xFF
+    return chk
+
+def make_lfn_entries(filename, short_name_11):
+    chk = lfn_checksum(short_name_11)
+    utf16_chars = [ord(c) for c in filename]
+    if len(utf16_chars) % 13 != 0:
+        utf16_chars.append(0x0000)
+        while len(utf16_chars) % 13 != 0:
+            utf16_chars.append(0xFFFF)
+
+    num_chunks = len(utf16_chars) // 13
+    entries = []
+    for i in range(num_chunks, 0, -1):
+        chunk = utf16_chars[(i - 1) * 13 : i * 13]
+        seq = i | (0x40 if i == num_chunks else 0)
+        entry = bytearray(32)
+        entry[0] = seq
+        struct.pack_into("<5H", entry, 1, *chunk[0:5])
+        entry[11] = 0x0F  # LFN attribute
+        entry[12] = 0x00
+        entry[13] = chk
+        struct.pack_into("<6H", entry, 14, *chunk[5:11])
+        struct.pack_into("<H", entry, 26, 0)
+        struct.pack_into("<2H", entry, 28, *chunk[11:13])
+        entries.append(entry)
+    return entries
+
 class Fat32Builder:
-    def __init__(self, total_sectors, hidden_sectors=0, label=b"NYANOS     "):
+    def __init__(self, total_sectors, hidden_sectors=0, label=b"NYANOS     ", use_lfn=False, sectors_per_cluster=1):
         self.total_sectors = total_sectors
         self.hidden_sectors = hidden_sectors
-        self.sectors_per_cluster = 8  # 4 KB clusters
+        self.use_lfn = use_lfn
+        self.sectors_per_cluster = sectors_per_cluster
         self.reserved_sectors = 32
         self.num_fats = 2
         clusters = total_sectors // self.sectors_per_cluster
@@ -78,8 +111,8 @@ class Fat32Builder:
         bpb[82:90] = b"FAT32   "
         bpb[510:512] = b"\x55\xAA"
         self.image[0:SECTOR_SIZE] = bpb
+        self.image[6*SECTOR_SIZE:7*SECTOR_SIZE] = bpb
 
-        # FSInfo at sector 1
         fsinfo = bytearray(SECTOR_SIZE)
         struct.pack_into("<I", fsinfo, 0, 0x41615252)
         struct.pack_into("<I", fsinfo, 484, 0x61417272)
@@ -98,27 +131,40 @@ class Fat32Builder:
         self.fat[c] = 0x0FFFFFFF
         return c
 
-    def add_dir_entry(self, dir_cluster, name11, attr, first_cluster, size):
-        off = self.cluster_offset(dir_cluster)
+    def _append_raw_dir_entry(self, dir_cluster, raw_entry):
         cluster_bytes = self.sectors_per_cluster * SECTOR_SIZE
-        for i in range(0, cluster_bytes, 32):
-            if self.image[off + i] in (0x00, 0xE5):
-                entry = bytearray(32)
-                entry[0:11] = name11
-                entry[11] = attr
-                struct.pack_into("<H", entry, 20, (first_cluster >> 16) & 0xFFFF)
-                struct.pack_into("<H", entry, 26, first_cluster & 0xFFFF)
-                struct.pack_into("<I", entry, 28, size)
-                self.image[off + i : off + i + 32] = entry
-                return
-        raise RuntimeError("Directory cluster full")
+        curr = dir_cluster
+        while True:
+            off = self.cluster_offset(curr)
+            for i in range(0, cluster_bytes, 32):
+                if self.image[off + i] in (0x00, 0xE5):
+                    self.image[off + i : off + i + 32] = raw_entry
+                    return
+            nxt = self.fat[curr]
+            if nxt >= 0x0FFFFFF8:
+                nxt = self.alloc_cluster()
+                self.fat[curr] = nxt
+            curr = nxt
+
+    def add_dir_entry(self, dir_cluster, filename, name11, attr, first_cluster, size):
+        if self.use_lfn and filename not in (".", ".."):
+            for lfn_ent in make_lfn_entries(filename, name11):
+                self._append_raw_dir_entry(dir_cluster, lfn_ent)
+
+        entry = bytearray(32)
+        entry[0:11] = name11
+        entry[11] = attr
+        struct.pack_into("<H", entry, 20, (first_cluster >> 16) & 0xFFFF)
+        struct.pack_into("<H", entry, 26, first_cluster & 0xFFFF)
+        struct.pack_into("<I", entry, 28, size)
+        self._append_raw_dir_entry(dir_cluster, entry)
 
     def mkdir(self, parent_cluster, dirname):
         c = self.alloc_cluster()
-        self.add_dir_entry(parent_cluster, make_83_name(dirname), 0x10, c, 0)
-        self.add_dir_entry(c, b".          ", 0x10, c, 0)
+        self.add_dir_entry(parent_cluster, dirname, make_83_name(dirname), 0x10, c, 0)
+        self.add_dir_entry(c, ".", b".          ", 0x10, c, 0)
         parent_ref = 0 if parent_cluster == self.root_cluster else parent_cluster
-        self.add_dir_entry(c, b"..         ", 0x10, parent_ref, 0)
+        self.add_dir_entry(c, "..", b"..         ", 0x10, parent_ref, 0)
         return c
 
     def add_file(self, dir_cluster, filename, data):
@@ -136,7 +182,7 @@ class Fat32Builder:
                 chunk = data[idx * cluster_bytes : (idx + 1) * cluster_bytes]
                 off = self.cluster_offset(c)
                 self.image[off : off + len(chunk)] = chunk
-        self.add_dir_entry(dir_cluster, make_83_name(filename), 0x20, first_c, len(data))
+        self.add_dir_entry(dir_cluster, filename, make_83_name(filename), 0x20, first_c, len(data))
 
     def finalize(self):
         fat_bytes = bytearray(self.sectors_per_fat * SECTOR_SIZE)
@@ -152,7 +198,7 @@ def build_hdd_img(reset=False):
         return
     print("Creating 64MB FAT32 hdd.img...")
     total_sectors = (64 * 1024 * 1024) // SECTOR_SIZE
-    fs = Fat32Builder(total_sectors, hidden_sectors=0, label=b"DATA_DISK  ")
+    fs = Fat32Builder(total_sectors, hidden_sectors=0, label=b"DATA_DISK  ", use_lfn=False, sectors_per_cluster=1)
     fs.add_file(fs.root_cluster, "TEST.TXT", b"Hello from NyanOS FAT32 disk!")
     if os.path.exists("snake.elf"):
         with open("snake.elf", "rb") as f:
@@ -166,30 +212,34 @@ def build_boot_image():
     part_start = 2048
     part_sectors = total_sectors - part_start
 
-    fs = Fat32Builder(part_sectors, hidden_sectors=part_start, label=b"NYANBOOT   ")
+    # sectors_per_cluster=1 ensures >65,525 clusters so Limine detects FAT32 instead of FAT16
+    fs = Fat32Builder(part_sectors, hidden_sectors=part_start, label=b"NYANBOOT   ", use_lfn=True, sectors_per_cluster=1)
     efi_dir = fs.mkdir(fs.root_cluster, "EFI")
     efi_boot_dir = fs.mkdir(efi_dir, "BOOT")
-    boot_dir = fs.mkdir(fs.root_cluster, "BOOT")
-    limine_dir = fs.mkdir(boot_dir, "LIMINE")
+    boot_dir = fs.mkdir(fs.root_cluster, "boot")
+    limine_dir = fs.mkdir(boot_dir, "limine")
 
     files_to_copy = [
-        (boot_dir, "NYANOS", "bin/nyanOS"),
-        (boot_dir, "LIMINE.CFG", "limine.conf"),
-        (fs.root_cluster, "LIMINE.CFG", "limine.conf"),
-        (boot_dir, "SHELL.ELF", "shell.elf"),
-        (boot_dir, "ROOTFS.TAR", "rootfs.tar"),
-        (limine_dir, "LIMINE.SYS", "limine/limine-bios.sys"),
-        (boot_dir, "LIMINE.SYS", "limine/limine-bios.sys"),
-        (efi_boot_dir, "BOOTX64.EFI", "limine/BOOTX64.EFI"),
-        (efi_boot_dir, "BOOTIA32.EFI", "limine/BOOTIA32.EFI"),
+        (boot_dir, "nyanOS", "bin/nyanOS", True),
+        (boot_dir, "limine.conf", "limine.conf", True),
+        (limine_dir, "limine.conf", "limine.conf", True),
+        (fs.root_cluster, "limine.conf", "limine.conf", True),
+        (boot_dir, "SHELL.ELF", "shell.elf", True),
+        (boot_dir, "ROOTFS.TAR", "rootfs.tar", True),
+        (limine_dir, "limine-bios.sys", "limine/limine-bios.sys", True),
+        (boot_dir, "limine-bios.sys", "limine/limine-bios.sys", True),
+        (fs.root_cluster, "limine-bios.sys", "limine/limine-bios.sys", True),
+        (efi_boot_dir, "BOOTX64.EFI", "limine/BOOTX64.EFI", False),
+        (efi_boot_dir, "BOOTIA32.EFI", "limine/BOOTIA32.EFI", False),
     ]
-    for target_dir, fat_name, host_path in files_to_copy:
+    for target_dir, fat_name, host_path, required in files_to_copy:
         if os.path.exists(host_path):
             with open(host_path, "rb") as f:
                 fs.add_file(target_dir, fat_name, f.read())
+        elif required:
+            raise FileNotFoundError(f"Required boot file missing: {host_path}")
 
     disk = bytearray(total_sectors * SECTOR_SIZE)
-    # Write MBR with bootable FAT32 partition 1 at LBA 2048
     mbr_part = struct.pack("<BBBBBBBBII", 0x80, 0, 2, 0, 0x0C, 254, 255, 255, part_start, part_sectors)
     disk[0x1BE : 0x1BE + 16] = mbr_part
     disk[510:512] = b"\x55\xAA"

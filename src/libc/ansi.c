@@ -1,5 +1,5 @@
 #include "../include/ansi.h"
-#include "color.h"
+#include "../include/color.h"
 
 uint32_t g_ansi_palette[] =
     {

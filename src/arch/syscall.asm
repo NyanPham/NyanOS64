@@ -29,7 +29,6 @@ syscall_entry:
     mov rsp, [kern_stk_ptr]
     
     push qword [usr_stk_tmp]
-    sti
 
     ; save the context (CPU-saved and Caller-saved regs)
     ; CPU saved regs
@@ -47,6 +46,9 @@ syscall_entry:
     push r13
     push r14
     push r15
+    sti
+
+    sub rsp, 8
 
     ; shuffle the registers from user-space to System V ABI
     mov r9, r8
@@ -56,6 +58,7 @@ syscall_entry:
     mov rsi, rdi
     mov rdi, rax
     call syscall_handler
+    add rsp, 8
     mov [rsp + 72], rax ; sizeof(uint64_t) * 9 registers to the push rax above
 
     ; restore the context

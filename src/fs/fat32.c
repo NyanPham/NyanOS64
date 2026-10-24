@@ -255,11 +255,12 @@ static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, ui
                     int64_t free_cluster_id = fat32_find_free_cluster();
                     if (free_cluster_id < 0)
                     {
-                        kprint("FAT32_CREATE failed: No free cluster id found!\n");
+                        kprint("FAT32_WRITE failed: No free cluster id found!\n");
                         return 0;
                     }
 
                     fat32_write_fat_entry(prev_cluster, free_cluster_id);
+                    fat32_write_fat_entry(free_cluster_id, EOC); // Mark allocated immediately!
                     prev_cluster = free_cluster_id;
                 }
 
@@ -340,7 +341,7 @@ vfs_fs_ops_t fat32_ops = {
 uint32_t fat32_read_fat(uint32_t cluster)
 {
     uint32_t fat_offset = cluster * sizeof(uint32_t);
-    uint32_t fat_sector = g_bpb.reserved_sectors + (fat_offset / g_bpb.bytes_per_sector);
+    uint32_t fat_sector = g_partition_lba + g_bpb.reserved_sectors + (fat_offset / g_bpb.bytes_per_sector);
     uint32_t ent_offset = fat_offset % g_bpb.bytes_per_sector;
 
     uint16_t tmp_buf[SECTOR_SIZE / 2];

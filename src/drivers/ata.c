@@ -48,8 +48,6 @@ static void ata_handler()
     {
         ata_drq = 1;
     }
-
-    lapic_send_eoi();
 }
 
 void ata_wait_bsy()

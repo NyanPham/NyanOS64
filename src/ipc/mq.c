@@ -31,6 +31,8 @@ MessageQueue_t *mq_open(const char *name, int flags)
     new_mq->msg_count = 0;
     new_mq->head = NULL;
     new_mq->tail = NULL;
+    new_mq->waiting_receivers = NULL;
+    new_mq->waiting_senders = NULL;
 
     new_mq->next = g_mq_root;
     g_mq_root = new_mq;
