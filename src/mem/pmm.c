@@ -205,6 +205,11 @@ uint64_t pmm_alloc_frame(void)
  */
 void pmm_free_frame(uint64_t phys_addr)
 {
+    if (phys_addr < 0x100000)
+    {
+        return;
+    }
+
     uint64_t flags;
     SPIN_LOCK_IRQSAVE(&pmm_lock, flags);
 

@@ -716,8 +716,6 @@ inline static void sched_clean_fds(Task *tsk)
 
 void sched_check_sleeping_tasks(void)
 {
-    Task *zombie_to_reap = NULL;
-
     uint64_t rflags;
     SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
 
@@ -729,36 +727,53 @@ void sched_check_sleeping_tasks(void)
 
     int64_t curr_tick = timer_get_ticks();
     Task *t = g_head_tsk;
-    Task *prev = g_head_tsk;
-    while (prev->next != g_head_tsk)
-    {
-        prev = prev->next;
-    }
-
     do
     {
-        Task *next = t->next;
         if (t->state == TASK_SLEEPING && curr_tick >= t->wake_tick)
         {
             t->state = TASK_READY;
             t->wake_tick = -1;
         }
-        else if (t->pid != 0 && t != g_curr_tsk && t->state == TASK_ZOMBIE &&
-                 (t->parent == NULL || t->parent->pid == 0 || t->parent->state == TASK_ZOMBIE || t->parent->state == TASK_DEAD) &&
-                 zombie_to_reap == NULL)
-        {
-            // Auto-reap orphaned or kernel-spawned zombie task
-            prev->next = next;
-            if (t == g_head_tsk)
-            {
-                g_head_tsk = next;
-            }
-            zombie_to_reap = t;
-            break;
-        }
-        prev = t;
-        t = next;
+        t = t->next;
     } while (t != g_head_tsk);
+
+    SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
+}
+
+void sched_reap_zombies(void)
+{
+    Task *zombie_to_reap = NULL;
+
+    uint64_t rflags;
+    SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
+
+    if (g_head_tsk != NULL)
+    {
+        Task *t = g_head_tsk;
+        Task *prev = g_head_tsk;
+        while (prev->next != g_head_tsk)
+        {
+            prev = prev->next;
+        }
+
+        do
+        {
+            Task *next = t->next;
+            if (t->pid != 0 && t != g_curr_tsk && t->state == TASK_ZOMBIE &&
+                (t->parent == NULL || t->parent->pid == 0 || t->parent->state == TASK_ZOMBIE || t->parent->state == TASK_DEAD))
+            {
+                prev->next = next;
+                if (t == g_head_tsk)
+                {
+                    g_head_tsk = next;
+                }
+                zombie_to_reap = t;
+                break;
+            }
+            prev = t;
+            t = next;
+        } while (t != g_head_tsk);
+    }
 
     SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
 

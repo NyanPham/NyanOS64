@@ -101,7 +101,10 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    int h = 10, m = 10, s = 0;
+    [[maybe_unused]]
+    int h = 10,
+        m = 10,
+        s = 0;
 
     Event e;
     Time_t t;

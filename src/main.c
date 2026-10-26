@@ -72,52 +72,91 @@ extern void sched_acquire_lock(uint64_t *rflags);
 extern void sched_release_lock(uint64_t *rflags);
 extern Task *sched_find_task_locked(int pid);
 
-static inline void spawn_terminal()
+static void spawn_elf_app(const char *elf_path)
 {
-    kprint("Loading Terminal App...\n");
+    kprint("Spawning App: ");
+    kprint(elf_path);
+    kprint("\n");
 
-    Task *term_tsk = sched_new_task();
-    if (term_tsk == NULL)
+    Task *app_tsk = sched_new_task();
+    if (app_tsk == NULL)
     {
+        kprint("spawn_elf_app: OOM creating task\n");
         return;
     }
-    strcpy(term_tsk->cwd, "/");
+    strcpy(app_tsk->cwd, "/");
 
-    uint64_t curr_pml4 = read_cr3(); // this could be kern_pml4, but nah, let's make thing variable :))
+    uint64_t *app_pml4_virt = vmm_phys_to_hhdm(app_tsk->pml4);
+    uint64_t entry = elf_load_PML4(elf_path, app_pml4_virt);
 
-    write_cr3(term_tsk->pml4);
-
-    uint64_t term_entry = elf_load("/bin/terminal.elf");
-
-    if (term_entry != 0)
+    if (entry != 0)
     {
-        kprint("Loading Terminal...\n");
+        uint64_t virt_usr_stk_base = USER_STACK_TOP - (PAGE_SIZE * USER_STACK_PAGES);
+        for (int i = 0; i < USER_STACK_PAGES; i++)
+        {
+            uint64_t phys_usr_stk = pmm_alloc_frame();
+            if (phys_usr_stk == 0)
+            {
+                kprint("spawn_elf_app: OOM allocating user stack\n");
+                sched_destroy_task(app_tsk);
+                return;
+            }
+            memset(vmm_phys_to_hhdm(phys_usr_stk), 0, PAGE_SIZE);
+            vmm_map_page(
+                app_pml4_virt,
+                virt_usr_stk_base + (i * PAGE_SIZE),
+                phys_usr_stk,
+                VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
+        }
 
-        uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
-        uint64_t phys_usr_stk = pmm_alloc_frame();
+        size_t len = strlen(elf_path) + 1;
+        uint64_t str_usr_addr = (USER_STACK_TOP - len) & ~0xFULL;
+        uint64_t list_usr_addr = str_usr_addr - (2 * sizeof(uint64_t));
+        if ((list_usr_addr & 0xFULL) == 0)
+        {
+            str_usr_addr -= 8;
+            list_usr_addr = str_usr_addr - (2 * sizeof(uint64_t));
+        }
+        uint64_t rsp_usr_addr = list_usr_addr - sizeof(uint64_t);
 
-        vmm_map_page(
-            vmm_phys_to_hhdm(term_tsk->pml4),
-            virt_usr_stk_base,
-            phys_usr_stk,
-            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
-        // no args, so argc = 0, no need space for argv
-        uint64_t *kern_view_stk = vmm_phys_to_hhdm(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t));
-        *kern_view_stk = 0;
+        uint64_t top_page_phys = vmm_virt2phys(app_pml4_virt, str_usr_addr) & ~0xFFFULL;
+        if (top_page_phys == 0)
+        {
+            kprint("spawn_elf_app: top_page_phys is NULL!\n");
+            sched_destroy_task(app_tsk);
+            return;
+        }
 
-        uint64_t term_rsp = USER_STACK_TOP - sizeof(uint64_t);
+        memcpy(vmm_phys_to_hhdm(top_page_phys + (str_usr_addr & 0xFFF)), elf_path, len);
 
-        write_cr3(curr_pml4);
+        uint64_t *argv_kern = (uint64_t *)vmm_phys_to_hhdm(top_page_phys + (list_usr_addr & 0xFFF));
+        argv_kern[0] = str_usr_addr;
+        argv_kern[1] = 0;
 
-        task_context_setup(term_tsk, term_entry, term_rsp);
-        sched_register_task(term_tsk);
+        uint64_t *argc_kern = (uint64_t *)vmm_phys_to_hhdm(top_page_phys + (rsp_usr_addr & 0xFFF));
+        *argc_kern = 1;
+
+        task_context_setup(app_tsk, entry, rsp_usr_addr);
+        if (app_tsk->kern_stk_top == 0)
+        {
+            kprint("spawn_elf_app: OOM allocating kernel stack\n");
+            sched_destroy_task(app_tsk);
+            return;
+        }
+        sched_register_task(app_tsk);
     }
     else
     {
-        write_cr3(curr_pml4);
-        kprint("Failed to load terminal!\n");
-        sched_destroy_task(term_tsk);
+        kprint("Failed to load app: ");
+        kprint(elf_path);
+        kprint("\n");
+        sched_destroy_task(app_tsk);
     }
+}
+
+static inline void spawn_terminal(void)
+{
+    spawn_elf_app("/bin/terminal.elf");
 }
 
 void k_ls(const char *path)
@@ -282,7 +321,7 @@ static uint64_t prev_tick = 0;
 void update_clock(int clock_x, int clock_y)
 {
     uint64_t tick = timer_get_ticks();
-    if (tick - prev_tick >= 100)
+    if (tick - prev_tick >= 50)
     {
         prev_tick = tick;
         Time_t *t = rtc_get_time();
@@ -303,8 +342,7 @@ void update_clock(int clock_x, int clock_y)
 
             if (g_desktop_win)
             {
-                win_draw_string(g_desktop_win, clock_x, clock_y, "        ", White, Teal);
-                win_draw_string(g_desktop_win, clock_x, clock_y, time_str, White, Teal);
+                win_draw_string(g_desktop_win, clock_x, clock_y, time_str, Yellow, 0xFF1A2228);
                 video_add_dirty_rect(clock_x, clock_y, 8 * 8, 8);
             }
             kfree(t);
@@ -312,46 +350,9 @@ void update_clock(int clock_x, int clock_y)
     }
 }
 
-static inline void spawn_digital_clock()
+static inline void spawn_digital_clock(void)
 {
-    kprint("Spawning Digital Clock App...\n");
-
-    Task *clock_task = sched_new_task();
-    memset(clock_task->fpu_regs, 0, 528);
-    uint64_t curr_pml4 = read_cr3();
-    write_cr3(clock_task->pml4);
-
-    uint64_t entry = elf_load("/bin/clock_digital.elf");
-
-    if (entry != 0)
-    {
-        uint64_t virt_usr_stk_base = USER_STACK_TOP - PAGE_SIZE;
-        uint64_t phys_usr_stk = pmm_alloc_frame();
-
-        vmm_map_page(
-            vmm_phys_to_hhdm(clock_task->pml4),
-            virt_usr_stk_base,
-            phys_usr_stk,
-            VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
-
-        uint64_t *kern_view_stk = vmm_phys_to_hhdm(phys_usr_stk + PAGE_SIZE - sizeof(uint64_t));
-        *kern_view_stk = 0;
-
-        uint64_t user_rsp = USER_STACK_TOP - sizeof(uint64_t);
-
-        write_cr3(curr_pml4);
-
-        task_context_setup(clock_task, entry, user_rsp);
-        sched_register_task(clock_task);
-
-        kprint("Clock App Spawned!\n");
-    }
-    else
-    {
-        write_cr3(curr_pml4);
-        kprint("Failed to load /bin/clock.elf!\n");
-        sched_destroy_task(clock_task);
-    }
+    spawn_elf_app("/bin/clock_digital.elf");
 }
 
 void kmain(void)
@@ -436,12 +437,11 @@ void kmain(void)
 
     spawn_digital_clock();
 
-    // int clock_x = (int)video_get_width() - 80;
-    // int clock_y = (int)video_get_height() - 80;
+    int clock_x = (int)video_get_width() - 72;
+    int clock_y = (int)video_get_height() - TASKBAR_HEIGHT + 10;
 
     while (true)
     {
-        // Event Loop
         Event e;
         if (event_queue_pop(&g_event_queue, &e))
         {
@@ -455,8 +455,13 @@ void kmain(void)
                 if (e.key == 't' && is_ctrl && is_alt)
                 {
                     kprint("Hotkey detected to spawn a terminal\n");
-                    keyboard_get_char(); // consume the pressed "t"
+                    keyboard_get_char();
                     spawn_terminal();
+                }
+                else if (e.key == '\t' && is_alt)
+                {
+                    keyboard_get_char();
+                    win_cycle_focus();
                 }
                 else
                 {
@@ -499,14 +504,29 @@ void kmain(void)
                 break;
             }
             default:
-            {
-                // do nothing
-            }
+                break;
             }
         }
 
+        sched_reap_zombies();
         cursor_erase();
         win_update();
+
+        int launch_req = win_consume_launch_req();
+        if (launch_req == LAUNCH_TERMINAL)
+        {
+            spawn_elf_app("/bin/terminal.elf");
+        }
+        else if (launch_req == LAUNCH_SNAKE)
+        {
+            spawn_elf_app("/bin/snake.elf");
+        }
+        else if (launch_req == LAUNCH_CLOCK)
+        {
+            spawn_elf_app("/bin/clock_analog.elf");
+        }
+
+        update_clock(clock_x, clock_y);
 
         win_paint();
         cursor_paint();

@@ -23,6 +23,10 @@
 
 #define O_NONBLOCK 0x1
 
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
 typedef struct dirent
 {
     char name[128];
@@ -67,6 +71,7 @@ int kill_fg(int shell_pid);
 int await_io(int *fds, int num_fds, int await_gui, int non_block);
 int win_get_size(int *w, int *h);
 int shutdown(void);
+int64_t lseek(int fd, int64_t offset, int whence);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);

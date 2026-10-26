@@ -251,6 +251,58 @@ static uint64_t sys_list_files(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint
     return 0;
 }
 
+static uint64_t sys_lseek(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
+{
+    UNUSED(arg4);
+    UNUSED(arg5);
+    int fd = (int)arg1;
+    int64_t offset = (int64_t)arg2;
+    int whence = (int)arg3;
+
+    if (fd < 0 || fd >= MAX_OPEN_FILES)
+    {
+        return (uint64_t)-1;
+    }
+
+    Task *curr_tsk = get_curr_task();
+    if (curr_tsk == NULL)
+    {
+        return (uint64_t)-1;
+    }
+
+    file_handle_t *file = curr_tsk->fd_tbl[fd];
+    if (file == NULL || file->node == NULL)
+    {
+        return (uint64_t)-1;
+    }
+
+    int64_t new_offset = 0;
+    if (whence == SEEK_SET)
+    {
+        new_offset = offset;
+    }
+    else if (whence == SEEK_CUR)
+    {
+        new_offset = (int64_t)file->offset + offset;
+    }
+    else if (whence == SEEK_END)
+    {
+        new_offset = (int64_t)file->node->length + offset;
+    }
+    else
+    {
+        return (uint64_t)-1;
+    }
+
+    if (new_offset < 0)
+    {
+        return (uint64_t)-1;
+    }
+
+    vfs_seek(file, (uint64_t)new_offset);
+    return (uint64_t)new_offset;
+}
+
 static uint64_t sys_fork(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
 {
     UNUSED(arg1);
@@ -1711,6 +1763,7 @@ static syscall_ptr_t syscall_table[MAX_SYSCALLS] = {
     [SYS_PIPE] = sys_pipe,
     [SYS_DUP2] = sys_dup2,
     [SYS_LIST_FILES] = sys_list_files,
+    [SYS_LSEEK] = sys_lseek,
     [SYS_FORK] = sys_fork,
     [SYS_EXEC] = sys_exec,
     [SYS_EXIT] = sys_exit,

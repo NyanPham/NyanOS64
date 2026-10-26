@@ -4,9 +4,11 @@
 #include "kmalloc.h"
 #include "pmm.h"
 #include "vmm.h"
-#include "drivers/serial.h" // debugging
+#include "drivers/serial.h"
 #include "kern_defs.h"
 #include "utils/spinlock.h"
+
+#define KERN_HEAP_END (KERN_HEAP_START + 0x10000000ULL)
 
 extern uint64_t hhdm_offset;
 static FreeBlock *g_free_list_head = NULL;
@@ -15,24 +17,20 @@ static spinlock_t kmalloc_lock = SPINLOCK_INIT;
 void kfree_unlocked(void *ptr);
 void kfree(void *ptr);
 
-// Request a new page frame and update the g_free_list_head
-void *request_new_page()
+void *request_new_page(void)
 {
     uint64_t phys_addr = pmm_alloc_frame();
-
     if (phys_addr == 0)
     {
         return NULL;
     }
 
     FreeBlock *ptr = (FreeBlock *)vmm_phys_to_hhdm(phys_addr);
-
     if (ptr == NULL)
     {
         return NULL;
     }
 
-    // we need to convertthe phys_addr to virt_addr
     if ((uint64_t)ptr < hhdm_offset)
     {
         ptr = vmm_phys_to_hhdm((uint64_t)ptr);
@@ -45,8 +43,6 @@ void *request_new_page()
     return new_page;
 }
 
-// Walks through the free list to take the free block out
-// The block must be enough size for both data and header (FreeBlock)
 FreeBlock *find_free_block(size_t size)
 {
     FreeBlock *prev_blk = NULL;
@@ -74,16 +70,6 @@ FreeBlock *find_free_block(size_t size)
     return NULL;
 }
 
-/**
- * Allocate space for the requested size.
- * If the requested size is larger than 4096 + header size,
- * we'll handle them differently, later...
- * Otherwise, we find the free block from the list.
- * If not found, request the block.
- * The returned address is the found block + header size.
- * If the remaining is large enough for header, we split the block,
- * and return the remaining free space to the list.
- */
 void *kmalloc(size_t size)
 {
     if (size == 0)
@@ -91,12 +77,11 @@ void *kmalloc(size_t size)
         return NULL;
     }
 
-    // round up to multiple of 8
-    size = (size + 7) & ~7;
+    size = (size + 15) & ~(size_t)15;
 
     if (size >= (PAGE_SIZE - sizeof(FreeBlock)))
     {
-        return NULL; // TODO: we'll handle the edge case of allocating larger size later.
+        return vmm_alloc_global(size);
     }
 
     uint64_t flags;
@@ -145,24 +130,19 @@ void kfree_unlocked(void *ptr)
         return;
     }
 
-    FreeBlock *blk_to_free = (FreeBlock *)((void *)ptr - sizeof(FreeBlock));
-
-    // coalescing
+    FreeBlock *blk_to_free = (FreeBlock *)((uint8_t *)ptr - sizeof(FreeBlock));
     if (blk_to_free->size == 0)
     {
         return;
     }
 
-    // 1. find the predecessor
     FreeBlock *prev = g_free_list_head;
 
-    // case 1:  in head of the list
     if (g_free_list_head == NULL || (uint64_t)blk_to_free < (uint64_t)g_free_list_head)
     {
         blk_to_free->next = g_free_list_head;
         g_free_list_head = blk_to_free;
 
-        // merge right
         if (blk_to_free->next != NULL &&
             ((uint64_t)blk_to_free + blk_to_free->size) == (uint64_t)blk_to_free->next)
         {
@@ -172,17 +152,14 @@ void kfree_unlocked(void *ptr)
         return;
     }
 
-    // case 2: insert in the middle, or end
     while (prev->next != NULL && (uint64_t)prev->next < (uint64_t)blk_to_free)
     {
         prev = prev->next;
     }
 
-    // 2. insert the blk_to_free after pred
     blk_to_free->next = prev->next;
     prev->next = blk_to_free;
 
-    // 3. merge right - blk_to_free /w next?
     if (blk_to_free->next != NULL &&
         ((uint64_t)blk_to_free + blk_to_free->size) == (uint64_t)blk_to_free->next)
     {
@@ -190,7 +167,6 @@ void kfree_unlocked(void *ptr)
         blk_to_free->next = blk_to_free->next->next;
     }
 
-    // 4. merge left - pred /w blk_to_free
     if (((uint64_t)prev + prev->size) == (uint64_t)blk_to_free)
     {
         prev->size += blk_to_free->size;
@@ -202,6 +178,13 @@ void kfree(void *ptr)
 {
     if (ptr == NULL)
     {
+        return;
+    }
+
+    uint64_t addr = (uint64_t)ptr;
+    if (addr >= KERN_HEAP_START && addr < KERN_HEAP_END)
+    {
+        vmm_free(ptr);
         return;
     }
 

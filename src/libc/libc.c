@@ -225,6 +225,11 @@ int win_create(WinParams_t *win_params)
     return (int)syscall(SYS_CREATE_WIN, (uint64_t)win_params, 0, 0, 0, 0, 0);
 }
 
+int64_t lseek(int fd, int64_t offset, int whence)
+{
+    return (int64_t)syscall(SYS_LSEEK, (uint64_t)fd, (uint64_t)offset, (uint64_t)whence, 0, 0, 0);
+}
+
 /* ======= STRING, MEMORY FUNCTIONS =======*/
 size_t strlen(const char *s)
 {

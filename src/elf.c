@@ -11,9 +11,7 @@
 
 #include <stddef.h>
 
-extern uint64_t *kern_pml4;
-
-uint64_t elf_load(const char *fname)
+uint64_t elf_load_PML4(const char *fname, uint64_t *curr_pml4_virt)
 {
     Elf64_Ehdr elf_hdr;
     file_handle_t *file = vfs_open(fname, 0);
@@ -36,9 +34,6 @@ uint64_t elf_load(const char *fname)
         vfs_close(file);
         return 0;
     }
-
-    uint64_t curr_pml4_phys = read_cr3();
-    uint64_t *curr_pml4_virt = vmm_phys_to_hhdm(curr_pml4_phys);
 
     uint16_t phdrs_size = elf_hdr.e_phnum * elf_hdr.e_phentsize;
     Elf64_Phdr *phdr = (Elf64_Phdr *)kmalloc(phdrs_size);
@@ -68,7 +63,6 @@ uint64_t elf_load(const char *fname)
             uint64_t start_page = vaddr & ~(uint64_t)(PAGE_SIZE - 1);
             uint64_t end_page = (vaddr + mem_size + PAGE_SIZE - 1) & ~(uint64_t)(PAGE_SIZE - 1);
 
-            // 1. Allocate and map all pages in [start_page, end_page) if not already mapped
             for (uint64_t page_addr = start_page; page_addr < end_page; page_addr += PAGE_SIZE)
             {
                 uint64_t existing_phys = vmm_virt2phys(curr_pml4_virt, page_addr);
@@ -94,7 +88,6 @@ uint64_t elf_load(const char *fname)
                 }
             }
 
-            // 2. Copy file_size bytes to the exact virtual address (including page offset)
             uint64_t copied = 0;
             vfs_seek(file, phdr[i].p_offset);
             while (copied < file_size)
@@ -104,6 +97,12 @@ uint64_t elf_load(const char *fname)
                 uint64_t page_off = curr_vaddr & (PAGE_SIZE - 1);
 
                 uint64_t phys_addr = vmm_virt2phys(curr_pml4_virt, page_addr);
+                if (phys_addr == 0)
+                {
+                    kfree(phdr);
+                    vfs_close(file);
+                    return 0;
+                }
                 uint8_t *dst_ptr = (uint8_t *)vmm_phys_to_hhdm(phys_addr) + page_off;
 
                 uint64_t chunk = PAGE_SIZE - page_off;
@@ -125,4 +124,10 @@ uint64_t elf_load(const char *fname)
     kprint("\n");
 
     return elf_hdr.e_entry;
+}
+
+uint64_t elf_load(const char *fname)
+{
+    uint64_t curr_pml4_phys = read_cr3();
+    return elf_load_PML4(fname, vmm_phys_to_hhdm(curr_pml4_phys));
 }

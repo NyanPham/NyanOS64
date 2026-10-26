@@ -15,6 +15,7 @@
 #define SYS_PIPE 10
 #define SYS_DUP2 11
 #define SYS_LIST_FILES 12
+#define SYS_LSEEK 13
 
 // === PROCESS & TASK (20 - 29) ===
 #define SYS_FORK 20

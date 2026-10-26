@@ -65,6 +65,7 @@ Task *get_curr_task(void);
 Task *sched_find_task(int pid);
 int64_t get_curr_task_pid();
 void sched_send_signal(int pid, uint32_t sig_code);
+void sched_reap_zombies(void);
 
 void sched_register_task(Task *task);
 Task *task_factory_create(uint64_t entry, uint64_t rsp);

@@ -19,12 +19,16 @@
 #define O_TRUNC 0x20
 #define O_APPEND 0x40
 
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
 struct vfs_node;
 
 typedef struct dirent
 {
     char name[128];
-    uint32_t type; // VFS_FILE or VFS_DIRECTORY
+    uint32_t type;
     uint64_t size;
 } dirent_t;
 
@@ -38,6 +42,7 @@ typedef struct vfs_fs_ops
     struct vfs_node *(*create)(struct vfs_node *parent, const char *name, uint32_t flags);
     int (*readdir)(struct vfs_node *node, uint32_t index, struct dirent *out);
     void (*unlink)(struct vfs_node *node);
+    void (*truncate)(struct vfs_node *node);
     int (*check_ready)(struct vfs_node *node);
 } vfs_fs_ops_t;
 
@@ -61,7 +66,7 @@ typedef struct file_handle
     spinlock_t lock;
 } file_handle_t;
 
-void vfs_init();
+void vfs_init(void);
 int vfs_mount(const char *path, vfs_node_t *fs_root);
 void vfs_retain(file_handle_t *file);
 vfs_node_t *vfs_navigate(const char *path);
@@ -70,7 +75,6 @@ void vfs_close(file_handle_t *file);
 uint64_t vfs_read(file_handle_t *file, uint64_t size, uint8_t *buffer);
 uint64_t vfs_write(file_handle_t *file, uint64_t size, uint8_t *buffer);
 void vfs_seek(file_handle_t *file, uint64_t new_offset);
-vfs_node_t *vfs_navigate(const char *path);
 int vfs_readdir(vfs_node_t *node, uint32_t index, dirent_t *out);
 int vfs_unlink(const char *path);
 void resolve_path(const char *cwd, const char *inp_path, char *out_buf);

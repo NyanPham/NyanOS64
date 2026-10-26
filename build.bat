@@ -123,12 +123,12 @@ goto :eof
 
 :run
 echo [QEMU] Booting NyanOS on Windows...
-qemu-system-x86_64 -drive file=image.hdd,format=raw,index=0,media=disk -drive file=hdd.img,format=raw,index=1,media=disk -serial stdio
+qemu-system-x86_64 -drive file=image.hdd,format=raw,index=0,media=disk -drive file=hdd.img,format=raw,index=1,media=disk -serial stdio -m 512M
 goto :eof
 
 :debug
 echo [QEMU] Waiting for GDB on port 1234...
-qemu-system-x86_64 -drive file=image.hdd,format=raw,index=0,media=disk -drive file=hdd.img,format=raw,index=1,media=disk -S -s -serial stdio
+qemu-system-x86_64 -drive file=image.hdd,format=raw,index=0,media=disk -drive file=hdd.img,format=raw,index=1,media=disk -S -s -serial stdio -m 512M
 goto :eof
 
 :reset_disk

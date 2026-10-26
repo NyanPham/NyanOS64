@@ -67,6 +67,10 @@ file_handle_t *vfs_open(const char *filename, uint32_t mode)
 
         if (mode & O_TRUNC)
         {
+            if (node->ops && node->ops->truncate)
+            {
+                node->ops->truncate(node);
+            }
             node->length = 0;
         }
 
@@ -251,6 +255,10 @@ void vfs_close(file_handle_t *file)
 
     if (file->node && (file->node->flags & VFS_NODE_AUTOFREE))
     {
+        if (file->node->device_data)
+        {
+            kfree(file->node->device_data);
+        }
         kfree((void *)file->node);
     }
 

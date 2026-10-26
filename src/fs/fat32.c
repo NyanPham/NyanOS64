@@ -8,6 +8,18 @@
 #include "utils/math.h"
 
 #define EOC 0x0FFFFFF8
+#define FAT_CACHE_SIZE 64
+
+typedef struct
+{
+    uint32_t lba;
+    uint32_t last_used;
+    uint8_t valid;
+    uint8_t data[SECTOR_SIZE];
+} FatCacheEntry;
+
+static FatCacheEntry g_fat_cache[FAT_CACHE_SIZE];
+static uint32_t g_fat_cache_tick = 0;
 
 static fat32_bpb g_bpb;
 static uint32_t g_data_start_lba;
@@ -15,43 +27,79 @@ static uint32_t g_partition_lba;
 static uint8_t g_drive_sel;
 static uint64_t g_bytes_per_cluster;
 
-/**
- * @brief Converts a Cluster Number to a Physical LBA (Logical Block Address).
- *
- * @details MECHANISM:
- * The Data Region starts at `g_data_start_lba`. However, in FAT32, the first
- * valid cluster for data is Cluster #2. Clusters 0 and 1 are reserved.
- * Therefore, to find the physical location of Cluster N, we must subtract 2
- * before multiplying by the cluster size.
- *
- * Formula: LBA = Start + (Cluster - 2) * SectorsPerCluster
- *
- * @param cluster The cluster number to convert.
- * @return uint32_t The LBA sector address where this cluster begins.
- */
+static void fat_cache_invalidate(void)
+{
+    for (int i = 0; i < FAT_CACHE_SIZE; i++)
+    {
+        g_fat_cache[i].valid = 0;
+    }
+}
+
+static void fat_cache_read_sector(uint32_t lba, uint8_t *out_buf)
+{
+    g_fat_cache_tick++;
+    for (int i = 0; i < FAT_CACHE_SIZE; i++)
+    {
+        if (g_fat_cache[i].valid && g_fat_cache[i].lba == lba)
+        {
+            g_fat_cache[i].last_used = g_fat_cache_tick;
+            memcpy(out_buf, g_fat_cache[i].data, SECTOR_SIZE);
+            return;
+        }
+    }
+
+    int victim = 0;
+    for (int i = 0; i < FAT_CACHE_SIZE; i++)
+    {
+        if (!g_fat_cache[i].valid)
+        {
+            victim = i;
+            break;
+        }
+        if (g_fat_cache[i].last_used < g_fat_cache[victim].last_used)
+        {
+            victim = i;
+        }
+    }
+
+    ata_read_sectors((uint16_t *)g_fat_cache[victim].data, lba, 1, g_drive_sel);
+    g_fat_cache[victim].lba = lba;
+    g_fat_cache[victim].last_used = g_fat_cache_tick;
+    g_fat_cache[victim].valid = 1;
+    memcpy(out_buf, g_fat_cache[victim].data, SECTOR_SIZE);
+}
+
+static void fat_cache_write_sector(uint32_t lba, const uint8_t *in_buf)
+{
+    g_fat_cache_tick++;
+    int slot = -1;
+    for (int i = 0; i < FAT_CACHE_SIZE; i++)
+    {
+        if (g_fat_cache[i].valid && g_fat_cache[i].lba == lba)
+        {
+            slot = i;
+            break;
+        }
+    }
+    if (slot >= 0)
+    {
+        memcpy(g_fat_cache[slot].data, in_buf, SECTOR_SIZE);
+        g_fat_cache[slot].last_used = g_fat_cache_tick;
+    }
+    ata_write_sectors((uint16_t *)in_buf, lba, 1, g_drive_sel);
+}
+
 static inline uint32_t fat32_cluster_to_lba(uint32_t cluster)
 {
     if (cluster < 2)
     {
-        // TODO: Panic
         return g_data_start_lba;
     }
-
     return g_data_start_lba + (cluster - 2) * (uint32_t)g_bpb.sectors_per_cluster;
 }
 
-/* START: VFS */
-
 extern vfs_fs_ops_t fat32_ops;
 
-/**
- * @brief VFS Find Directory: Looks for a child file within a node.
- *
- * @details MECHANISM:
- * Uses `fat32_find_file` to scan the cluster associated with the `node`.
- * If found, it creates a new `vfs_node_t`, populates it with the file's
- * metadata (size, start cluster), and returns it.
- */
 static vfs_node_t *fat32_finddir(vfs_node_t *node, const char *name)
 {
     fat32_node_data *node_data = (fat32_node_data *)node->device_data;
@@ -86,7 +134,6 @@ static vfs_node_t *fat32_finddir(vfs_node_t *node, const char *name)
                            ? VFS_DIRECTORY
                            : VFS_FILE) |
                       VFS_NODE_AUTOFREE;
-    ;
 
     new_node_data->first_cluster = (dir_entry.first_cluster_high << 0x10) | dir_entry.first_cluster_low;
     new_node_data->sector_lba = loc.sector_lba;
@@ -97,20 +144,6 @@ static vfs_node_t *fat32_finddir(vfs_node_t *node, const char *name)
     return new_node;
 }
 
-/**
- * @brief VFS Read: Reads data from a file into a buffer.
- *
- * @details MECHANISM (Cluster Chasing):
- * 1. Start at the file's `first_cluster`.
- * 2. Traverse the FAT chain to skip clusters until reaching `offset`.
- * 3. Read data cluster-by-cluster, copying it into `buffer`.
- * 4. Use `fat32_read_fat` to jump to the next cluster in the chain.
- *
- * @param node The file node to read from.
- * @param offset The byte offset to start reading.
- * @param size How many bytes to read.
- * @param buffer The destination buffer.
- */
 static uint64_t fat32_read(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buffer)
 {
     if (offset >= node->length)
@@ -118,22 +151,30 @@ static uint64_t fat32_read(vfs_node_t *node, uint64_t offset, uint64_t size, uin
         return 0;
     }
 
-    if (offset + size >= node->length)
+    if (offset + size > node->length)
     {
         size = node->length - offset;
     }
 
     fat32_node_data *node_data = (fat32_node_data *)(node->device_data);
     uint32_t curr_cluster = node_data->first_cluster;
+    if (curr_cluster < 2)
+    {
+        return 0;
+    }
 
     for (uint64_t i = 0; i < offset / g_bytes_per_cluster; i++)
     {
         curr_cluster = fat32_read_fat(curr_cluster);
+        if (curr_cluster >= EOC)
+        {
+            return 0;
+        }
     }
 
     uint32_t read_offset = offset % g_bytes_per_cluster;
 
-    uint8_t *tmp_buf = (uint8_t *)vmm_alloc(g_bytes_per_cluster);
+    uint8_t *tmp_buf = (uint8_t *)kmalloc(g_bytes_per_cluster);
     if (tmp_buf == NULL)
     {
         kprint("FAT32_READ failed: OOM\n");
@@ -141,7 +182,7 @@ static uint64_t fat32_read(vfs_node_t *node, uint64_t offset, uint64_t size, uin
     }
 
     uint64_t rem_size = size;
-    while (rem_size > 0)
+    while (rem_size > 0 && curr_cluster >= 2 && curr_cluster < EOC)
     {
         uint64_t copy_size = uint64_min(rem_size, g_bytes_per_cluster - read_offset);
         uint32_t lba = fat32_cluster_to_lba(curr_cluster);
@@ -150,11 +191,14 @@ static uint64_t fat32_read(vfs_node_t *node, uint64_t offset, uint64_t size, uin
         buffer += copy_size;
         rem_size -= copy_size;
         read_offset = 0;
-        curr_cluster = fat32_read_fat(curr_cluster);
+        if (rem_size > 0)
+        {
+            curr_cluster = fat32_read_fat(curr_cluster);
+        }
     }
 
-    vmm_free(tmp_buf);
-    return size;
+    kfree(tmp_buf);
+    return size - rem_size;
 }
 
 static void fat32_update_size(vfs_node_t *node, uint64_t new_size)
@@ -171,49 +215,53 @@ static void fat32_update_size(vfs_node_t *node, uint64_t new_size)
     node->length = new_size;
 }
 
-/**
- * @brief Writes data to a file, extending the file size if necessary.
- *
- * @details MECHANISM:
- * This function handles two main tasks: File Extension and Data Writing.
- *
- * 1. FILE EXTENSION (Allocation):
- * - Checks if the write goes beyond the current file size (`node->length`).
- * - If the file is empty (`first_cluster == 0`), it allocates the first cluster
- * and updates the Directory Entry on the disk.
- * - If the file exists but needs more space, it traverses the FAT chain to the
- * end, calculates how many new clusters are needed, and appends them to the chain.
- * - Updates the file size in the Directory Entry via `fat32_update_size`.
- *
- * 2. DATA WRITING (Read-Modify-Write):
- * - Traverses the FAT chain to find the start cluster corresponding to `offset`.
- * - Since FAT32 works with clusters (e.g., 4096 bytes), we cannot write just a few bytes
- * directly without overwriting the rest of the sector/cluster with garbage.
- * - We perform a Read-Modify-Write cycle:
- * a. READ the entire cluster from disk into a buffer.
- * b. MODIFY only the requested bytes in the buffer.
- * c. WRITE the entire buffer back to disk.
- *
- * @param node   The file node to write to.
- * @param offset The offset in bytes where writing begins.
- * @param size   The number of bytes to write.
- * @param buffer The source buffer containing data.
- * @return uint64_t The number of bytes successfully written.
- */
-static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buffer)
+static void fat32_truncate(vfs_node_t *node)
 {
     fat32_node_data *node_data = (fat32_node_data *)(node->device_data);
+    if (node_data == NULL)
+    {
+        return;
+    }
 
-    if (offset + size >= node->length)
+    uint32_t curr_cluster = node_data->first_cluster;
+    while (curr_cluster >= 2 && curr_cluster < EOC)
+    {
+        uint32_t next_cluster = fat32_read_fat(curr_cluster);
+        fat32_write_fat_entry(curr_cluster, 0);
+        curr_cluster = next_cluster;
+    }
+
+    node_data->first_cluster = 0;
+    node->length = 0;
+
+    uint8_t tmp_buf[SECTOR_SIZE];
+    ata_read_sectors((uint16_t *)tmp_buf, node_data->sector_lba, 1, g_drive_sel);
+    DirectoryEntry *dirent = (DirectoryEntry *)(tmp_buf + node_data->offset);
+    dirent->first_cluster_high = 0;
+    dirent->first_cluster_low = 0;
+    dirent->file_size = 0;
+    ata_write_sectors((uint16_t *)tmp_buf, node_data->sector_lba, 1, g_drive_sel);
+}
+
+static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, uint8_t *buffer)
+{
+    if (size == 0)
+    {
+        return 0;
+    }
+
+    fat32_node_data *node_data = (fat32_node_data *)(node->device_data);
+
+    if (offset + size > node->length || node_data->first_cluster == 0)
     {
         uint8_t tmp_buf[SECTOR_SIZE];
 
-        if (node_data->first_cluster == 0) // A brand new file, so no cluster attached
+        if (node_data->first_cluster == 0)
         {
             int64_t free_cluster_id = fat32_find_free_cluster();
             if (free_cluster_id < 0)
             {
-                kprint("FAT32_CREATE failed: No free cluster id found!\n");
+                kprint("FAT32_WRITE failed: No free cluster id found!\n");
                 return 0;
             }
 
@@ -226,52 +274,46 @@ static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, ui
             fat32_write_fat_entry(free_cluster_id, EOC);
             node_data->first_cluster = free_cluster_id;
         }
-        else // file exists, but content overflows
+
+        uint32_t curr_cluster = node_data->first_cluster;
+        uint32_t prev_cluster = 0;
+        uint32_t cluster_count = 0;
+        while (curr_cluster >= 2 && curr_cluster < EOC)
         {
-            uint32_t curr_cluster = node_data->first_cluster;
-            uint32_t prev_cluster = 0;
-            uint32_t cluster_count = 0;
-            while (curr_cluster >= 2 && curr_cluster < EOC)
-            {
-                prev_cluster = curr_cluster;
-                curr_cluster = fat32_read_fat(curr_cluster);
-                cluster_count++;
-            }
+            prev_cluster = curr_cluster;
+            curr_cluster = fat32_read_fat(curr_cluster);
+            cluster_count++;
+        }
 
-            if (prev_cluster < 2)
-            {
-                kprint("FAT32_WRITE failed: failed trace last cluster of a file\n");
-                return 0;
-            }
+        if (prev_cluster < 2)
+        {
+            kprint("FAT32_WRITE failed: failed trace last cluster of a file\n");
+            return 0;
+        }
 
-            uint32_t occupied_cluster_bytes = cluster_count * g_bytes_per_cluster;
-            if ((offset + size) >= occupied_cluster_bytes)
-            {
-                uint32_t size_left = (offset + size) - occupied_cluster_bytes;
-                uint32_t cluster_count_left = (size_left + g_bytes_per_cluster - 1) / g_bytes_per_cluster;
+        uint64_t occupied_cluster_bytes = (uint64_t)cluster_count * g_bytes_per_cluster;
+        if ((offset + size) > occupied_cluster_bytes)
+        {
+            uint64_t size_left = (offset + size) - occupied_cluster_bytes;
+            uint64_t cluster_count_left = (size_left + g_bytes_per_cluster - 1) / g_bytes_per_cluster;
 
-                for (uint32_t i = 0; i < cluster_count_left; i++)
+            for (uint64_t i = 0; i < cluster_count_left; i++)
+            {
+                int64_t free_cluster_id = fat32_find_free_cluster();
+                if (free_cluster_id < 0)
                 {
-                    int64_t free_cluster_id = fat32_find_free_cluster();
-                    if (free_cluster_id < 0)
-                    {
-                        kprint("FAT32_WRITE failed: No free cluster id found!\n");
-                        return 0;
-                    }
-
-                    fat32_write_fat_entry(prev_cluster, free_cluster_id);
-                    fat32_write_fat_entry(free_cluster_id, EOC); // Mark allocated immediately!
-                    prev_cluster = free_cluster_id;
+                    kprint("FAT32_WRITE failed: No free cluster id found!\n");
+                    return 0;
                 }
 
-                fat32_write_fat_entry(prev_cluster, EOC);
+                fat32_write_fat_entry(prev_cluster, free_cluster_id);
+                fat32_write_fat_entry(free_cluster_id, EOC);
+                prev_cluster = free_cluster_id;
             }
         }
-        // fat32_update_size(node, offset + size);
     }
 
     uint32_t curr_cluster = node_data->first_cluster;
-
     for (uint64_t i = 0; i < offset / g_bytes_per_cluster; i++)
     {
         curr_cluster = fat32_read_fat(curr_cluster);
@@ -279,16 +321,16 @@ static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, ui
 
     uint32_t read_offset = offset % g_bytes_per_cluster;
 
-    uint8_t *tmp_buf = (uint8_t *)vmm_alloc(g_bytes_per_cluster);
+    uint8_t *tmp_buf = (uint8_t *)kmalloc(g_bytes_per_cluster);
     if (tmp_buf == NULL)
     {
-        kprint("FAT32_READ failed: OOM\n");
+        kprint("FAT32_WRITE failed: OOM\n");
         return 0;
     }
     memset(tmp_buf, 0, g_bytes_per_cluster);
 
     uint64_t rem_size = size;
-    while (rem_size > 0)
+    while (rem_size > 0 && curr_cluster >= 2 && curr_cluster < EOC)
     {
         uint64_t copy_size = uint64_min(rem_size, g_bytes_per_cluster - read_offset);
         uint32_t lba = fat32_cluster_to_lba(curr_cluster);
@@ -298,17 +340,20 @@ static uint64_t fat32_write(vfs_node_t *node, uint64_t offset, uint64_t size, ui
         buffer += copy_size;
         rem_size -= copy_size;
         read_offset = 0;
-        curr_cluster = fat32_read_fat(curr_cluster);
+        if (rem_size > 0)
+        {
+            curr_cluster = fat32_read_fat(curr_cluster);
+        }
     }
 
-    vmm_free(tmp_buf);
+    kfree(tmp_buf);
 
     if (offset + size > node->length)
     {
         fat32_update_size(node, offset + size);
     }
 
-    return size;
+    return size - rem_size;
 }
 
 vfs_fs_ops_t fat32_ops = {
@@ -320,58 +365,27 @@ vfs_fs_ops_t fat32_ops = {
     .close = NULL,
     .create = fat32_create,
     .unlink = fat32_unlink,
+    .truncate = fat32_truncate,
 };
 
-/* END: VFS */
-
-/**
- * @brief Reads the next cluster in the chain from the FAT Table.
- *
- * @details MECHANISM:
- * The FAT Table is an array of 32-bit integers stored sequentially on disk.
- * To find the entry for a specific cluster:
- * 1. Calculate the byte offset: cluster_index * 4 bytes.
- * 2. Locate the specific Sector (Page) in the FAT Region containing this offset.
- * 3. Read that Sector into a buffer.
- * 4. Extract the 4-byte value at the calculated offset within that sector.
- *
- * @param cluster The current cluster number (index).
- * @return uint32_t The next cluster number, or EOC (0x0FFFFFFF) if end of chain.
- */
 uint32_t fat32_read_fat(uint32_t cluster)
 {
     uint32_t fat_offset = cluster * sizeof(uint32_t);
     uint32_t fat_sector = g_partition_lba + g_bpb.reserved_sectors + (fat_offset / g_bpb.bytes_per_sector);
     uint32_t ent_offset = fat_offset % g_bpb.bytes_per_sector;
 
-    uint16_t tmp_buf[SECTOR_SIZE / 2];
-    ata_read_sectors(tmp_buf, fat_sector, 1, g_drive_sel);
+    uint8_t tmp_buf[SECTOR_SIZE];
+    fat_cache_read_sector(fat_sector, tmp_buf);
 
-    return *((uint32_t *)((uint8_t *)tmp_buf + ent_offset)) & 0x0FFFFFFF;
+    return *((uint32_t *)(tmp_buf + ent_offset)) & 0x0FFFFFFF;
 }
 
-/**
- * @brief Initializes the FAT32 filesystem driver.
- *
- * @details MECHANISM:
- * Reads the Boot Sector (BPB) to understand the disk geometry.
- * Calculates the start LBA of the Data Region by skipping:
- * 1. The Reserved Region (Boot code).
- * 2. The FAT Region (The allocation tables).
- *
- * @param partition_lba The LBA where the partition starts.
- * @param drive_sel The ATA drive selector (Master/Slave).
- * @return vfs_node_t* The Root Directory node.
- */
 vfs_node_t *fat32_init_fs(uint32_t partition_lba, uint8_t drive_sel)
 {
-    // our purpose is to find the data region lba.
-    // reserved region is where bpb is stored
-    // we have fat region (FAT tables) = fats_num * sectors_per_fat32
-    // data region (clusters, including root directory), is right after FAT region.
-
     g_drive_sel = drive_sel;
     g_partition_lba = partition_lba;
+    fat_cache_invalidate();
+
     uint16_t tmp_buf[SECTOR_SIZE / sizeof(uint16_t)];
     ata_read_sectors(tmp_buf, partition_lba, 1, g_drive_sel);
     memcpy(&g_bpb, tmp_buf, sizeof(fat32_bpb));
@@ -429,20 +443,11 @@ int list_cb(DirectoryEntry *dir_entry, fat32_location_t *loc, void *ctx)
     return 0;
 }
 
-void fat32_list_root()
+void fat32_list_root(void)
 {
     fat32_iterate(g_bpb.root_cluster, list_cb, NULL);
 }
 
-/**
- * @brief Parses an 8.3 filename (e.g., "FILE.TXT") into separate Name and Ext parts.
- *
- * @details MECHANISM:
- * FAT32 Directory Entries store names in a fixed format: 8 bytes for Name,
- * 3 bytes for Extension, padded with spaces. There is no dot stored on disk.
- * This function converts "file.txt" -> Name: "FILE    ", Ext: "TXT".
- * It handles capitalization and validation.
- */
 int fat32_parse_name(const char *fname, char *out_name, char *out_ext)
 {
     size_t name_len = strlen(fname);
@@ -456,8 +461,8 @@ int fat32_parse_name(const char *fname, char *out_name, char *out_ext)
     memset(out_ext, ' ', 3);
 
     uint8_t is_ext = 0;
-    size_t i = 0; // index for name
-    size_t j = 0; // index for ext
+    size_t i = 0;
+    size_t j = 0;
     for (i = 0; i < name_len; i++)
     {
         char c = fname[i];
@@ -474,7 +479,7 @@ int fat32_parse_name(const char *fname, char *out_name, char *out_ext)
         }
         if (c >= 'a' && c <= 'z')
         {
-            c &= ~0x20; // capitalize
+            c &= ~0x20;
         }
 
         if (!is_ext && i >= 8)
@@ -517,14 +522,8 @@ int find_cb(DirectoryEntry *dir_entry, fat32_location_t *loc, void *ctx)
     return 0;
 }
 
-/**
- * @brief Finds a file in FAT32 format drive
- * returns 0 if file found
- * returns -1 otherwise
- */
 int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entry, fat32_location_t *out_loc)
 {
-    // First, let's normalize the name into the dir_entry->name and dir_entry->ext
     char target_name[8] = {0};
     char target_ext[3] = {0};
     if (fat32_parse_name(name, target_name, target_ext) < 0)
@@ -533,10 +532,6 @@ int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entr
         return -1;
     }
 
-    // Then, scan the Root Directory, compare the target with the entry if they have
-    // the same name and ext.
-    // If found, copy the entry data to out_entry, and return 0;
-    // Otherwise, not found, return -1.
     find_control_t find_control = {
         .name = target_name,
         .ext = target_ext,
@@ -558,25 +553,6 @@ int fat32_find_file(uint32_t cluster, const char *name, DirectoryEntry *out_entr
     return -1;
 }
 
-/**
- * @brief Iterates over all Directory Entries in a specific directory.
- *
- * @details MECHANISM:
- * A directory in FAT32 is just a file containing a list of `DirectoryEntry` structs.
- * This function:
- * 1. Reads the directory's cluster chain one cluster at a time.
- * 2. Inside each cluster, reads sectors one by one.
- * 3. Casts the buffer to `DirectoryEntry*` and loops through them.
- * 4. Checks special markers:
- * - 0x00: End of Directory (Stop scanning).
- * - 0xE5: Deleted Entry (Skip).
- * 5. Calls the `entry_cb` callback for every valid entry found.
- *
- * @param cluster The starting cluster of the directory.
- * @param entry_cb The callback function to invoke for each entry.
- * @param ctx User-provided context to pass to the callback.
- * @return int 0 on success, or error code.
- */
 int fat32_iterate(uint32_t cluster, fat32_entry_cb_t entry_cb, void *ctx)
 {
     uint32_t curr_cluster = cluster;
@@ -630,7 +606,7 @@ int fat32_iterate(uint32_t cluster, fat32_entry_cb_t entry_cb, void *ctx)
 
 uint8_t *fat32_read_file(DirectoryEntry *entry)
 {
-    uint8_t *buf = (uint8_t *)vmm_alloc(entry->file_size + 1);
+    uint8_t *buf = (uint8_t *)kmalloc(entry->file_size + 1);
     if (buf == NULL)
     {
         return NULL;
@@ -648,7 +624,6 @@ uint8_t *fat32_read_file(DirectoryEntry *entry)
     }
 
     buf[entry->file_size] = '\0';
-
     return buf;
 }
 
@@ -664,13 +639,11 @@ int readdir_cb(DirectoryEntry *entry, fat32_location_t *loc, void *p)
     (void)loc;
     readdir_ctx *ctx = (readdir_ctx *)p;
 
-    // ignore the Long File Names and Volumne ID
     if (entry->attributes == 0x0F || entry->attributes == 0x08)
     {
         return 0;
     }
 
-    // Found the file at 'idx'
     if (ctx->curr_idx == ctx->tgt_idx)
     {
         int j = 0;
@@ -701,14 +674,6 @@ int readdir_cb(DirectoryEntry *entry, fat32_location_t *loc, void *p)
     return 0;
 }
 
-/**
- * @brief VFS Read Directory: Lists files in a directory by index.
- *
- * @details MECHANISM:
- * Uses `fat32_iterate` to walk the directory. It counts valid files
- * until it reaches the requested `idx`. When the target index is reached,
- * it populates the `dirent_t` structure.
- */
 int fat32_readdir(vfs_node_t *node, uint32_t idx, dirent_t *out)
 {
     fat32_node_data *data = (fat32_node_data *)node->device_data;
@@ -726,25 +691,6 @@ int fat32_readdir(vfs_node_t *node, uint32_t idx, dirent_t *out)
     return -1;
 }
 
-/**
- * @brief Creates a new empty file in a specified directory.
- *
- * @details PROCESS:
- * 1. Preparation: Parses the filename and allocates a new Free Cluster in the FAT table.
- * 2. Location: Finds a free Directory Entry slot in the Parent Directory.
- * 3. Registration (Data Region):
- * - Creates a 'DirectoryEntry' struct with the file's metadata (Name, Size=0, Cluster ID).
- * - Reads the target sector of the Parent Directory.
- * - Writes the new entry into the calculated offset.
- * - Flushes the sector back to disk.
- * 4. Finalization (FAT Region):
- * - Marks the newly allocated cluster as EOC (End of Chain) in the FAT Table.
- *
- * @param parent Pointer to the parent directory node (vfs_node_t).
- * @param fname  The name of the new file (e.g., "test.txt").
- * @param flags  Creation flags (currently unused).
- * @return vfs_node_t* NULL (relies on vfs_navigate to find the created node).
- */
 vfs_node_t *fat32_create(vfs_node_t *parent, const char *fname, uint32_t flags)
 {
     char name[8];
@@ -765,15 +711,19 @@ vfs_node_t *fat32_create(vfs_node_t *parent, const char *fname, uint32_t flags)
         return NULL;
     }
 
-    fat32_parse_name(fname, name, ext);
-    int64_t free_cluster_id = fat32_find_free_cluster(); // find the slot for the child
+    if (fat32_parse_name(fname, name, ext) < 0)
+    {
+        return NULL;
+    }
+
+    int64_t free_cluster_id = fat32_find_free_cluster();
     if (free_cluster_id < 0)
     {
         kprint("FAT32_CREATE failed: No free cluster id found!\n");
         return NULL;
     }
 
-    if (fat32_find_free_directory_entry(parent_data->first_cluster, &loc) < 0) // find a free slot in the parent to point to the child's slot
+    if (fat32_find_free_directory_entry(parent_data->first_cluster, &loc) < 0)
     {
         return NULL;
     }
@@ -858,19 +808,6 @@ vfs_node_t *fat32_create(vfs_node_t *parent, const char *fname, uint32_t flags)
     return new_node;
 }
 
-/**
- * @brief Updates a specific entry in the FAT Table (Write).
- *
- * @details MECHANISM (Read-Modify-Write):
- * Hard disks only write in full Sectors (512 bytes). We cannot write just 4 bytes.
- * 1. Calculate which Sector contains the entry for this cluster.
- * 2. READ the entire sector into memory.
- * 3. MODIFY the specific 32-bit integer at the correct offset.
- * 4. WRITE the entire sector back to disk.
- *
- * @param cluster The cluster number (index) to update.
- * @param value The new value to write (e.g., Next Cluster ID or EOC).
- */
 void fat32_write_fat_entry(uint32_t cluster, uint32_t value)
 {
     uint32_t fat_start_lba = g_partition_lba + g_bpb.reserved_sectors;
@@ -880,31 +817,20 @@ void fat32_write_fat_entry(uint32_t cluster, uint32_t value)
     uint32_t target_lba = fat_start_lba + fat_sector_offset;
 
     uint8_t tmp_buf[SECTOR_SIZE] = {0};
-    ata_read_sectors((uint16_t *)tmp_buf, target_lba, 1, g_drive_sel);
+    fat_cache_read_sector(target_lba, tmp_buf);
 
     *(uint32_t *)&tmp_buf[entry_offset] = value;
 
-    ata_write_sectors((uint16_t *)tmp_buf, target_lba, 1, g_drive_sel);
+    fat_cache_write_sector(target_lba, tmp_buf);
 }
 
-/**
- * @brief Scans the FAT table to find the first available (free) cluster.
- *
- * @details MECHANISM:
- * Iterates through every sector of the FAT region. Within each sector,
- * it checks every 32-bit entry.
- * - A value of 0x00000000 indicates a free cluster.
- * - Skips cluster 0 and 1 as they are reserved in FAT32.
- *
- * @return int64_t The cluster number if found, or -1 if the disk is full.
- */
-int64_t fat32_find_free_cluster()
+int64_t fat32_find_free_cluster(void)
 {
     uint8_t tmp_buf[SECTOR_SIZE] = {0};
     for (uint32_t i = 0; i < g_bpb.sectors_per_fat32; i++)
     {
         uint32_t lba = g_partition_lba + g_bpb.reserved_sectors + i;
-        ata_read_sectors((uint16_t *)tmp_buf, lba, 1, g_drive_sel);
+        fat_cache_read_sector(lba, tmp_buf);
 
         for (uint32_t j = 0; j < SECTOR_SIZE / sizeof(uint32_t); j++)
         {
@@ -914,7 +840,7 @@ int64_t fat32_find_free_cluster()
                 continue;
             }
 
-            if (((uint32_t *)tmp_buf)[j] == 0)
+            if ((((uint32_t *)tmp_buf)[j] & 0x0FFFFFFF) == 0)
             {
                 return cluster_id;
             }
@@ -923,21 +849,6 @@ int64_t fat32_find_free_cluster()
     return -1;
 }
 
-/**
- * @brief Finds a free directory entry slot in a specific directory.
- *
- * @details MECHANISM:
- * Scans the directory's cluster chain to find a place to store a new file entry.
- * It looks for two types of available slots:
- * 1. Unused Slot (0x00): Marks the end of the directory. No entries exist after this.
- * 2. Deleted Slot (0xE5): A slot that was previously used but the file was deleted.
- * * When a free slot is found, it populates the 'out_loc' structure with the
- * physical LBA and byte offset, allowing the caller to write data directly to disk.
- *
- * @param dir_cluster The starting cluster of the directory to scan (e.g., Parent Directory).
- * @param out_loc Pointer to a structure to store the found location (Sector LBA + Offset).
- * @return int 0 if a free slot is found, -1 if the directory is full or an error occurs.
- */
 int fat32_find_free_directory_entry(uint32_t dir_cluster, fat32_location_t *out_loc)
 {
     uint32_t curr_cluster = dir_cluster;

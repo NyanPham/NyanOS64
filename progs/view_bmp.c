@@ -79,16 +79,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    // todo: implement lseek
-    int header_read_so_far = sizeof(BMPHeader_t);
-    int gap = bmp_header.offset - header_read_so_far;
-
-    if (gap > 0)
-    {
-        char *junk = malloc(gap);
-        read(fd, junk, gap);
-        free(junk);
-    }
+    lseek(fd, bmp_header.offset, SEEK_SET);
 
     int bytes_per_pixel = bmp_header.bits / 8;
     int row_size = (bmp_header.width * bytes_per_pixel + 3) & (~3);

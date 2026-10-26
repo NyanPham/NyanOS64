@@ -13,6 +13,7 @@
 #define WIN_BORDER_SIZE 1
 #define WIN_MIN_W 70
 #define WIN_MIN_H (WIN_TITLE_BAR_HEIGHT * 2)
+#define TASKBAR_HEIGHT 28
 
 // flags
 #define WIN_MOVABLE (1 << 0)
@@ -21,7 +22,6 @@
 #define WIN_BORDERLESS (1 << 3)
 #define WIN_DIRTY (1U << 31)
 
-// resize directions
 #define RES_NONE 0
 #define RES_LEFT (1 << 0)
 #define RES_RIGHT (1 << 1)
@@ -33,21 +33,24 @@
 #define WIN_STATE_MAXIMIZED 1
 #define WIN_STATE_MINIMIZED 2
 
+#define LAUNCH_NONE 0
+#define LAUNCH_TERMINAL 1
+#define LAUNCH_SNAKE 2
+#define LAUNCH_CLOCK 3
+
 typedef struct Window
 {
-    int64_t x;       // coord x in pixels
-    int64_t y;       // coord y in pixels
-    uint64_t width;  // width in pixels
-    uint64_t height; // height in pixels
+    int64_t x;
+    int64_t y;
+    uint64_t width;
+    uint64_t height;
     char *title;
 
-    int64_t cursor_x; // Row cell index, not a pixel
-    int64_t cursor_y; // Col cell index, not a pixel
+    int64_t cursor_x;
+    int64_t cursor_y;
     Pixel *pixels;
     uint64_t pixels_size;
 
-    // Doubly Linked List to handle bring to front
-    // and back more easily
     struct Window *prev;
     struct Window *next;
 
@@ -58,10 +61,10 @@ typedef struct Window
 
     uint32_t state;
     uint32_t pre_state;
-    int64_t pre_x;  // coord x in pixels
-    int64_t pre_y;  // coord y in pixels
-    uint64_t pre_w; // width in pixels
-    uint64_t pre_h; // height in pixels
+    int64_t pre_x;
+    int64_t pre_y;
+    uint64_t pre_w;
+    uint64_t pre_h;
 } Window;
 
 typedef struct WinDragCtx
@@ -69,7 +72,7 @@ typedef struct WinDragCtx
     Window *target;
     int64_t off_x;
     int64_t off_y;
-    uint32_t resize_dir; // 0 is to move the window, otherwise to resize
+    uint32_t resize_dir;
 } WinDragCtx;
 
 void init_win_manager(void);
@@ -79,6 +82,7 @@ void win_update(void);
 Window *win_create(int64_t x, int64_t y, uint64_t width, uint64_t height, const char *title, uint32_t flags);
 Window *get_win_at(int64_t mx, int64_t my);
 void win_focus(Window *win);
+void win_cycle_focus(void);
 void win_close(Window *win);
 void win_put_char(Window *win, char c);
 void win_draw_char_at(Window *win, char c, uint64_t x, uint64_t y, GBA_Color fg_color, GBA_Color bg_color);
@@ -90,6 +94,8 @@ uint8_t rect_intersect(Rect *r1, Rect *r2);
 Rect *clip_rect(Rect *r, Rect *clipper);
 void recalc_clip_list(Window *win);
 void init_desktop(void);
+void win_draw_taskbar(void);
+int win_consume_launch_req(void);
 void win_draw_string(Window *win, int x, int y, char *str, uint32_t fg_color, uint32_t bg_color);
 void win_fill_rect(Window *win, int client_x, int client_y, int w, int h, uint32_t color);
 void win_draw_bitmap(Window *win, int client_x, int client_y, int w, int h, uint32_t *buf);
