@@ -72,6 +72,9 @@ int await_io(int *fds, int num_fds, int await_gui, int non_block);
 int win_get_size(int *w, int *h);
 int shutdown(void);
 int64_t lseek(int fd, int64_t offset, int whence);
+int kill_proc(int pid, int sig);
+int get_procs(ProcInfo_t *buf, int max_count);
+int get_meminfo(MemInfo_t *info);
 
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t n);

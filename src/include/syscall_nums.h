@@ -24,12 +24,15 @@
 #define SYS_WAITPID 23
 #define SYS_GETPID 24
 #define SYS_SLEEP 25
+#define SYS_KILL 26
+#define SYS_GET_PROCS 27
 
 // === MEMORY MANAGEMENT (30 - 39) ===
 #define SYS_SBRK 30
 #define SYS_MMAP 31
 #define SYS_MUNMAP 32
 #define SYS_FTRUNCATE 33
+#define SYS_MEMINFO 34
 
 // === IPC (SHM & Message Queue) (40 - 49) ===
 #define SYS_SHM_OPEN 40

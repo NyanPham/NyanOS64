@@ -280,3 +280,27 @@ uint32_t pmm_get_ref_count(uint64_t frame_addr)
     SPIN_UNLOCK_IRQRESTORE(&pmm_lock, flags);
     return count;
 }
+
+void pmm_get_stats(uint64_t *total_pages_out, uint64_t *used_pages_out, uint64_t *free_pages_out)
+{
+    uint64_t flags;
+    SPIN_LOCK_IRQSAVE(&pmm_lock, flags);
+
+    uint64_t used = 0;
+    for (size_t i = 0; i < total_pages; i++)
+    {
+        if (bitmap_test(i))
+        {
+            used++;
+        }
+    }
+
+    if (total_pages_out)
+        *total_pages_out = total_pages;
+    if (used_pages_out)
+        *used_pages_out = used;
+    if (free_pages_out)
+        *free_pages_out = (total_pages >= used) ? (total_pages - used) : 0;
+
+    SPIN_UNLOCK_IRQRESTORE(&pmm_lock, flags);
+}

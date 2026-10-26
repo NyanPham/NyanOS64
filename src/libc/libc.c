@@ -909,3 +909,18 @@ void print_dec(int num)
         print(tmp);
     }
 }
+
+int kill_proc(int pid, int sig)
+{
+    return (int)syscall(SYS_KILL, (uint64_t)pid, (uint64_t)sig, 0, 0, 0, 0);
+}
+
+int get_procs(ProcInfo_t *buf, int max_count)
+{
+    return (int)syscall(SYS_GET_PROCS, (uint64_t)buf, (uint64_t)max_count, 0, 0, 0, 0);
+}
+
+int get_meminfo(MemInfo_t *info)
+{
+    return (int)syscall(SYS_MEMINFO, (uint64_t)info, 0, 0, 0, 0, 0);
+}

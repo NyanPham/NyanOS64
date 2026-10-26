@@ -71,13 +71,21 @@ static uint8_t *get_aligned_fpu_region(Task *tsk)
 static void sched_reparent_children_locked(Task *exiting_tsk)
 {
     if (g_head_tsk == NULL)
+    {
         return;
+    }
+    bool is_win_owner = (exiting_tsk->win != NULL && exiting_tsk->win->owner_pid == exiting_tsk->pid);
     Task *t = g_head_tsk;
     do
     {
         if (t->parent == exiting_tsk)
         {
             t->parent = g_head_tsk;
+            if (is_win_owner && t->pid != 0 && t->state != TASK_ZOMBIE && t->state != TASK_DEAD)
+            {
+                t->pending_signals |= (1 << (SIGINT - 1));
+                t->state = TASK_READY;
+            }
         }
         t = t->next;
     } while (t != g_head_tsk);
@@ -151,6 +159,16 @@ Task *sched_new_task(void)
     else
     {
         strcpy(new_tsk->cwd, "/");
+    }
+
+    if (g_curr_tsk != NULL && g_curr_tsk->name[0] != '\0')
+    {
+        strncpy(new_tsk->name, g_curr_tsk->name, 63);
+        new_tsk->name[63] = '\0';
+    }
+    else
+    {
+        strcpy(new_tsk->name, "user_task");
     }
 
     for (uint8_t i = 0; i < MAX_OPEN_FILES; i++)
@@ -278,6 +296,7 @@ void sched_init(void)
     kern_tsk->wake_tick = -1;
     kern_tsk->fg_pid = -1;
     strcpy(kern_tsk->cwd, "/");
+    strcpy(kern_tsk->name, "kernel");
 
     EventBuf *event_queue = (EventBuf *)vmm_alloc_global(sizeof(EventBuf));
     if (event_queue == NULL)
@@ -644,6 +663,7 @@ Task *task_factory_fork(Task *parent_tsk)
         vfs_retain(child_tsk->fd_tbl[i]);
     }
     memcpy(child_tsk->cwd, parent_tsk->cwd, MAX_CWD_LEN);
+    memcpy(child_tsk->name, parent_tsk->name, 64);
     child_tsk->heap_end = parent_tsk->heap_end;
     child_tsk->parent = parent_tsk;
     child_tsk->state = TASK_READY;
@@ -781,4 +801,50 @@ void sched_reap_zombies(void)
     {
         sched_destroy_task(zombie_to_reap);
     }
+}
+
+int sched_get_procs(ProcInfo_t *out_buf, int max_count)
+{
+    if (out_buf == NULL || max_count <= 0)
+    {
+        return -1;
+    }
+
+    uint64_t rflags;
+    SPIN_LOCK_IRQSAVE(&sched_lock, rflags);
+
+    if (g_head_tsk == NULL)
+    {
+        SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
+        return 0;
+    }
+
+    int count = 0;
+    Task *t = g_head_tsk;
+    do
+    {
+        if (count >= max_count)
+        {
+            break;
+        }
+        ProcInfo_t *info = &out_buf[count];
+        memset(info, 0, sizeof(ProcInfo_t));
+        info->pid = t->pid;
+        info->ppid = (t->parent != NULL) ? t->parent->pid : 0;
+        info->state = t->state;
+        info->heap_kb = (t->pid > 0 && t->heap_end > USER_HEAP_START)
+                            ? ((t->heap_end - USER_HEAP_START + 1023) / 1024)
+                            : 0;
+        info->has_win = (t->win != NULL && t->win->owner_pid == t->pid) ? 1 : 0;
+        strncpy(info->name, t->name[0] ? t->name : "task", 63);
+        info->name[63] = '\0';
+        strncpy(info->cwd, t->cwd[0] ? t->cwd : "/", 63);
+        info->cwd[63] = '\0';
+
+        count++;
+        t = t->next;
+    } while (t != g_head_tsk);
+
+    SPIN_UNLOCK_IRQRESTORE(&sched_lock, rflags);
+    return count;
 }

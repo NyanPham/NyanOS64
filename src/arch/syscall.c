@@ -451,6 +451,14 @@ static uint64_t sys_exec(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t a
     kfree(argv_buf);
     kfree(argv_list);
 
+    const char *base_name = elf_fname;
+    for (int i = 0; elf_fname[i] != '\0'; i++)
+    {
+        if (elf_fname[i] == '/')
+            base_name = &elf_fname[i + 1];
+    }
+    strncpy(curr_tsk->name, base_name, 63);
+    curr_tsk->name[63] = '\0';
     uint64_t entry = elf_load(elf_fname);
     kfree(elf_fname);
 
@@ -1749,6 +1757,83 @@ static uint64_t sys_win_get_size(uint64_t arg1, uint64_t arg2, uint64_t arg3, ui
 
 typedef uint64_t (*syscall_ptr_t)(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5);
 
+static uint64_t sys_kill(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
+{
+    UNUSED(arg3);
+    UNUSED(arg4);
+    UNUSED(arg5);
+    int pid = (int)arg1;
+    int sig = (int)arg2;
+
+    if (pid <= 0)
+    {
+        return (uint64_t)-1;
+    }
+
+    Task *t = sched_find_task(pid);
+    if (t == NULL || t->state == TASK_ZOMBIE || t->state == TASK_DEAD)
+    {
+        return (uint64_t)-1;
+    }
+
+    if (sig == SIGINT)
+    {
+        sched_send_signal(pid, SIGINT);
+        sched_wake_pid(pid);
+        return 0;
+    }
+
+    sched_kill(pid);
+    return 0;
+}
+
+static uint64_t sys_get_procs(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
+{
+    UNUSED(arg3);
+    UNUSED(arg4);
+    UNUSED(arg5);
+    ProcInfo_t *u_buf = (ProcInfo_t *)arg1;
+    int max_count = (int)arg2;
+
+    if (max_count <= 0 || max_count > 128)
+    {
+        return (uint64_t)-1;
+    }
+
+    if (!verify_usr_access((uint64_t)u_buf, (uint64_t)max_count * sizeof(ProcInfo_t)))
+    {
+        return (uint64_t)-1;
+    }
+
+    return (uint64_t)sched_get_procs(u_buf, max_count);
+}
+
+static uint64_t sys_meminfo(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5)
+{
+    UNUSED(arg2);
+    UNUSED(arg3);
+    UNUSED(arg4);
+    UNUSED(arg5);
+    MemInfo_t *u_info = (MemInfo_t *)arg1;
+
+    if (!verify_usr_access((uint64_t)u_info, sizeof(MemInfo_t)))
+    {
+        return (uint64_t)-1;
+    }
+
+    uint64_t total_pages = 0, used_pages = 0, free_pages = 0;
+    pmm_get_stats(&total_pages, &used_pages, &free_pages);
+
+    u_info->total_pages = total_pages;
+    u_info->used_pages = used_pages;
+    u_info->free_pages = free_pages;
+    u_info->total_kb = total_pages * 4;
+    u_info->used_kb = used_pages * 4;
+    u_info->free_kb = free_pages * 4;
+
+    return 0;
+}
+
 static syscall_ptr_t syscall_table[MAX_SYSCALLS] = {
     [SYS_READ] = sys_read,
     [SYS_WRITE] = sys_write,
@@ -1770,10 +1855,13 @@ static syscall_ptr_t syscall_table[MAX_SYSCALLS] = {
     [SYS_WAITPID] = sys_waitpid,
     [SYS_GETPID] = sys_getpid,
     [SYS_SLEEP] = sys_sleep,
+    [SYS_KILL] = sys_kill,
+    [SYS_GET_PROCS] = sys_get_procs,
     [SYS_SBRK] = sys_sbrk,
     [SYS_MMAP] = sys_mmap,
     [SYS_MUNMAP] = sys_munmap,
     [SYS_FTRUNCATE] = sys_ftruncate,
+    [SYS_MEMINFO] = sys_meminfo,
     [SYS_SHM_OPEN] = sys_shm_open,
     [SYS_MQ_OPEN] = sys_mq_open,
     [SYS_MQ_SEND] = sys_mq_send,

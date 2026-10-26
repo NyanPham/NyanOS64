@@ -86,6 +86,15 @@ static void spawn_elf_app(const char *elf_path)
     }
     strcpy(app_tsk->cwd, "/");
 
+    const char *base_name = elf_path;
+    for (int i = 0; elf_path[i] != '\0'; i++)
+    {
+        if (elf_path[i] == '/')
+            base_name = &elf_path[i + 1];
+    }
+    strncpy(app_tsk->name, base_name, 63);
+    app_tsk->name[63] = '\0';
+
     uint64_t *app_pml4_virt = vmm_phys_to_hhdm(app_tsk->pml4);
     uint64_t entry = elf_load_PML4(elf_path, app_pml4_virt);
 

@@ -14,5 +14,6 @@ void pmm_free_frame(uint64_t phys_addr);
 void pmm_inc_ref(uint64_t frame_addr);
 void pmm_dec_ref(uint64_t frame_addr);
 uint32_t pmm_get_ref_count(uint64_t frame_addr);
+void pmm_get_stats(uint64_t *total_pages_out, uint64_t *used_pages_out, uint64_t *free_pages_out);
 
 #endif

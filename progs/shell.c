@@ -1,5 +1,6 @@
 #include "libc/libc.h"
 #include "syscall_args.h"
+#include "include/signal.h"
 #include "string.h"
 
 #define HIST_MAX 10
@@ -9,6 +10,11 @@ char history[HIST_MAX][CMD_MAX_LEN];
 int hist_count = 0;
 int hist_curr = 0;
 
+static const char *builtin_cmds[] = {
+    "hi", "reboot", "shutdown", "exit", "clear", "ls", "pwd", "cd",
+    "cat", "grep", "echo", "rm", "touch", "cp", "mv", "mkdir",
+    "ps", "free", "kill", "help", NULL};
+
 void clear_curr_line(int len)
 {
     for (int k = 0; k < len; k++)
@@ -17,27 +23,82 @@ void clear_curr_line(int len)
     }
 }
 
-int cmd_hi()
+static void print_padded(const char *s, int width)
+{
+    print(s);
+    int len = (int)strlen(s);
+    for (int i = len; i < width; i++)
+    {
+        print(" ");
+    }
+}
+
+static void print_int_padded(int num, int width)
+{
+    char buf[32];
+    int i = 0;
+    if (num == 0)
+    {
+        buf[i++] = '0';
+    }
+    else
+    {
+        int n = num;
+        if (n < 0)
+            n = -n;
+        char tmp[16];
+        int j = 0;
+        while (n > 0)
+        {
+            tmp[j++] = (char)((n % 10) + '0');
+            n /= 10;
+        }
+        if (num < 0)
+            buf[i++] = '-';
+        while (j > 0)
+        {
+            buf[i++] = tmp[--j];
+        }
+    }
+    buf[i] = '\0';
+    print_padded(buf, width);
+}
+
+static int parse_pid_str(const char *s)
+{
+    if (s == NULL || *s == '\0')
+        return -1;
+    int res = 0;
+    for (int i = 0; s[i] != '\0'; i++)
+    {
+        if (s[i] < '0' || s[i] > '9')
+            return -1;
+        res = res * 10 + (s[i] - '0');
+    }
+    return res;
+}
+
+int cmd_hi(void)
 {
     print("Hi! How are you doing?\n");
     return 0;
 }
 
-int cmd_reboot()
+int cmd_reboot(void)
 {
     print("Rebooting...\n");
     reboot();
     return 0;
 }
 
-int cmd_exit()
+int cmd_exit(void)
 {
     print("\x04");
     exit(0);
     return 0;
 }
 
-int cmd_clear()
+int cmd_clear(void)
 {
     print("\033[32m\033[40m\033[2J\033[1;1H");
     return 0;
@@ -52,7 +113,6 @@ int cmd_ls(int argc, char **argv)
     }
     else
     {
-        // get the current dir
         if (getcwd(path, 128) == NULL)
         {
             print("ls: cannot get current directory\n");
@@ -77,14 +137,17 @@ int cmd_ls(int argc, char **argv)
         if (entry.type == VFS_DIRECTORY)
         {
             print("\033[36m[DIR ] \033[32m");
+            print_padded(entry.name, 20);
+            print("\n");
         }
         else
         {
             print("\033[37m[FILE] \033[32m");
+            print_padded(entry.name, 20);
+            print(" ");
+            print_dec((int)entry.size);
+            print(" B\n");
         }
-
-        print(entry.name);
-        print("\n");
         idx++;
     }
 
@@ -92,7 +155,7 @@ int cmd_ls(int argc, char **argv)
     return 0;
 }
 
-int cmd_pwd()
+int cmd_pwd(void)
 {
     char cwd[128];
     if (getcwd(cwd, 128))
@@ -127,7 +190,7 @@ int cmd_cd(int argc, char **argv)
 
 int cmd_cat(int argc, char **argv)
 {
-    int fd = 0; // stdin is default
+    int fd = 0;
 
     if (argc >= 2)
     {
@@ -155,27 +218,151 @@ int cmd_cat(int argc, char **argv)
     return 0;
 }
 
-int cmd_help()
+int cmd_ps(void)
+{
+    ProcInfo_t procs[64];
+    int count = get_procs(procs, 64);
+    if (count < 0)
+    {
+        print("ps: failed to query process list\n");
+        return 1;
+    }
+
+    print("\033[36mPID   PPID  STATE     HEAP(KB)  WIN  NAME              CWD\033[32m\n");
+    print("----------------------------------------------------------------\n");
+
+    for (int i = 0; i < count; i++)
+    {
+        print_int_padded(procs[i].pid, 6);
+        print_int_padded(procs[i].ppid, 6);
+
+        const char *st_str = "UNKNOWN";
+        switch (procs[i].state)
+        {
+        case 0:
+            st_str = "READY";
+            break;
+        case 1:
+            st_str = "WAITING";
+            break;
+        case 2:
+            st_str = "DEAD";
+            break;
+        case 3:
+            st_str = "ZOMBIE";
+            break;
+        case 4:
+            st_str = "SLEEP";
+            break;
+        }
+        print_padded(st_str, 10);
+        print_int_padded((int)procs[i].heap_kb, 10);
+        print_padded(procs[i].has_win ? "yes" : "no", 5);
+        print_padded(procs[i].name, 18);
+        print(procs[i].cwd);
+        print("\n");
+    }
+    return 0;
+}
+
+int cmd_free(void)
+{
+    MemInfo_t mem;
+    if (get_meminfo(&mem) < 0)
+    {
+        print("free: failed to read memory info\n");
+        return 1;
+    }
+
+    uint64_t total_mb = mem.total_kb / 1024;
+    uint64_t used_mb = mem.used_kb / 1024;
+    uint64_t free_mb = mem.free_kb / 1024;
+    int pct = (mem.total_pages > 0) ? (int)((mem.used_pages * 100) / mem.total_pages) : 0;
+
+    print("\033[36mPhysical Memory (PMM) Usage:\033[32m\n");
+    print("  Total : ");
+    print_dec((int)mem.total_kb);
+    print(" KB (");
+    print_dec((int)total_mb);
+    print(" MB, ");
+    print_dec((int)mem.total_pages);
+    print(" frames)\n");
+
+    print("  Used  : ");
+    print_dec((int)mem.used_kb);
+    print(" KB (");
+    print_dec((int)used_mb);
+    print(" MB, ");
+    print_dec(pct);
+    print("%)\n");
+
+    print("  Free  : ");
+    print_dec((int)mem.free_kb);
+    print(" KB (");
+    print_dec((int)free_mb);
+    print(" MB)\n");
+
+    print("  [");
+    int bars = (pct * 25) / 100;
+    for (int i = 0; i < 25; i++)
+    {
+        if (i < bars)
+            print("\033[33m#\033[32m");
+        else
+            print(".");
+    }
+    print("]\n");
+    return 0;
+}
+
+int cmd_kill(int argc, char **argv)
+{
+    if (argc < 2)
+    {
+        print("Usage: kill <pid>\n");
+        return 1;
+    }
+
+    int pid = parse_pid_str(argv[1]);
+    if (pid <= 0)
+    {
+        print("kill: invalid PID (cannot kill kernel PID 0)\n");
+        return 1;
+    }
+
+    if (kill_proc(pid, SIGKILL) < 0)
+    {
+        print("kill: no such process PID ");
+        print_dec(pid);
+        print("\n");
+        return 1;
+    }
+
+    print("Killed process PID ");
+    print_dec(pid);
+    print("\n");
+    return 0;
+}
+
+int cmd_help(void)
 {
     print("NyanOS Shell Commands:\n");
-    print("  hi             Say hello\n");
-    print("  reboot         Reboot the system\n");
-    print("  shutdown       Power off the system\n");
-    print("  exit           Exit the shell\n");
-    print("  clear          Clear screen\n");
-    print("  ls             List files and directories\n");
-    print("  pwd            Print working directory\n");
-    print("  cd <path>      Change directory\n");
+    print("  ps             List running processes\n");
+    print("  free           Display physical memory usage\n");
+    print("  kill <pid>     Terminate a process by PID\n");
+    print("  ls [path]      List files and directories\n");
+    print("  pwd / cd <dir> Print or change working directory\n");
     print("  cat <file>     Print file contents\n");
-    print("  grep <kw>      Search for keyword in input\n");
+    print("  grep <kw>      Filter lines containing keyword\n");
     print("  echo <txt>     Print text to terminal\n");
-    print("  rm <file>      Remove a file\n");
-    print("  touch <file>   Create an empty file\n");
-    print("  cp <src> <dst> Copy a file\n");
-    print("  mv <src> <dst> Move or rename a file\n");
+    print("  touch / rm     Create or remove a file\n");
+    print("  cp / mv        Copy or move a file\n");
     print("  mkdir <dir>    Create a directory\n");
-    print("  help           Show this message\n");
-    print("  <program>      Run executable (e.g. snake.elf)\n");
+    print("  clear / exit   Clear screen or exit shell\n");
+    print("  reboot / shutdown  Reboot or power off NyanOS\n");
+    print("  <cmd1> | <cmd2> | <cmd3>  Multi-stage pipeline\n");
+    print("  <cmd> < in > out >> app   Input/Output redirection\n");
+    print("  [Tab]          Auto-complete commands & file paths\n");
     return 0;
 }
 
@@ -236,7 +423,8 @@ int cmd_echo(int argc, char **argv)
     for (int i = 1; i < argc && argv[i] != NULL; i++)
     {
         print(argv[i]);
-        print(" ");
+        if (i + 1 < argc && argv[i + 1] != NULL)
+            print(" ");
     }
     print("\n");
 
@@ -333,8 +521,6 @@ int cmd_mkdir(int argc, char **argv)
 
 int cmd_mv(int argc, char **argv)
 {
-    // We'll do COPY src -> dst, then RM src.
-
     if (argc < 3)
     {
         print("Usage: mv <source> <destination>\n");
@@ -373,7 +559,7 @@ int cmd_mv(int argc, char **argv)
     return 0;
 }
 
-int cmd_shutdown()
+int cmd_shutdown(void)
 {
     print("NyanOS is going to shutdown...Hope I'll see you again :(\n");
     shutdown();
@@ -382,120 +568,102 @@ int cmd_shutdown()
 
 int exec_cmd(int argc, char **argv)
 {
-    /* --- HI --- */
-    if (strncmp(argv[0], "hi", 3) == 0)
+    if (strcmp(argv[0], "hi") == 0)
     {
         cmd_hi();
         return 1;
     }
-
-    /* --- REBOOT --- */
-    else if (strncmp(argv[0], "reboot", 7) == 0)
+    else if (strcmp(argv[0], "reboot") == 0)
     {
         cmd_reboot();
         return 1;
     }
-
-    /* --- EXIT --- */
-    else if (strncmp(argv[0], "exit", 5) == 0)
+    else if (strcmp(argv[0], "exit") == 0)
     {
         cmd_exit();
         return 1;
     }
-
-    /* --- CLEAR --- */
-    else if (strncmp(argv[0], "clear", 6) == 0)
+    else if (strcmp(argv[0], "clear") == 0)
     {
         cmd_clear();
         return 1;
     }
-
-    /* --- LS --- */
-    else if (strncmp(argv[0], "ls", 3) == 0)
+    else if (strcmp(argv[0], "ls") == 0)
     {
         cmd_ls(argc, argv);
         return 1;
     }
-
-    /* --- PWD --- */
-    else if (strncmp(argv[0], "pwd", 4) == 0)
+    else if (strcmp(argv[0], "pwd") == 0)
     {
         cmd_pwd();
         return 1;
     }
-
-    /* --- CD --- */
-    else if (strncmp(argv[0], "cd", 3) == 0)
+    else if (strcmp(argv[0], "cd") == 0)
     {
         cmd_cd(argc, argv);
         return 1;
     }
-
-    /* --- CAT --- */
-    else if (strncmp(argv[0], "cat", 4) == 0)
+    else if (strcmp(argv[0], "cat") == 0)
     {
         cmd_cat(argc, argv);
         return 1;
     }
-
-    /* --- HELP --- */
-    else if (strncmp(argv[0], "help", 5) == 0)
+    else if (strcmp(argv[0], "ps") == 0)
+    {
+        cmd_ps();
+        return 1;
+    }
+    else if (strcmp(argv[0], "free") == 0)
+    {
+        cmd_free();
+        return 1;
+    }
+    else if (strcmp(argv[0], "kill") == 0)
+    {
+        cmd_kill(argc, argv);
+        return 1;
+    }
+    else if (strcmp(argv[0], "help") == 0)
     {
         cmd_help();
         return 1;
     }
-
-    /* --- GREP --- */
-    else if (strncmp(argv[0], "grep", 5) == 0)
+    else if (strcmp(argv[0], "grep") == 0)
     {
         cmd_grep(argc, argv);
         return 1;
     }
-
-    /* --- ECHO --- */
-    else if (strncmp(argv[0], "echo", 5) == 0)
+    else if (strcmp(argv[0], "echo") == 0)
     {
         cmd_echo(argc, argv);
         return 1;
     }
-
-    /* --- RM --- */
-    else if (strncmp(argv[0], "rm", 3) == 0)
+    else if (strcmp(argv[0], "rm") == 0)
     {
         cmd_rm(argc, argv);
         return 1;
     }
-
-    /* --- TOUCH --- */
-    else if (strncmp(argv[0], "touch", 6) == 0)
+    else if (strcmp(argv[0], "touch") == 0)
     {
         cmd_touch(argc, argv);
         return 1;
     }
-
-    /* --- CP --- */
-    else if (strncmp(argv[0], "cp", 3) == 0)
+    else if (strcmp(argv[0], "cp") == 0)
     {
         cmd_cp(argc, argv);
         return 1;
     }
-
-    /* --- MKDIR --- */
-    else if (strncmp(argv[0], "mkdir", 6) == 0)
+    else if (strcmp(argv[0], "mkdir") == 0)
     {
         cmd_mkdir(argc, argv);
         return 1;
     }
-
-    /* --- MV --- */
-    else if (strncmp(argv[0], "mv", 3) == 0)
+    else if (strcmp(argv[0], "mv") == 0)
     {
         cmd_mv(argc, argv);
         return 1;
     }
-
-    /* --- SHUTDOWN --- */
-    else if (strncmp(argv[0], "shutdown", 8) == 0)
+    else if (strcmp(argv[0], "shutdown") == 0)
     {
         cmd_shutdown();
         return 1;
@@ -504,112 +672,75 @@ int exec_cmd(int argc, char **argv)
     return 0;
 }
 
+static void exec_external_with_path(char **argv)
+{
+    exec(argv[0], argv);
+    if (strchr(argv[0], '/') == NULL)
+    {
+        char bin_path[128] = "/bin/";
+        int k = 5;
+        for (int i = 0; argv[0][i] != '\0' && k < 126; i++)
+        {
+            bin_path[k++] = argv[0][i];
+        }
+        bin_path[k] = '\0';
+        exec(bin_path, argv);
+    }
+    print("Command not found: ");
+    print(argv[0]);
+    print("\n");
+    exit(1);
+}
+
 static int find_char(char **argv, char *c)
 {
     int i = 0;
-    while (1)
+    while (argv[i] != NULL)
     {
-        if (argv[i] == NULL)
-        {
-            return -1;
-        }
         if (strcmp(argv[i], c) == 0)
         {
             return i;
         }
         i++;
     }
+    return -1;
 }
 
-int find_pipe(char **argv)
+static void setup_redirections(char **argv, int *out_argc, int *saved_stdin, int *saved_stdout)
 {
-    return find_char(argv, "|");
-}
+    *saved_stdin = -1;
+    *saved_stdout = -1;
 
-void run_pipe(char **left_argv, char **right_argv)
-{
-    int pipe_fd[2]; // just to remind myself, 0 is read_end, 1 is write_end :/
-
-    if (pipe(pipe_fd) < 0)
+    int in_idx = find_char(argv, "<");
+    if (in_idx >= 0 && argv[in_idx + 1] != NULL)
     {
-        print("Pipe failed\n");
-        return;
-    }
-
-    // first, we fork to handle the writer on the left
-    int pid1 = fork();
-    if (pid1 == 0)
-    {
-        // CHILD 1: Writer
-
-        close(pipe_fd[0]);   // close the reader, we don't need it for writing.
-        dup2(pipe_fd[1], 1); // connect writer to the stdout
-        close(pipe_fd[1]);   // safe to close the writer then, stdout now is the writer
-
-        int argc = 0;
-        while (left_argv[argc] != NULL)
+        char *in_file = argv[in_idx + 1];
+        int fd = open(in_file, O_RDONLY);
+        if (fd < 0)
         {
-            argc++;
-        }
-
-        if (exec_cmd(argc, left_argv))
-        {
-            exit(0);
+            print("Shell: Cannot open input file: ");
+            print(in_file);
+            print("\n");
         }
         else
         {
-            exec(left_argv[0], left_argv);
-            print("Command not found: ");
-            print(left_argv[0]);
-            print("\n");
-            exit(1);
+            *saved_stdin = 9;
+            dup2(0, *saved_stdin);
+            dup2(fd, 0);
+            close(fd);
         }
+        int j = in_idx;
+        while (argv[j + 2] != NULL)
+        {
+            argv[j] = argv[j + 2];
+            j++;
+        }
+        argv[j] = NULL;
+        *out_argc -= 2;
     }
 
-    // then, we fork to handle the reader on the right
-    int pid2 = fork();
-    if (pid2 == 0)
-    {
-        // CHILD 2: Reader
-
-        close(pipe_fd[1]);   // close the writer, we don't need it for reading.
-        dup2(pipe_fd[0], 0); // connect reader to the stdin
-        close(pipe_fd[0]);   // safe to close the reader then, stdin now is the reader
-
-        int argc = 0;
-        while (right_argv[argc] != NULL)
-        {
-            argc++;
-        }
-
-        if (exec_cmd(argc, right_argv))
-        {
-            exit(0);
-        }
-        else
-        {
-            exec(right_argv[0], right_argv);
-            print("Command not found: ");
-            print(right_argv[0]);
-            print("\n");
-            exit(1);
-        }
-    }
-
-    close(pipe_fd[0]);
-    close(pipe_fd[1]);
-
-    int stat1 = 0;
-    int stat2 = 0;
-    waitpid(pid1, &stat1);
-    waitpid(pid2, &stat2);
-}
-
-int setup_redir(char **argv)
-{
     int append_idx = find_char(argv, ">>");
     int trunc_idx = find_char(argv, ">");
-
     int redir_idx = -1;
     int mode = O_WRONLY | O_CREAT;
 
@@ -624,33 +755,266 @@ int setup_redir(char **argv)
         mode |= O_TRUNC;
     }
 
-    if (redir_idx < 0 || argv[redir_idx + 1] == NULL)
+    if (redir_idx >= 0 && argv[redir_idx + 1] != NULL)
     {
-        return -1;
+        char *out_file = argv[redir_idx + 1];
+        int fd = open(out_file, mode);
+        if (fd < 0)
+        {
+            print("Shell: Cannot open output file: ");
+            print(out_file);
+            print("\n");
+        }
+        else
+        {
+            *saved_stdout = 10;
+            dup2(1, *saved_stdout);
+            dup2(fd, 1);
+            close(fd);
+        }
+        argv[redir_idx] = NULL;
+        *out_argc = redir_idx;
+    }
+}
+
+static void restore_redirections(int saved_stdin, int saved_stdout)
+{
+    if (saved_stdin != -1)
+    {
+        dup2(saved_stdin, 0);
+        close(saved_stdin);
+    }
+    if (saved_stdout != -1)
+    {
+        dup2(saved_stdout, 1);
+        close(saved_stdout);
+    }
+}
+
+void run_pipeline(char **argv)
+{
+    char **stages[8];
+    int num_stages = 0;
+
+    stages[num_stages++] = &argv[0];
+    for (int i = 0; argv[i] != NULL; i++)
+    {
+        if (strcmp(argv[i], "|") == 0)
+        {
+            argv[i] = NULL;
+            if (num_stages < 8 && argv[i + 1] != NULL)
+            {
+                stages[num_stages++] = &argv[i + 1];
+            }
+        }
     }
 
-    char *fname = argv[redir_idx + 1];
-    argv[redir_idx] = NULL;
+    int pids[8];
+    int prev_read_fd = -1;
 
-    int file_fd = open(fname, mode);
-    if (file_fd < 0)
+    for (int s = 0; s < num_stages; s++)
     {
-        print("Shell: Cannot open/create file for redirection\n");
-        return -1;
+        int pipe_fd[2] = {-1, -1};
+        if (s < num_stages - 1)
+        {
+            if (pipe(pipe_fd) < 0)
+            {
+                print("Pipeline: pipe() failed\n");
+                break;
+            }
+        }
+
+        int pid = fork();
+        if (pid == 0)
+        {
+            if (prev_read_fd != -1)
+            {
+                dup2(prev_read_fd, 0);
+                close(prev_read_fd);
+            }
+            if (pipe_fd[0] != -1)
+            {
+                close(pipe_fd[0]);
+            }
+            if (pipe_fd[1] != -1)
+            {
+                dup2(pipe_fd[1], 1);
+                close(pipe_fd[1]);
+            }
+
+            char **st_argv = stages[s];
+            int st_argc = 0;
+            while (st_argv[st_argc] != NULL)
+            {
+                st_argc++;
+            }
+
+            int s_in = -1, s_out = -1;
+            setup_redirections(st_argv, &st_argc, &s_in, &s_out);
+
+            if (exec_cmd(st_argc, st_argv))
+            {
+                exit(0);
+            }
+            else
+            {
+                exec_external_with_path(st_argv);
+            }
+        }
+
+        pids[s] = pid;
+        if (prev_read_fd != -1)
+        {
+            close(prev_read_fd);
+        }
+        if (pipe_fd[1] != -1)
+        {
+            close(pipe_fd[1]);
+        }
+        prev_read_fd = pipe_fd[0];
     }
 
-    int stdout_bk = 10;
-    if (dup2(1, stdout_bk) < 0)
+    if (prev_read_fd != -1)
     {
-        print("Shell: Failed to backup stdout\n");
-        close(file_fd);
-        return -1;
+        close(prev_read_fd);
     }
 
-    dup2(file_fd, 1);
-    close(file_fd);
+    for (int s = 0; s < num_stages; s++)
+    {
+        int stat = 0;
+        waitpid(pids[s], &stat);
+    }
+}
 
-    return stdout_bk;
+static void handle_tab_completion(char *line, int *len_ptr)
+{
+    int len = *len_ptr;
+    line[len] = '\0';
+
+    int tok_start = len;
+    while (tok_start > 0 && line[tok_start - 1] != ' ')
+    {
+        tok_start--;
+    }
+
+    char *tok = &line[tok_start];
+    int is_first_word = 1;
+    for (int i = 0; i < tok_start; i++)
+    {
+        if (line[i] != ' ')
+        {
+            is_first_word = 0;
+            break;
+        }
+    }
+
+    char dir_path[128];
+    const char *prefix = tok;
+    int last_slash = -1;
+    for (int i = 0; tok[i] != '\0'; i++)
+    {
+        if (tok[i] == '/')
+            last_slash = i;
+    }
+
+    if (last_slash >= 0)
+    {
+        if (last_slash == 0)
+        {
+            strcpy(dir_path, "/");
+        }
+        else
+        {
+            strncpy(dir_path, tok, (size_t)last_slash);
+            dir_path[last_slash] = '\0';
+        }
+        prefix = &tok[last_slash + 1];
+    }
+    else
+    {
+        if (getcwd(dir_path, 128) == NULL)
+            strcpy(dir_path, "/");
+    }
+
+    size_t prefix_len = strlen(prefix);
+    char match[128] = {0};
+    int match_is_dir = 0;
+    int match_count = 0;
+
+    if (is_first_word && last_slash == -1)
+    {
+        for (int b = 0; builtin_cmds[b] != NULL; b++)
+        {
+            if (strncmp(builtin_cmds[b], prefix, prefix_len) == 0)
+            {
+                if (match_count == 0)
+                    strcpy(match, builtin_cmds[b]);
+                match_count++;
+            }
+        }
+
+        int bin_fd = open("/bin", O_RDONLY);
+        if (bin_fd >= 0)
+        {
+            dirent_t ent;
+            int idx = 0;
+            while (readdir(bin_fd, idx++, &ent) == 0)
+            {
+                if (strncmp(ent.name, prefix, prefix_len) == 0)
+                {
+                    if (match_count == 0)
+                    {
+                        strcpy(match, ent.name);
+                        match_is_dir = (ent.type == VFS_DIRECTORY);
+                    }
+                    match_count++;
+                }
+            }
+            close(bin_fd);
+        }
+    }
+
+    int dir_fd = open(dir_path, O_RDONLY);
+    if (dir_fd >= 0)
+    {
+        dirent_t ent;
+        int idx = 0;
+        while (readdir(dir_fd, idx++, &ent) == 0)
+        {
+            if (strcmp(ent.name, ".") == 0 || strcmp(ent.name, "..") == 0)
+                continue;
+            if (strncmp(ent.name, prefix, prefix_len) == 0)
+            {
+                if (match_count == 0)
+                {
+                    strcpy(match, ent.name);
+                    match_is_dir = (ent.type == VFS_DIRECTORY);
+                }
+                match_count++;
+            }
+        }
+        close(dir_fd);
+    }
+
+    if (match_count == 1)
+    {
+        const char *suffix = &match[prefix_len];
+        while (*suffix && *len_ptr < 125)
+        {
+            char ch = *suffix++;
+            line[(*len_ptr)++] = ch;
+            char s[2] = {ch, 0};
+            print(s);
+        }
+        char tail = match_is_dir ? '/' : ' ';
+        if (*len_ptr < 126)
+        {
+            line[(*len_ptr)++] = tail;
+            char s[2] = {tail, 0};
+            print(s);
+        }
+        line[*len_ptr] = '\0';
+    }
 }
 
 int parse_cmd(char *line, char **argv)
@@ -660,7 +1024,6 @@ int parse_cmd(char *line, char **argv)
 
     while (*line)
     {
-        // a line ends with whitespace
         if (*line == ' ' || *line == '\n' || *line == '\t')
         {
             *line = 0;
@@ -677,33 +1040,30 @@ int parse_cmd(char *line, char **argv)
     return argc;
 }
 
-int main()
+int main(void)
 {
     char line[128];
     char cwd[128];
-    char *argv[16];
+    char *argv[32];
 
-    // start the shell
     print("\033[32m\033[40m");
     print("\033[2J\033[1;1H");
     print("Welcome to NyanOS Shell!\n");
-    print("Type 'help' to list available commands: hi, reboot, exit, clear, ls, pwd, cd, cat, help, <program>.\n\n");
+    print("Type 'help' for commands (ps, free, kill, ls, cd, cat, grep, pipes, Tab-complete).\n\n");
 
     while (1)
     {
-        // show the prompt: "NyanOS /curr/path>"
         if (getcwd(cwd, 128) != NULL)
         {
-            print("\033[33mNyanOS "); // yellow
+            print("\033[33mNyanOS ");
             print(cwd);
-            print("> \033[32m"); // reset color
+            print("> \033[32m");
         }
         else
         {
-            print("\033[33mNyanOS \?\?\?> \033[32m");
+            print("\033[33mNyanOS ???> \033[32m");
         }
 
-        // use blocking i/o to get the input
         int i = 0;
         hist_curr = hist_count;
         while (1)
@@ -716,8 +1076,6 @@ int main()
                 if (c == '\n')
                 {
                     print("\n");
-
-                    // save to history
                     line[i] = 0;
                     if (i > 0)
                     {
@@ -734,6 +1092,12 @@ int main()
                     i = 0;
                     line[0] = 0;
                     break;
+                }
+
+                if (c == '\t')
+                {
+                    handle_tab_completion(line, &i);
+                    continue;
                 }
 
                 if (c == '\b')
@@ -753,7 +1117,7 @@ int main()
                     {
                         if (seq[0] == '[')
                         {
-                            if (seq[1] == 'A') // is KEY_UP
+                            if (seq[1] == 'A')
                             {
                                 if (hist_count > 0)
                                 {
@@ -764,12 +1128,12 @@ int main()
                                         clear_curr_line(i);
                                         int real_idx = hist_curr % HIST_MAX;
                                         strcpy(line, history[real_idx]);
-                                        i = strlen(line);
+                                        i = (int)strlen(line);
                                         print(line);
                                     }
                                 }
                             }
-                            else if (seq[1] == 'B') // is KEY_DOWN
+                            else if (seq[1] == 'B')
                             {
                                 if (hist_curr < hist_count)
                                 {
@@ -785,7 +1149,7 @@ int main()
                                     {
                                         int real_idx = hist_curr % HIST_MAX;
                                         strcpy(line, history[real_idx]);
-                                        i = strlen(line);
+                                        i = (int)strlen(line);
                                         print(line);
                                     }
                                 }
@@ -806,7 +1170,7 @@ int main()
                     }
                     else
                     {
-                        print("\033[33mNyanOS \?\?\?> \033[32m");
+                        print("\033[33mNyanOS ???> \033[32m");
                     }
 
                     line[i] = 0;
@@ -828,62 +1192,36 @@ int main()
             continue;
         }
 
-        // parse the cmd
         int argc = parse_cmd(line, argv);
         if (argc == 0)
         {
             continue;
         }
 
-        // process the cmd
-        int pipe_idx = find_pipe(argv);
-        if (pipe_idx >= 0)
+        if (find_char(argv, "|") >= 0)
         {
-            argv[pipe_idx] = NULL;
-            char **right_argv = &argv[pipe_idx + 1];
-            run_pipe(argv, right_argv);
+            run_pipeline(argv);
             continue;
         }
-
-        int append_idx = find_char(argv, ">>");
-        int trunc_idx = find_char(argv, ">");
-        int redir_idx = -1;
-
-        if (append_idx >= 0)
-        {
-            redir_idx = append_idx;
-        }
-        else if (trunc_idx >= 0)
-        {
-            redir_idx = trunc_idx;
-        }
-
-        if (redir_idx >= 0)
-        {
-            argc = redir_idx;
-        }
-
-        int stdout_bk = setup_redir(argv);
 
         int amper_idx = find_char(argv, "&");
         if (amper_idx != -1)
         {
             argv[amper_idx] = NULL;
-            argc -= 1;
+            argc = amper_idx;
         }
 
-        if (!exec_cmd(argc, argv))
+        int saved_stdin = -1;
+        int saved_stdout = -1;
+        setup_redirections(argv, &argc, &saved_stdin, &saved_stdout);
+
+        if (argc > 0 && !exec_cmd(argc, argv))
         {
-            /* --- EXTERNAL PROGS --- */
             int pid = fork();
 
             if (pid == 0)
             {
-                exec(argv[0], argv);
-                print("Command not found: ");
-                print(argv[0]);
-                print("\n");
-                exit(1);
+                exec_external_with_path(argv);
             }
             else
             {
@@ -901,11 +1239,7 @@ int main()
             }
         }
 
-        if (stdout_bk != -1)
-        {
-            dup2(stdout_bk, 1);
-            close(stdout_bk);
-        }
+        restore_redirections(saved_stdin, saved_stdout);
     }
 
     return 0;

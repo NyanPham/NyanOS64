@@ -10,12 +10,12 @@
 #include "mem/vmm.h"
 #include "fs/vfs.h"
 #include "event/event.h"
+#include "include/syscall_args.h"
 #include <stdint.h>
 
-#define MAX_OPEN_FILES 0x10 // each task has at most 16 files open
+#define MAX_OPEN_FILES 0x10
 #define MAX_CWD_LEN 0x100
 
-// Forward declartion, not include window.h to avoid circular dependency
 struct Window;
 
 typedef struct Task
@@ -26,19 +26,18 @@ typedef struct Task
     short int state;
     struct Task *next;
     file_handle_t *fd_tbl[MAX_OPEN_FILES];
-    uint64_t pml4; // phys_addr of pml4
+    uint64_t pml4;
     struct Task *parent;
-    int ret_val; // exit code
+    int ret_val;
     uint64_t heap_end;
     VmFreeRegion *vm_free_head;
     VmAllocatedList *vm_alloc_head;
 
+    char name[64];
     char cwd[MAX_CWD_LEN];
 
-    // GUI & CLI
-    struct Window *win; // For GUI app
+    struct Window *win;
 
-    // Signal
     uint32_t pending_signals;
 
     uint8_t fpu_regs[512 + 16];
@@ -57,15 +56,16 @@ void sched_unlink_task(Task *task);
 void sched_init(void);
 void schedule(void);
 void task_idle(void);
-void sched_block();
+void sched_block(void);
 void sched_wake_pid(int pid);
 void sched_exit(int code);
 void sched_kill(int pid);
 Task *get_curr_task(void);
 Task *sched_find_task(int pid);
-int64_t get_curr_task_pid();
+int64_t get_curr_task_pid(void);
 void sched_send_signal(int pid, uint32_t sig_code);
 void sched_reap_zombies(void);
+int sched_get_procs(ProcInfo_t *out_buf, int max_count);
 
 void sched_register_task(Task *task);
 Task *task_factory_create(uint64_t entry, uint64_t rsp);
